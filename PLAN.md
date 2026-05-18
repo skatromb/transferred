@@ -13,7 +13,7 @@ Goal: end-to-end Python wheel with Parquet round-trip published to PyPI + corres
 - Parquet source + destination only. No Postgres, no BigQuery.
 - Python API: `Transfer(source=..., destination=...).run() -> RunReport`. Accepts `Parquet` source/destination and `pa.Table` / `pa.RecordBatchReader` sources (zero-copy).
 - `Iter` source deferred to 0.0.2.
-- Schema model: destination-owned, `schema=` (full) and `schema_overrides=` (partial). Parquet vocabulary = polars/arrow-shorthand strings or `pa.Schema`. Trait surface from §Architecture.
+- Use source-inferred Arrow schemas, no `schema=` / `schema_overrides=` kwargs yet.
 - `RunReport`, `ElError` hierarchy surfaced into Python.
 - License: MIT, `LICENSE` file at repo root.
 - Workspace version shared across crates. Untie later if cadence diverges.
@@ -29,8 +29,6 @@ Goal: end-to-end Python wheel with Parquet round-trip published to PyPI + corres
 - [x] **Rename crates `el-*` → `transferred-*`** (workspace, paths, imports).
 - [x] **LICENSE file** at repo root (MIT).
 - [x] **Per-crate `description`, `readme`, `keywords`, `categories`** in Cargo.toml — crates.io rejects without them.
-- [ ] **Schema redesign** — destination-owned vocab, trait additions (`parse_user_schema`, `apply_overrides`, `to_destination_schema`). Implement for Parquet first.
-- [ ] **Coercion engine** — runtime cast from inferred Arrow schema to canonical schema. Tier 1 auto, Tier 2 warn, Tier 3 fail.
 - [ ] **`transferred-py` crate** — PyO3 module, mixed-mode maturin layout (`python/transferred/`).
   - [ ] `Transfer` Python class wrapping Rust `Transfer`.
   - [ ] `Parquet` source + destination Python wrappers.
@@ -91,6 +89,8 @@ Goal: original thesis. Atomic full load from PG to BQ.
 - BQ schema vocabulary in Python (`"INT64"`, `"NUMERIC(18, 4)"`, `"GEOGRAPHY"`, `bigquery.SchemaField`).
 - Schema inference from `information_schema`.
 - Auth via `gcp_auth` (ADC, service-account JSON, gcloud, workload identity).
+- Schema redesign — destination-owned vocab, trait additions (`parse_user_schema`, `apply_overrides`, `to_destination_schema`). Designed against PG + BQ + Parquet concretely.
+- Coercion engine — runtime cast from inferred Arrow schema to canonical schema. Tier 1 auto, Tier 2 warn, Tier 3 fail.
 - Type registry initial coverage: primitives, `arrow.json`, `arrow.uuid`, ranges (expand), `geography(_, 4326)` → BQ `GEOGRAPHY` (Tier 1), `geometry(_, 4326)` no Z/M → BQ `GEOGRAPHY` (Tier 2 warn). Other tier-3 cases refused with `columns=`/`skip_columns=` workaround.
 - `tracing` → Python `logging` bridge.
 
@@ -105,6 +105,8 @@ Goal: original thesis. Atomic full load from PG to BQ.
 - [ ] BQ env-gated integration test.
 - [ ] CI: docker PG service for PR gate.
 - [ ] Logging bridge crate.
+- [ ] **Schema redesign** — destination-owned vocab, trait additions (`parse_user_schema`, `apply_overrides`, `to_destination_schema`). Implement for Parquet, PG, BQ in one pass.
+- [ ] **Coercion engine** — runtime cast from inferred Arrow schema to canonical schema. Tier 1 auto, Tier 2 warn, Tier 3 fail.
 
 ## 0.1.1 — Postgres destination, BigQuery source
 

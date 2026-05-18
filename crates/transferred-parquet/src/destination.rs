@@ -1,14 +1,13 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use arrow_schema::SchemaRef;
 use async_trait::async_trait;
-use transferred_core::{BatchStream, Destination, ElError, RunReport};
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt};
 use parquet::arrow::AsyncArrowWriter;
 use parquet::file::properties::WriterProperties;
 use tokio::fs::File;
 use tracing::warn;
+use transferred_core::{BatchStream, Destination, ElError, RunReport};
 
 use crate::compression::Compression;
 
@@ -29,77 +28,73 @@ impl ParquetDestination {
 
 #[async_trait]
 impl Destination for ParquetDestination {
-    async fn write(
-        self: Box<Self>,
-        schema: SchemaRef,
-        batches: Vec<BatchStream>,
-    ) -> Result<RunReport, ElError> {
-        run(*self, schema, batches).await
-    }
-}
+    async fn write(self: Box<Self>, batches: Vec<BatchStream>) -> Result<RunReport, ElError> {
+        let start = Instant::now();
+        let tmp = tmp_path(&self.path);
 
-async fn run(
-    destination: ParquetDestination,
-    schema: SchemaRef,
-    batches: Vec<BatchStream>,
-) -> Result<RunReport, ElError> {
-    let start = Instant::now();
-    let tmp = tmp_path(&destination.path);
+        let (rows, bytes_written) = match write_all(&tmp, self.compression, batches).await {
+            Ok(stats) => stats,
+            Err(err) => {
+                cleanup_tmp(&tmp).await;
+                return Err(err);
+            }
+        };
 
-    let result = write_all(&tmp, schema, destination.compression, batches).await;
-
-    let (rows, bytes) = match result {
-        Ok(stats) => stats,
-        Err(err) => {
+        if let Err(err) = tokio::fs::rename(&tmp, &self.path).await {
             cleanup_tmp(&tmp).await;
-            return Err(err);
+            return Err(ElError::from(err));
         }
-    };
 
-    if let Err(err) = tokio::fs::rename(&tmp, &destination.path).await {
-        cleanup_tmp(&tmp).await;
-        return Err(ElError::from(err));
+        Ok(RunReport {
+            rows,
+            bytes_written,
+            duration: start.elapsed(),
+            coercions: vec![],
+        })
     }
-
-    Ok(RunReport {
-        rows,
-        bytes_written: bytes,
-        duration: start.elapsed(),
-        coercions: vec![],
-    })
 }
 
-/// Currently supports only sequential 
+/// Currently supports only sequential partitions. Writer schema is taken from
+/// the first batch; an empty source errors.
 async fn write_all(
     tmp: &Path,
-    schema: SchemaRef,
     compression: Compression,
     batches: Vec<BatchStream>,
 ) -> Result<(u64, u64), ElError> {
+    let mut stream = futures::stream::iter(batches).flatten();
+
+    let first = stream
+        .try_next()
+        .await?
+        .ok_or_else(|| ElError::source("source produced no batches"))?;
+
     let file = File::create(tmp).await?;
     let props = WriterProperties::builder()
         .set_compression(compression.into())
         .build();
-    let mut writer = AsyncArrowWriter::try_new(file, schema, Some(props))
+    let mut writer = AsyncArrowWriter::try_new(file, first.schema(), Some(props))
         .map_err(|e| ElError::destination(format!("AsyncArrowWriter init: {e}")))?;
 
-    let mut rows: u64 = 0;
-    for mut partition in batches {
-        while let Some(batch) = partition.next().await {
-            let batch = batch?;
-            rows += batch.num_rows() as u64;
-            writer
-                .write(&batch)
-                .await
-                .map_err(|e| ElError::destination(format!("AsyncArrowWriter::write: {e}")))?;
-        }
+    let mut rows = first.num_rows() as u64;
+    writer
+        .write(&first)
+        .await
+        .map_err(|e| ElError::destination(format!("AsyncArrowWriter::write: {e}")))?;
+
+    while let Some(batch) = stream.try_next().await? {
+        rows += batch.num_rows() as u64;
+        writer
+            .write(&batch)
+            .await
+            .map_err(|e| ElError::destination(format!("AsyncArrowWriter::write: {e}")))?;
     }
+
     writer
         .close()
         .await
         .map_err(|e| ElError::destination(format!("AsyncArrowWriter::close: {e}")))?;
-
     let bytes = tokio::fs::metadata(tmp).await?.len();
+
     Ok((rows, bytes))
 }
 

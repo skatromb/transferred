@@ -1,11 +1,10 @@
 use std::path::PathBuf;
 
-use arrow_schema::SchemaRef;
 use async_trait::async_trait;
-use transferred_core::{BatchStream, ElError, Source};
 use futures::StreamExt;
 use parquet::arrow::async_reader::ParquetRecordBatchStreamBuilder;
 use tokio::fs::File;
+use transferred_core::{BatchStream, ElError, Source};
 
 /// Local single-file Parquet source. Yields `RecordBatch` via async Parquet reader.
 #[derive(Debug, Clone)]
@@ -23,14 +22,6 @@ impl ParquetSource {
 
 #[async_trait]
 impl Source for ParquetSource {
-    async fn schema(&self) -> Result<SchemaRef, ElError> {
-        let file = File::open(&self.path).await?;
-        let builder = ParquetRecordBatchStreamBuilder::new(file)
-            .await
-            .map_err(|e| ElError::source(format!("parquet reader init: {e}")))?;
-        Ok(builder.schema().clone())
-    }
-
     /// Currently reads only sequentially.
     async fn partitions(self: Box<Self>) -> Result<Vec<BatchStream>, ElError> {
         let file = File::open(&self.path).await?;

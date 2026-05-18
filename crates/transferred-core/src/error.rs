@@ -10,12 +10,6 @@ pub enum ElError {
     #[error("destination error: {0}")]
     Destination(String),
 
-    #[error("schema mismatch: {0}")]
-    Schema(String),
-
-    #[error("type coercion refused: {0}")]
-    Coercion(String),
-
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -33,14 +27,6 @@ impl ElError {
 
     pub fn destination<S: Into<String>>(msg: S) -> Self {
         Self::Destination(msg.into())
-    }
-
-    pub fn schema<S: Into<String>>(msg: S) -> Self {
-        Self::Schema(msg.into())
-    }
-
-    pub fn coercion<S: Into<String>>(msg: S) -> Self {
-        Self::Coercion(msg.into())
     }
 
     pub fn other<S: Into<String>>(msg: S) -> Self {

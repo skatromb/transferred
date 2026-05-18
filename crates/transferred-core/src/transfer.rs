@@ -13,13 +13,12 @@ impl Transfer {
         Self { source, destination }
     }
 
-    /// Resolve the schema, fetch partitions, hand them to the destination.
+    /// Fetch partitions, hand them to the destination.
     ///
     /// # Errors
-    /// Propagates any error from schema resolution, partition setup, or write.
+    /// Propagates any error from partition setup or write.
     pub async fn run(self) -> Result<RunReport, ElError> {
-        let schema = self.source.schema().await?;
         let partitions = self.source.partitions().await?;
-        self.destination.write(schema, partitions).await
+        self.destination.write(partitions).await
     }
 }

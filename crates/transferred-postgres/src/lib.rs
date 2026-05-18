@@ -2,7 +2,6 @@
 //!
 //! 0.1 scaffold: API skeleton only. Real binary COPY parsing TBD.
 
-use arrow_schema::SchemaRef;
 use async_trait::async_trait;
 use transferred_core::{BatchStream, ElError, Source};
 
@@ -50,16 +49,10 @@ impl PostgresSource {
 
 #[async_trait]
 impl Source for PostgresSource {
-    async fn schema(&self) -> Result<SchemaRef, ElError> {
+    async fn partitions(self: Box<Self>) -> Result<Vec<BatchStream>, ElError> {
         let _ = &self.cfg;
         Err(ElError::source(
-            "PostgresSource::schema not yet implemented",
-        ))
-    }
-
-    async fn partitions(self: Box<Self>) -> Result<Vec<BatchStream>, ElError> {
-        Err(ElError::source(
-            "PostgresSource::batches not yet implemented",
+            "PostgresSource::partitions not yet implemented",
         ))
     }
 }

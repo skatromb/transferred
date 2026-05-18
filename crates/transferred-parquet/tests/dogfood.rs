@@ -165,7 +165,7 @@ async fn parquet_dogfood() {
     // Act
     // Dump to file
     let write_report = Transfer::new(
-        Box::new(TestSource::new(schema.clone(), input.clone())),
+        Box::new(TestSource::new(input.clone())),
         Box::new(ParquetDestination::new(path.clone(), Compression::Zstd)),
     )
     .run()
