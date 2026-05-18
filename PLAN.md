@@ -26,10 +26,9 @@ Goal: end-to-end Python wheel with Parquet round-trip published to PyPI + corres
 - [x] `transferred-parquet` destination (async, atomic tmp+rename, zstd).
 - [x] Parquet round-trip dogfood test (wide schema, AAA structure).
 - [x] `dev` feature flag with `TestSource` / `TestDestination`.
-- [ ] **Rename crates `el-*` → `transferred-*`** (workspace, paths, imports). Defer until naming reservation strategy decided.
-- [ ] **Reserve names** on crates.io and PyPI (publish 0.0.0 placeholders or rely on first-publish reservation).
-- [ ] **LICENSE file** at repo root (MIT).
-- [ ] **Per-crate `description`, `readme`, `keywords`, `categories`** in Cargo.toml — crates.io rejects without them.
+- [x] **Rename crates `el-*` → `transferred-*`** (workspace, paths, imports).
+- [x] **LICENSE file** at repo root (MIT).
+- [x] **Per-crate `description`, `readme`, `keywords`, `categories`** in Cargo.toml — crates.io rejects without them.
 - [ ] **Schema redesign** — destination-owned vocab, trait additions (`parse_user_schema`, `apply_overrides`, `to_destination_schema`). Implement for Parquet first.
 - [ ] **Coercion engine** — runtime cast from inferred Arrow schema to canonical schema. Tier 1 auto, Tier 2 warn, Tier 3 fail.
 - [ ] **`transferred-py` crate** — PyO3 module, mixed-mode maturin layout (`python/transferred/`).
@@ -40,6 +39,7 @@ Goal: end-to-end Python wheel with Parquet round-trip published to PyPI + corres
   - [ ] Source coercion dispatcher (`pa.Table` / `pa.RecordBatchReader` → Arrow source; reject other types until 0.0.2).
   - [ ] `_native.pyi` stubs, `py.typed` marker.
 - [ ] **`pyproject.toml`** — maturin config, wheel targets cp314 + cp314t. No cp313.
+- [ ] **Reserve names** on crates.io and PyPI. After `transferred-py` exists so PyPI wheel reservation is co-located with Rust crate reservation.
 - [ ] **CI: PR gate workflow** (`.github/workflows/ci.yml`).
   - [ ] `cargo fmt --check`, `cargo clippy --workspace --tests --all-features -- -D warnings`.
   - [ ] `cargo test --workspace --all-features`.
