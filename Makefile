@@ -32,19 +32,9 @@ cargo-test:
 # Python
 # ============================================================================
 
-# Regenerate `_native.pyi` stubs from `#[gen_stub_*]` annotations.
-.PHONY: stubs
-stubs:
-	@cargo run --bin stub_gen -p transferred-py
-
-# Fail if regenerated stubs differ from committed file.
-.PHONY: stubs-check
-stubs-check: stubs
-	@git diff --exit-code crates/transferred-py/python/transferred/_native/__init__.pyi
-
 # Full Python gate: lint, types, tests.
 .PHONY: python-check
-python-check: ruff ty pytest
+python-check: ruff ty stubs-check pytest
 
 # Provision venv + build extension. Other Python targets depend on this.
 .PHONY: python-setup
@@ -66,6 +56,16 @@ ruff: python-setup
 ty: python-setup
 	@cd crates/transferred-py && \
 	uv run --no-sync ty check
+
+# Fail if regenerated stubs differ from committed file.
+.PHONY: stubs-check
+stubs-check: stubs
+	@git diff --exit-code crates/transferred-py/python/transferred/_native/__init__.pyi
+
+# Regenerate `_native.pyi` stubs from `#[gen_stub_*]` annotations.
+.PHONY: stubs
+stubs:
+	@cargo run --bin stub_gen -p transferred-py
 
 # Run pytest. Same entry point for local + CI.
 .PHONY: pytest

@@ -11,6 +11,21 @@ use crate::parquet::{PyParquetDestination, PyParquetSource};
 use crate::report::PyRunReport;
 
 /// Orchestrates a single source → destination run. Single-shot: each instance can run once.
+///
+/// Args:
+///     source: A transferred source (e.g. `ParquetSource`).
+///     destination: A transferred destination (e.g. `ParquetDestination`).
+///
+/// Example:
+///     ```py
+///     >>> from transferred import ParquetSource, ParquetDestination, Transfer
+///     >>> report = Transfer(
+///     ...     source=ParquetSource("in.parquet"),
+///     ...     destination=ParquetDestination("out.parquet", compression="zstd"),
+///     ... ).run()
+///     >>> report.rows
+///     12481902
+///     ```
 #[gen_stub_pyclass]
 #[pyclass(name = "Transfer", module = "transferred._native", unsendable)]
 pub struct PyTransfer {

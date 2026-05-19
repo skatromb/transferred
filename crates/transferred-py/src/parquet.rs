@@ -8,6 +8,18 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use transferred_parquet::{Compression, ParquetDestination, ParquetSource};
 
 /// Local single-file Parquet source. No I/O performed at construction.
+///
+/// Args:
+///     path: Filesystem path to the input `.parquet` file.
+///
+/// Example:
+///     ```py
+///     >>> from transferred import ParquetSource, ParquetDestination, Transfer
+///     >>> Transfer(
+///     ...     source=ParquetSource("in.parquet"),
+///     ...     destination=ParquetDestination("out.parquet"),
+///     ... ).run()
+///     ```
 #[gen_stub_pyclass]
 #[pyclass(name = "ParquetSource", module = "transferred._native", unsendable)]
 pub struct PyParquetSource {
@@ -26,6 +38,13 @@ impl PyParquetSource {
 }
 
 /// Local single-file Parquet destination. Writes via tmp file + atomic rename.
+///
+/// Args:
+///     path: Filesystem path to the output `.parquet` file.
+///     compression: One of `"zstd"` (default), `"snappy"`, `"uncompressed"`.
+///
+/// Example:
+///     >>> ParquetDestination("out.parquet", compression="zstd")
 #[gen_stub_pyclass]
 #[pyclass(
     name = "ParquetDestination",

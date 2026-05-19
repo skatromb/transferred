@@ -16,6 +16,13 @@ __all__ = [
 class ParquetDestination:
     r"""
     Local single-file Parquet destination. Writes via tmp file + atomic rename.
+    
+    Args:
+        path: Filesystem path to the output `.parquet` file.
+        compression: One of `"zstd"` (default), `"snappy"`, `"uncompressed"`.
+    
+    Example:
+        >>> ParquetDestination("out.parquet", compression="zstd")
     """
     def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path, compression: builtins.str = 'zstd') -> ParquetDestination: ...
 
@@ -23,6 +30,18 @@ class ParquetDestination:
 class ParquetSource:
     r"""
     Local single-file Parquet source. No I/O performed at construction.
+    
+    Args:
+        path: Filesystem path to the input `.parquet` file.
+    
+    Example:
+        ```py
+        >>> from transferred import ParquetSource, ParquetDestination, Transfer
+        >>> Transfer(
+        ...     source=ParquetSource("in.parquet"),
+        ...     destination=ParquetDestination("out.parquet"),
+        ... ).run()
+        ```
     """
     def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path) -> ParquetSource: ...
 
@@ -30,6 +49,18 @@ class ParquetSource:
 class RunReport:
     r"""
     Post-run statistics returned by `Transfer.run()`.
+    
+    Attributes:
+        `rows`: Total rows written.
+        `bytes_written`: Total bytes written to the destination.
+        `duration_seconds`: Wall-clock duration of the transfer, in seconds.
+    
+    Example:
+        ```py
+        >>> report = Transfer(source=..., destination=...).run()
+        >>> print(report)
+        RunReport(rows=12481902, bytes_written=1503948211, duration_seconds=4.218731)
+        ```
     """
     @property
     def rows(self) -> builtins.int:
@@ -52,13 +83,49 @@ class RunReport:
 class Transfer:
     r"""
     Orchestrates a single source → destination run. Single-shot: each instance can run once.
+    
+    Args:
+        source: A transferred source (e.g. `ParquetSource`).
+        destination: A transferred destination (e.g. `ParquetDestination`).
+    
+    Example:
+        ```py
+        >>> from transferred import ParquetSource, ParquetDestination, Transfer
+        >>> report = Transfer(
+        ...     source=ParquetSource("in.parquet"),
+        ...     destination=ParquetDestination("out.parquet", compression="zstd"),
+        ... ).run()
+        >>> report.rows
+        12481902
+        ```
     """
     def __new__(cls, source: typing.Any, destination: typing.Any) -> Transfer: ...
     def run(self) -> RunReport: ...
 
 
-class ElError(Exception): ...
-class SourceError(ElError): ...
-class DestinationError(ElError): ...
-class ArrowError(ElError): ...
-class IoError(ElError): ...
+class ElError(Exception):
+    """Base exception for all `transferred` failures.
+
+    Subclasses: `SourceError`, `DestinationError`, `ArrowError`, `IoError`.
+
+    Example:
+        ```py
+        >>> from transferred import Transfer, ElError
+        >>> try:
+        ...     Transfer(source=..., destination=...).run()
+        ... except ElError as e:
+        ...     print(f"transfer failed: {e}")
+        ```
+    """
+
+class SourceError(ElError):
+    """Source read failed (file missing, malformed Parquet, etc.)."""
+
+class DestinationError(ElError):
+    """Destination write failed (permission denied, disk full, schema mismatch)."""
+
+class ArrowError(ElError):
+    """Arrow schema or array conversion failed."""
+
+class IoError(ElError):
+    """Filesystem I/O error not attributable to source or destination logic."""

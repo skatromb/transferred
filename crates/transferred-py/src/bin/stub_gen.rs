@@ -9,12 +9,34 @@ use pyo3_stub_gen::Result;
 
 /// `create_exception!` macros are invisible to `pyo3-stub-gen`. Declare the
 /// exception hierarchy here so type checkers can resolve it.
-const EXCEPTIONS_TRAILER: &str = "\n\
-class ElError(Exception): ...\n\
-class SourceError(ElError): ...\n\
-class DestinationError(ElError): ...\n\
-class ArrowError(ElError): ...\n\
-class IoError(ElError): ...\n";
+const EXCEPTIONS_TRAILER: &str = r#"
+class ElError(Exception):
+    """Base exception for all `transferred` failures.
+
+    Subclasses: `SourceError`, `DestinationError`, `ArrowError`, `IoError`.
+
+    Example:
+        ```py
+        >>> from transferred import Transfer, ElError
+        >>> try:
+        ...     Transfer(source=..., destination=...).run()
+        ... except ElError as e:
+        ...     print(f"transfer failed: {e}")
+        ```
+    """
+
+class SourceError(ElError):
+    """Source read failed (file missing, malformed Parquet, etc.)."""
+
+class DestinationError(ElError):
+    """Destination write failed (permission denied, disk full, schema mismatch)."""
+
+class ArrowError(ElError):
+    """Arrow schema or array conversion failed."""
+
+class IoError(ElError):
+    """Filesystem I/O error not attributable to source or destination logic."""
+"#;
 
 fn main() -> Result<()> {
     let stub = _native::stub_info()?;
