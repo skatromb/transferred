@@ -54,7 +54,7 @@ Goal: end-to-end Python wheel with Parquet round-trip published to PyPI + corres
   - [x] Publish to PyPI via Trusted Publishers (OIDC, no token in repo).
   - [ ] Pre-register pending publisher on PyPI before first tag push (manual; needs PyPI account).
   - [ ] Add `CARGO_REGISTRY_TOKEN` repo secret + create GitHub `pypi` environment with required-reviewer rule (manual).
-- [ ] **Update README.md** to match the published 0.0.1 surface (install command, working Python example, crate links). Only after the release workflow is wired and immediately before cutting the tag.
+- [x] **Update README.md** to match the published 0.0.1 surface (install command, working Python example, crate links). Only after the release workflow is wired and immediately before cutting the tag.
 - [ ] **Cut 0.0.1 tag.**
 
 **Open decisions to lock pre-tag:**
