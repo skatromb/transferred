@@ -72,3 +72,34 @@ ty: python-setup
 pytest: python-setup
 	@cd crates/transferred-py && \
 	uv run --no-sync pytest
+
+
+# ============================================================================
+# Release
+# ============================================================================
+
+# Read workspace version from cargo metadata.
+VERSION := $(shell cargo metadata --no-deps --format-version 1 \
+	| jq -r '.packages[] | select(.name=="transferred-core") | .version')
+
+# Pre-flight: on main, clean tree, in sync with origin.
+.PHONY: release-check
+release-check:
+	@[ "$$(git rev-parse --abbrev-ref HEAD)" = "main" ] \
+		|| { echo "release-check: must be on main"; exit 1; }
+	@git diff --quiet && git diff --cached --quiet \
+		|| { echo "release-check: working tree not clean"; exit 1; }
+	@git fetch origin main --quiet
+	@[ "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" ] \
+		|| { echo "release-check: local main not in sync with origin/main"; exit 1; }
+	@echo "release-check: ok (version $(VERSION))"
+
+# Cut and push annotated tag `vX.Y.Z` matching the workspace version.
+.PHONY: release-tag
+release-tag: release-check
+	@git rev-parse "v$(VERSION)" >/dev/null 2>&1 \
+		&& { echo "tag v$(VERSION) already exists"; exit 1; } \
+		|| true
+	@git tag -a "v$(VERSION)" -m "v$(VERSION)"
+	@git push origin "v$(VERSION)"
+	@echo "pushed tag v$(VERSION)"
