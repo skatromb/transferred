@@ -36,7 +36,10 @@ impl Transfer {
     /// Build a transfer.
     #[must_use]
     pub fn new(source: Box<dyn Source>, destination: Box<dyn Destination>) -> Self {
-        Self { source, destination }
+        Self {
+            source,
+            destination,
+        }
     }
 
     /// Fetch partitions, hand them to the destination.

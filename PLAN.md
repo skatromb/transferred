@@ -39,14 +39,14 @@ Goal: end-to-end Python wheel with Parquet round-trip published to PyPI + corres
   - [x] PEP 735 dev dependency group in `crates/transferred-py/pyproject.toml` (`maturin`, `pytest`, `pyarrow`, `ruff`, `ty`).
   - [x] `crates/transferred-py/tests/` — pytest suite. First test: Parquet round-trip via Python API.
   - [x] `make test-python` / `lint-python` / `typecheck-python` / `check-python` targets — single entry points used by local + CI.
-  - [ ] CI workflow calls `make check-python` (runs ruff + ty + pytest). No CI-only side path.
+  - [ ] CI workflow calls `make python-check` (runs ruff + ty + pytest). No CI-only side path.
 - [ ] **Stub-gen drift guard** — `cargo run --bin stub_gen -p transferred-py` + `git diff --exit-code` on `crates/transferred-py/python/transferred/_native/__init__.pyi`. Wired into CI PR gate; fails PR if stubs drift from annotations.
 - [ ] **Reserve names** on crates.io and PyPI. After `transferred-py` exists so PyPI wheel reservation is co-located with Rust crate reservation.
-- [ ] **CI: PR gate workflow** (`.github/workflows/ci.yml`).
+- [ ] **CI: PR gate workflow** (`.github/workflows/checks.yml`).
   - [ ] `cargo fmt --check`, `cargo clippy --workspace --tests --all-features -- -D warnings`.
   - [ ] `cargo test --workspace --all-features`.
   - [ ] `cargo run --bin stub_gen -p transferred-py` + `git diff --exit-code` on `crates/transferred-py/python/transferred/_native/__init__.pyi` — fails PR if stubs drift from code.
-  - [ ] `make check-python` (ruff + ty + pytest).
+  - [ ] `make python-check` (ruff + ty + pytest).
   - [ ] rust-cache for incremental builds.
 - [ ] **CI: release workflow** (`.github/workflows/release.yml`, tag-triggered).
   - [ ] Cargo publish each workspace crate in dep order: core → parquet → py.

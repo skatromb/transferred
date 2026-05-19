@@ -18,10 +18,10 @@ use arrow::array::{
 use arrow::buffer::OffsetBuffer;
 use arrow::record_batch::RecordBatch;
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
+use tempfile::tempdir;
 use transferred_core::Transfer;
 use transferred_core::test_utils::{TestDestination, TestSource};
 use transferred_parquet::{Compression, ParquetDestination, ParquetSource};
-use tempfile::tempdir;
 
 fn schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![
