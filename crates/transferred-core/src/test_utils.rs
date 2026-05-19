@@ -54,7 +54,7 @@ impl Default for TestDestination {
 
 #[async_trait]
 impl Destination for TestDestination {
-    async fn write_partitins(
+    async fn write_partitions(
         self: Box<Self>,
         partitions: Vec<BatchStream>,
     ) -> Result<RunReport, ElError> {
