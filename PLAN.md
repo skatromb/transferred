@@ -41,27 +41,19 @@ Goal: end-to-end Python wheel with Parquet round-trip published to PyPI + corres
   - [x] `make test-python` / `lint-python` / `typecheck-python` / `check-python` targets — single entry points used by local + CI.
   - [x] CI workflow calls `make python-check` (runs ruff + ty + pytest). No CI-only side path.
 - [x] **Stub-gen drift guard** — `cargo run --bin stub_gen -p transferred-py` + `git diff --exit-code` on `crates/transferred-py/python/transferred/_native/__init__.pyi`. Wired into CI PR gate; fails PR if stubs drift from annotations.
-- [ ] **Reserve names** on crates.io and PyPI. After `transferred-py` exists so PyPI wheel reservation is co-located with Rust crate reservation.
+- [x] **Reserve names** on crates.io and PyPI. After `transferred-py` exists so PyPI wheel reservation is co-located with Rust crate reservation.
 - [x] **CI: PR gate workflow** (`.github/workflows/checks.yml`).
   - [x] `cargo fmt --check`, `cargo clippy --workspace --tests`.
   - [x] `cargo test --workspace --features transferred-core/dev`.
   - [x] `cargo run --bin stub_gen -p transferred-py` + `git diff --exit-code` on `crates/transferred-py/python/transferred/_native/__init__.pyi` — fails PR if stubs drift from code.
   - [x] `make python-check` (ruff + ty + pytest).
   - [x] rust-cache for incremental builds.
-- [~] **CI: release workflow** (`.github/workflows/release.yml`, tag-triggered).
-  - [x] Cargo publish each workspace crate in dep order: core → parquet → py.
-  - [x] Build wheels via maturin-action matrix (Linux x86_64/aarch64, macOS x86_64/arm64, Windows x86_64).
-  - [x] Publish to PyPI via Trusted Publishers (OIDC, no token in repo).
-  - [ ] Pre-register pending publisher on PyPI before first tag push (manual; needs PyPI account).
-  - [ ] Add `CARGO_REGISTRY_TOKEN` repo secret + create GitHub `pypi` environment with required-reviewer rule (manual).
-- [x] **Update README.md** to match the published 0.0.1 surface (install command, working Python example, crate links). Only after the release workflow is wired and immediately before cutting the tag.
-- [ ] **Cut 0.0.1 tag.**
-
-**Open decisions to lock pre-tag:**
-
-- Trusted Publisher requires repo + workflow filename pre-registered on PyPI. Workflow filename: `release.yml` (lock before pre-registration).
-- Crate ownership on crates.io: personal account first, transfer to org later if/when one exists.
-- Name reservation strategy: 0.0.0 placeholder publish on both crates.io and PyPI, or wait for real 0.0.1? Placeholder guards against squatting between now and first publish.
+- [x] **CI: release workflow** (`.github/workflows/release.yml`, tag-triggered).
+  - [x] Cargo publish each workspace crate in dep order: core → parquet → py. Tolerant of already-uploaded versions on re-run.
+  - [x] Build wheels via maturin-action matrix (Linux x86_64/aarch64, macOS arm64, Windows x86_64). macOS x86_64 dropped — slow runner queue, shrinking user base.
+  - [x] Publish to PyPI via Trusted Publishers (OIDC, no token in repo). `pypi` GitHub environment with required-reviewer rule.
+- [x] **Update README.md** to match the published 0.0.1 surface (install command, working Python example, crate links).
+- [x] **Cut 0.0.1 tag.** Published to crates.io (`transferred-core`, `transferred-parquet`, `transferred-py`) and PyPI (`transferred`).
 
 ## 0.0.2 — Python-native sources (Arrow + Iter)
 
@@ -86,6 +78,7 @@ Goal: load API responses and Python-native data without forcing the user through
 - [ ] Bounded inter-thread queue.
 - [ ] Tests: list-of-dicts, generator, dataclass, mixed-null columns, schema coercion to destination types.
 - [ ] Docs: memory profile, batch_size tuning, when to use `Arrow` for zero-copy.
+- [x] **Docstrings with usage examples** on every public Python class (`Transfer`, `ParquetSource`, `ParquetDestination`, `RunReport`, `ElError`, `SourceError`, `DestinationError`, `ArrowError`, `IoError`). Surface in IDE hover.
 
 ## 0.1.0 — Postgres source → BigQuery destination
 

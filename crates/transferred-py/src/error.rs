@@ -5,11 +5,47 @@ use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use transferred_core::ElError as CoreError;
 
-create_exception!(transferred._native, ElError, PyException);
-create_exception!(transferred._native, SourceError, ElError);
-create_exception!(transferred._native, DestinationError, ElError);
-create_exception!(transferred._native, ArrowError, ElError);
-create_exception!(transferred._native, IoError, ElError);
+create_exception!(
+    transferred._native,
+    ElError,
+    PyException,
+    r#"Base exception for all `transferred` failures.
+
+Subclasses: `SourceError`, `DestinationError`, `ArrowError`, `IoError`.
+
+Example:
+    ```py
+    >>> from transferred import Transfer, ElError
+    >>> try:
+    ...     Transfer(source=..., destination=...).run()
+    ... except ElError as e:
+    ...     print(f"transfer failed: {e}")
+    ```"#
+);
+create_exception!(
+    transferred._native,
+    SourceError,
+    ElError,
+    "Source read failed (file missing, malformed Parquet, etc.)."
+);
+create_exception!(
+    transferred._native,
+    DestinationError,
+    ElError,
+    "Destination write failed (permission denied, disk full, schema mismatch)."
+);
+create_exception!(
+    transferred._native,
+    ArrowError,
+    ElError,
+    "Arrow schema or array conversion failed."
+);
+create_exception!(
+    transferred._native,
+    IoError,
+    ElError,
+    "Filesystem I/O error not attributable to source or destination logic."
+);
 
 pub fn to_pyerr(err: CoreError) -> PyErr {
     match err {

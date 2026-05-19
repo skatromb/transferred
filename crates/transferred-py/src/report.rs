@@ -5,6 +5,18 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use transferred_core::RunReport;
 
 /// Post-run statistics returned by `Transfer.run()`.
+///
+/// Attributes:
+///     `rows`: Total rows written.
+///     `bytes_written`: Total bytes written to the destination.
+///     `duration_seconds`: Wall-clock duration of the transfer, in seconds.
+///
+/// Example:
+///     ```py
+///     >>> report = Transfer(source=..., destination=...).run()
+///     >>> print(report)
+///     RunReport(rows=12481902, bytes_written=1503948211, duration_seconds=4.218731)
+///     ```
 #[gen_stub_pyclass]
 #[pyclass(name = "RunReport", module = "transferred._native", frozen)]
 pub struct PyRunReport {
