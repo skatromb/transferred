@@ -1,7 +1,7 @@
 [package]
 name = "transferred-py"
 description = "Python bindings for the transferred data transfer engine."
-readme = "../../README.md"
+readme = "README.md"
 keywords = ["transferred", "python", "pyo3", "arrow", "etl"]
 categories = ["api-bindings", "database"]
 version.workspace = true
