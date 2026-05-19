@@ -11,8 +11,7 @@ Goal: end-to-end Python wheel with Parquet round-trip published to PyPI + corres
 **Scope:**
 
 - Parquet source + destination only. No Postgres, no BigQuery.
-- Python API: `Transfer(source=..., destination=...).run() -> RunReport`. Accepts `Parquet` source/destination and `pa.Table` / `pa.RecordBatchReader` sources (zero-copy).
-- `Iter` source deferred to 0.0.2.
+- Python API: `Transfer(source=..., destination=...).run() -> RunReport`. Accepts `Parquet` source + destination only.
 - Use source-inferred Arrow schemas, no `schema=` / `schema_overrides=` kwargs yet.
 - `RunReport`, `ElError` hierarchy surfaced into Python.
 - License: MIT, `LICENSE` file at repo root.
@@ -29,14 +28,19 @@ Goal: end-to-end Python wheel with Parquet round-trip published to PyPI + corres
 - [x] **Rename crates `el-*` → `transferred-*`** (workspace, paths, imports).
 - [x] **LICENSE file** at repo root (MIT).
 - [x] **Per-crate `description`, `readme`, `keywords`, `categories`** in Cargo.toml — crates.io rejects without them.
-- [ ] **`transferred-py` crate** — PyO3 module, mixed-mode maturin layout (`python/transferred/`).
-  - [ ] `Transfer` Python class wrapping Rust `Transfer`.
-  - [ ] `Parquet` source + destination Python wrappers.
-  - [ ] `RunReport` Python class (attribute access, `__repr__`).
-  - [ ] `ElError` Python exception hierarchy (`transferred.ElError` root + subclasses for source/destination/schema failures).
-  - [ ] Source coercion dispatcher (`pa.Table` / `pa.RecordBatchReader` → Arrow source; reject other types until 0.0.2).
-  - [ ] `_native.pyi` stubs, `py.typed` marker.
-- [ ] **`pyproject.toml`** — maturin config, wheel targets cp314 + cp314t. No cp313.
+- [x] **`transferred-py` crate** — PyO3 module, mixed-mode maturin layout (`python/transferred/`).
+  - [x] `Transfer` Python class wrapping Rust `Transfer`.
+  - [x] `Parquet` source + destination Python wrappers.
+  - [x] `RunReport` Python class (attribute access, `__repr__`).
+  - [x] `ElError` Python exception hierarchy (`transferred.ElError` root + subclasses for source/destination/schema failures).
+  - [x] Auto-generated `_native.pyi` via `pyo3-stub-gen` + `cargo run --bin stub_gen -p transferred-py`; `py.typed` marker.
+- [x] **`pyproject.toml`** — maturin config, wheel targets cp314 + cp314t. No cp313.
+- [x] **Python test harness (reproducible, CI-portable).**
+  - [x] PEP 735 dev dependency group in `crates/transferred-py/pyproject.toml` (`maturin`, `pytest`, `pyarrow`).
+  - [x] `crates/transferred-py/tests/` — pytest suite. First test: Parquet round-trip via Python API.
+  - [x] `make test-python` target — `uv sync --group dev` + `maturin develop` + `pytest`. Single entry point used by local + CI.
+  - [ ] CI workflow calls `make test-python`. No CI-only side path.
+- [ ] **Stub-gen drift guard** — `cargo run --bin stub_gen -p transferred-py` + `git diff --exit-code` on `crates/transferred-py/python/transferred/_native/__init__.pyi`. Wired into CI PR gate; fails PR if stubs drift from annotations.
 - [ ] **Reserve names** on crates.io and PyPI. After `transferred-py` exists so PyPI wheel reservation is co-located with Rust crate reservation.
 - [ ] **CI: PR gate workflow** (`.github/workflows/ci.yml`).
   - [ ] `cargo fmt --check`, `cargo clippy --workspace --tests --all-features -- -D warnings`.
@@ -57,14 +61,15 @@ Goal: end-to-end Python wheel with Parquet round-trip published to PyPI + corres
 - Crate ownership on crates.io: personal account first, transfer to org later if/when one exists.
 - Name reservation strategy: 0.0.0 placeholder publish on both crates.io and PyPI, or wait for real 0.0.1? Placeholder guards against squatting between now and first publish.
 
-## 0.0.2 — custom Source from any iterable
+## 0.0.2 — Python-native sources (Arrow + Iter)
 
-Goal: load API responses and Python-native data without forcing the user through pyarrow.
+Goal: load API responses and Python-native data without forcing the user through Parquet.
 
 **Scope:**
 
+- `Arrow` source — zero-copy wrapper over `pa.Table` / `pa.RecordBatchReader` via Arrow C Data Interface.
 - `Iter` source — Python-side dispatcher accepts `Iterable[dict | dataclass | tuple]`, batches into `pa.RecordBatch`, hands to Rust.
-- Auto-coercion in `Transfer(source=...)` — wrap raw iterables in `Iter` without explicit wrapper.
+- Auto-coercion in `Transfer(source=...)` — wrap raw iterables in `Iter`, wrap `pa.Table` / `pa.RecordBatchReader` in `Arrow`, pass `Source` through.
 - Schema inference from first batch via `pa.RecordBatch.from_pylist`.
 - Destination schema applies as coercion target (Iter has no native schema of its own).
 - Bounded queue (`maxsize=2`) between Python producer and Rust consumer.
@@ -72,8 +77,9 @@ Goal: load API responses and Python-native data without forcing the user through
 
 **Tasks:**
 
+- [ ] `Arrow` source class — PyO3 pyclass wrapping a `pa.RecordBatchReader`, exposed as Rust `Source`.
 - [ ] `Iter` source class (Python).
-- [ ] Source coercion dispatcher: `Iterable` → `Iter`, `pa.Table`/`pa.RecordBatchReader` → `Arrow`, `Source` → passthrough.
+- [ ] Source coercion dispatcher: `Iterable` → `Iter`, `pa.Table` / `pa.RecordBatchReader` → `Arrow`, `Source` → passthrough.
 - [ ] Per-chunk pyarrow conversion + drop of source list.
 - [ ] Bounded inter-thread queue.
 - [ ] Tests: list-of-dicts, generator, dataclass, mixed-null columns, schema coercion to destination types.
@@ -119,6 +125,7 @@ Goal: original thesis. Atomic full load from PG to BQ.
 
 ## 0.2 — widen the matrix
 
+- Add dependabot
 - S3 destination (Parquet) via `object_store`.
 - GCS destination (Parquet) — nearly free once S3 works.
 - `mode="append"` where atomic-replace is wrong.
@@ -133,7 +140,10 @@ Goal: original thesis. Atomic full load from PG to BQ.
 - Hstore / ltree / composite promotion from `arrow.opaque` to structured Arrow forms.
 - `strict_mode` flag.
 - Resumability after partial failure.
+- CLI
 - Transformations beyond what type mapping forces.
-- CLI and YAML/TOML config.
 - Streaming and CDC.
 - Byte-aware memory semaphore (when partition parallelism reveals skew issues).
+
+## Never ~~say never~~
+- YAML/TOML config.
