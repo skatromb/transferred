@@ -30,4 +30,10 @@ python-source = "python"
 features = ["pyo3/extension-module"]
 
 [dependency-groups]
-dev = ["maturin>=1.13", "pytest>=9", "pyarrow>=24"]
+dev = [
+    "maturin>=1.13",
+    "pytest>=9",
+    "pyarrow>=24",
+    "ruff>=0.15",
+    "ty>=0.0.37",
+]
