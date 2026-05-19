@@ -4,6 +4,7 @@ members = [
     "crates/transferred-core",
     "crates/transferred-postgres",
     "crates/transferred-parquet",
+    "crates/transferred-py",
 ]
 
 [workspace.package]
@@ -14,6 +15,7 @@ repository = "https://github.com/skatromb/transferred"
 
 [workspace.dependencies]
 transferred-core = { path = "crates/transferred-core", version = "0.0.1" }
+transferred-parquet = { path = "crates/transferred-parquet", version = "0.0.1" }
 arrow = { version = "58", features = ["prettyprint"] }
 arrow-schema = "58"
 parquet = { version = "58", features = ["arrow", "async"] }

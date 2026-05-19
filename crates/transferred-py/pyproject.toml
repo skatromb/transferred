@@ -1,0 +1,30 @@
+[build-system]
+requires = ["maturin>=1.13,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "transferred"
+description = "The most convenient data transfer tool."
+readme = "../../README.md"
+license = { file = "../../LICENSE" }
+authors = [{ name = "Vania Livadnyi" }]
+requires-python = ">=3.14"
+keywords = ["data-transfer", "etl", "arrow", "parquet"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Rust",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries",
+]
+dynamic = ["version"]
+
+[project.urls]
+Repository = "https://github.com/skatromb/transferred"
+
+[tool.maturin]
+module-name = "transferred._native"
+python-source = "python"
+features = ["pyo3/extension-module"]

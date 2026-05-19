@@ -1,0 +1,35 @@
+[package]
+name = "transferred-py"
+description = "Python bindings for the transferred data transfer engine."
+readme = "../../README.md"
+keywords = ["transferred", "python", "pyo3", "arrow", "etl"]
+categories = ["api-bindings", "database"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "_native"
+crate-type = ["cdylib", "rlib"]
+
+[lints]
+workspace = true
+
+[features]
+default = []
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+transferred-core = { workspace = true }
+transferred-parquet = { workspace = true }
+arrow = { workspace = true, features = ["pyarrow"] }
+pyo3 = { version = "0.28" }
+pyo3-stub-gen = { version = "0.22", default-features = false, features = ["infer_signature"] }
+tokio = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+
+[[bin]]
+name = "stub_gen"
+path = "src/bin/stub_gen.rs"

@@ -41,6 +41,7 @@ Goal: end-to-end Python wheel with Parquet round-trip published to PyPI + corres
 - [ ] **CI: PR gate workflow** (`.github/workflows/ci.yml`).
   - [ ] `cargo fmt --check`, `cargo clippy --workspace --tests --all-features -- -D warnings`.
   - [ ] `cargo test --workspace --all-features`.
+  - [ ] `cargo run --bin stub_gen -p transferred-py` + `git diff --exit-code` on `crates/transferred-py/python/transferred/_native/__init__.pyi` — fails PR if stubs drift from code.
   - [ ] `ruff check`, `ty` (or `mypy`), `pytest`.
   - [ ] rust-cache for incremental builds.
 - [ ] **CI: release workflow** (`.github/workflows/release.yml`, tag-triggered).

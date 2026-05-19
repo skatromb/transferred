@@ -28,7 +28,10 @@ impl ParquetDestination {
 
 #[async_trait]
 impl Destination for ParquetDestination {
-    async fn write_partitions(self: Box<Self>, batches: Vec<BatchStream>) -> Result<RunReport, ElError> {
+    async fn write_partitions(
+        self: Box<Self>,
+        batches: Vec<BatchStream>,
+    ) -> Result<RunReport, ElError> {
         let start = Instant::now();
         let tmp = tmp_path(&self.path);
 
