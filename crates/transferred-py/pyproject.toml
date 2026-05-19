@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "transferred"
 description = "The most convenient data transfer tool."
-readme = "../../README.md"
+readme = "README.md"
 license = "MIT"
 authors = [{ name = "Vania Livadnyi" }]
 requires-python = ">=3.14"
