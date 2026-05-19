@@ -19,8 +19,8 @@ class IoError(ElError): ...\n";
 fn main() -> Result<()> {
     let stub = _native::stub_info()?;
     stub.generate()?;
-    let stub_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("python/transferred/_native/__init__.pyi");
+    let stub_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("python/transferred/_native/__init__.pyi");
     OpenOptions::new()
         .append(true)
         .open(&stub_path)?

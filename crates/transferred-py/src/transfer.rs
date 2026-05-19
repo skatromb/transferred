@@ -56,7 +56,11 @@ impl PyTransfer {
 
 fn extract_source(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Source + Send>> {
     if let Ok(cell) = obj.cast::<PyParquetSource>() {
-        let inner = cell.try_borrow_mut()?.inner.take().ok_or_else(already_consumed)?;
+        let inner = cell
+            .try_borrow_mut()?
+            .inner
+            .take()
+            .ok_or_else(already_consumed)?;
         return Ok(Box::new(inner));
     }
     Err(pyo3::exceptions::PyTypeError::new_err(
@@ -66,7 +70,11 @@ fn extract_source(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Source + Send>> {
 
 fn extract_destination(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Destination + Send>> {
     if let Ok(cell) = obj.cast::<PyParquetDestination>() {
-        let inner = cell.try_borrow_mut()?.inner.take().ok_or_else(already_consumed)?;
+        let inner = cell
+            .try_borrow_mut()?
+            .inner
+            .take()
+            .ok_or_else(already_consumed)?;
         return Ok(Box::new(inner));
     }
     Err(pyo3::exceptions::PyTypeError::new_err(
