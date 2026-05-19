@@ -49,7 +49,7 @@ impl PostgresSource {
 
 #[async_trait]
 impl Source for PostgresSource {
-    async fn partitions(self: Box<Self>) -> Result<Vec<BatchStream>, ElError> {
+    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>, ElError> {
         let _ = &self.cfg;
         Err(ElError::source(
             "PostgresSource::partitions not yet implemented",

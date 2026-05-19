@@ -24,7 +24,7 @@ impl TestSource {
 
 #[async_trait]
 impl Source for TestSource {
-    async fn partitions(self: Box<Self>) -> Result<Vec<BatchStream>, ElError> {
+    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>, ElError> {
         let stream = stream::iter(self.batches.into_iter().map(Ok));
         Ok(vec![Box::pin(stream)])
     }
@@ -54,7 +54,7 @@ impl Default for TestDestination {
 
 #[async_trait]
 impl Destination for TestDestination {
-    async fn write(
+    async fn write_partitins(
         self: Box<Self>,
         partitions: Vec<BatchStream>,
     ) -> Result<RunReport, ElError> {

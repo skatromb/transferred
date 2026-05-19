@@ -18,7 +18,7 @@ impl Transfer {
     /// # Errors
     /// Propagates any error from partition setup or write.
     pub async fn run(self) -> Result<RunReport, ElError> {
-        let partitions = self.source.partitions().await?;
-        self.destination.write(partitions).await
+        let partitions = self.source.stream_partitions().await?;
+        self.destination.write_partitins(partitions).await
     }
 }

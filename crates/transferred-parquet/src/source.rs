@@ -23,7 +23,7 @@ impl ParquetSource {
 #[async_trait]
 impl Source for ParquetSource {
     /// Currently reads only sequentially.
-    async fn partitions(self: Box<Self>) -> Result<Vec<BatchStream>, ElError> {
+    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>, ElError> {
         let file = File::open(&self.path).await?;
         let builder = ParquetRecordBatchStreamBuilder::new(file)
             .await
