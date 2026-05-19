@@ -2,9 +2,9 @@
 
 The most convenient data transfer tool.
 
-`transferred` moves table-shaped data between systems. Rust core, Python API, Arrow end-to-end. Extract and load only — transformations are someone else's job.
+`transferred` moves table-shaped data between systems. Blazing fast, no transformations supported — hand them over to someone else.
 
-Status: 0.0.1. Parquet source + destination only. Postgres and BigQuery land in 0.1.0. See [PLAN.md](./PLAN.md) for the roadmap and [DESIGN.md](./DESIGN.md) for architecture.
+Status: 0.0.1. Parquet source + destination only. Postgres and BigQuery land in 0.1.0. See [PLAN.md](./PLAN.md).
 
 ## Install
 
@@ -12,7 +12,7 @@ Status: 0.0.1. Parquet source + destination only. Postgres and BigQuery land in 
 pip install transferred
 ```
 
-Requires Python 3.14 (standard or free-threaded).
+Requires Python 3.14.
 
 ## Usage
 
