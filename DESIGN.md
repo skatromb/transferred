@@ -37,6 +37,10 @@ Explicit non-goals for the pre-1.0 line:
 
 ## How
 
+### Versioning (pre-1.0.0)
+
+Breaking changes allowed, but require a minor bump (`0.x → 0.(x+1)`). Patch bumps stay non-breaking. No deprecation cycles, no compat shims. Full API review before `1.0.0`; strict SemVer after.
+
 ### API surface (Python, code-first)
 
 ```python
