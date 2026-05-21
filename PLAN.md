@@ -55,29 +55,27 @@ Goal: end-to-end Python wheel with Parquet round-trip published to PyPI + corres
 - [x] **Update README.md** to match the published 0.0.1 surface (install command, working Python example, crate links).
 - [x] **Cut 0.0.1 tag.** Published to crates.io (`transferred-core`, `transferred-parquet`, `transferred-py`) and PyPI (`transferred`).
 
-## 0.0.2 — Python-native sources (Arrow + Iter)
+## 0.0.2 — Python-native iterable source
 
 Goal: load API responses and Python-native data without forcing the user through Parquet.
 
 **Scope:**
 
-- `Arrow` source — zero-copy wrapper over `pa.Table` / `pa.RecordBatchReader` via Arrow C Data Interface.
-- `Iter` source — Python-side dispatcher accepts `Iterable[dict | dataclass | tuple]`, batches into `pa.RecordBatch`, hands to Rust.
-- Auto-coercion in `Transfer(source=...)` — wrap raw iterables in `Iter`, wrap `pa.Table` / `pa.RecordBatchReader` in `Arrow`, pass `Source` through.
+- `PyIterableSource` — accepts `Iterable[dict | dataclass]`, batches into `pa.RecordBatch`, hands to Rust. Tuples not supported (no column names); user converts via generator.
+- Auto-coercion in `Transfer(source=...)` — wrap raw iterables in `PyIterableSource`, pass `Source` through.
 - Schema inference from first batch via `pa.RecordBatch.from_pylist`.
-- Destination schema applies as coercion target (Iter has no native schema of its own).
+- Destination schema applies as coercion target (iterable has no native schema of its own).
 - Bounded queue (`maxsize=2`) between Python producer and Rust consumer.
-- Document: pyarrow becomes a hard runtime dep.
+- pyarrow is an optional dep via `transferred[iterable]` extra. Base install stays lean; missing pyarrow at `PyIterableSource` construction raises `ImportError` with install hint.
 
 **Tasks:**
 
-- [ ] `Arrow` source class — PyO3 pyclass wrapping a `pa.RecordBatchReader`, exposed as Rust `Source`.
-- [ ] `Iter` source class (Python).
-- [ ] Source coercion dispatcher: `Iterable` → `Iter`, `pa.Table` / `pa.RecordBatchReader` → `Arrow`, `Source` → passthrough.
+- [ ] `PyIterableSource` class (Python).
+- [ ] Source coercion dispatcher: `Iterable` → `PyIterableSource`, `Source` → passthrough.
 - [ ] Per-chunk pyarrow conversion + drop of source list.
 - [ ] Bounded inter-thread queue.
 - [ ] Tests: list-of-dicts, generator, dataclass, mixed-null columns, schema coercion to destination types.
-- [ ] Docs: memory profile, batch_size tuning, when to use `Arrow` for zero-copy.
+- [ ] Docs: memory profile, batch_size tuning.
 - [x] **Docstrings with usage examples** on every public Python class (`Transfer`, `ParquetSource`, `ParquetDestination`, `RunReport`, `ElError`, `SourceError`, `DestinationError`, `ArrowError`, `IoError`). Surface in IDE hover.
 
 ## 0.1.0 — Postgres source → BigQuery destination
