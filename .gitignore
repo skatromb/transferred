@@ -4,3 +4,4 @@ __pycache__/
 *.dylib
 .venv/
 .DS_Store
+/data/
