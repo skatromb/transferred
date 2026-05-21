@@ -1,4 +1,5 @@
 //! Python bindings for `transferred`. Exposes `_native` extension module.
+#![doc(html_logo_url = "https://raw.githubusercontent.com/skatromb/transferred/main/logo.png")]
 
 mod error;
 mod parquet;
