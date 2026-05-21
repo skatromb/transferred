@@ -49,7 +49,7 @@ Goal: end-to-end Python wheel with Parquet round-trip published to PyPI + corres
   - [x] `make python-check` (ruff + ty + pytest).
   - [x] rust-cache for incremental builds.
 - [x] **CI: release workflow** (`.github/workflows/release.yml`, tag-triggered).
-  - [x] Cargo publish each workspace crate in dep order: core → parquet → py. Tolerant of already-uploaded versions on re-run.
+  - [x] Cargo publish each workspace crate in dep order: core → parquet → py. Tolerant of already-uploaded versions on re-run. `crates-io` GitHub environment gates the job; `CARGO_REGISTRY_TOKEN` scoped to that environment.
   - [x] Build wheels via maturin-action matrix (Linux x86_64/aarch64, macOS arm64, Windows x86_64). macOS x86_64 dropped — slow runner queue, shrinking user base.
   - [x] Publish to PyPI via Trusted Publishers (OIDC, no token in repo). `pypi` GitHub environment with required-reviewer rule.
 - [x] **Update README.md** to match the published 0.0.1 surface (install command, working Python example, crate links).

@@ -73,6 +73,12 @@ pytest: python-setup
 	@cd crates/transferred-py && \
 	uv run --no-sync pytest
 
+# Rebuild extension in release mode. Use for benchmarks / perf testing.
+.PHONY: python-dev-build
+python-dev-build:
+		@cd crates/transferred-py && \
+			uv sync --group dev && \
+			uv run --no-sync maturin develop --uv --release
 
 # ============================================================================
 # Release
