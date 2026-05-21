@@ -11,6 +11,7 @@ from transferred._native import (
     SourceError,
     Transfer,
 )
+from transferred.iterable import PyIterableSource
 
 __all__ = [
     "ArrowError",
@@ -19,6 +20,7 @@ __all__ = [
     "IoError",
     "ParquetDestination",
     "ParquetSource",
+    "PyIterableSource",
     "RunReport",
     "SourceError",
     "Transfer",

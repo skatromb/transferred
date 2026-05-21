@@ -21,6 +21,9 @@ classifiers = [
 ]
 dynamic = ["version"]
 
+[project.optional-dependencies]
+iterable = ["pyarrow>=24"]
+
 [project.urls]
 Repository = "https://github.com/skatromb/transferred"
 
@@ -34,6 +37,8 @@ dev = [
     "maturin>=1.13",
     "pytest>=9",
     "pyarrow>=24",
+    "pyarrow-stubs>=20",
+    "pydantic>=2",
     "ruff>=0.15",
     "ty>=0.0.37",
 ]

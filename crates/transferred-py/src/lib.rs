@@ -2,6 +2,7 @@
 #![doc(html_logo_url = "https://raw.githubusercontent.com/skatromb/transferred/main/logo.png")]
 
 mod error;
+mod iterable;
 mod parquet;
 mod report;
 mod transfer;
@@ -15,6 +16,7 @@ fn _native(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<report::PyRunReport>()?;
     m.add_class::<parquet::PyParquetSource>()?;
     m.add_class::<parquet::PyParquetDestination>()?;
+    m.add_class::<iterable::PyRecordBatchReaderSource>()?;
     m.add_class::<transfer::PyTransfer>()?;
     Ok(())
 }

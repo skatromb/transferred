@@ -102,6 +102,14 @@ class Transfer:
     def __new__(cls, source: typing.Any, destination: typing.Any) -> Transfer: ...
     def run(self) -> RunReport: ...
 
+@typing.final
+class _RecordBatchReaderSource:
+    r"""
+    Internal `PyO3` wrapper around a pyarrow `RecordBatchReader`. Constructed by
+    the user-facing Python `PyIterableSource`; not intended to be used directly.
+    """
+    def __new__(cls, reader: typing.Any) -> _RecordBatchReaderSource: ...
+
 
 class ElError(Exception):
     """Base exception for all `transferred` failures.

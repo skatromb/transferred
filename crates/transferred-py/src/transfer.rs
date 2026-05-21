@@ -7,6 +7,7 @@ use tokio::runtime::Builder;
 use transferred_core::{Destination, Source, Transfer};
 
 use crate::error::to_pyerr;
+use crate::iterable::PyRecordBatchReaderSource;
 use crate::parquet::{PyParquetDestination, PyParquetSource};
 use crate::report::PyRunReport;
 
@@ -77,6 +78,18 @@ fn extract_source(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Source + Send>> {
             .take()
             .ok_or_else(already_consumed)?;
         return Ok(Box::new(inner));
+    }
+    if let Ok(cell) = obj.cast::<PyRecordBatchReaderSource>() {
+        let inner = cell
+            .try_borrow_mut()?
+            .inner
+            .take()
+            .ok_or_else(already_consumed)?;
+        return Ok(Box::new(inner));
+    }
+    // PyO3 convention: Python wrappers expose a `_native_source` attr holding a native source.
+    if let Ok(inner) = obj.getattr("_native_source") {
+        return extract_source(&inner);
     }
     Err(pyo3::exceptions::PyTypeError::new_err(
         "source must be a transferred source object",
