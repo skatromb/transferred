@@ -61,20 +61,21 @@ Goal: load API responses and Python-native data without forcing the user through
 
 **Scope:**
 
-- `PyIterableSource` — accepts `Iterable[dict | dataclass]`, batches into `pa.RecordBatch`, hands to Rust. Tuples not supported (no column names); user converts via generator.
-- Auto-coercion in `Transfer(source=...)` — wrap raw iterables in `PyIterableSource`, pass `Source` through.
+- `ArrowSource` (in `transferred.arrow`) — accepts a `pa.RecordBatchReader` and exposes it to Rust via the Arrow C Data Interface.
+- `iterable_to_arrow` (in `transferred.iterable`) — converts iterables of `dict | dataclass | pydantic.BaseModel` rows into an `ArrowSource`. Tuples not supported (no column names). Module-direction: `iterable` depends on `arrow`, not the other way.
+- Auto-coercion in `Transfer(source=...)` — raw iterables (excluding `str`/`bytes`/`bytearray`/`dict`) routed through `iterable_to_arrow`; existing sources pass through.
 - Schema inference from first batch via `pa.RecordBatch.from_pylist`.
 - Destination schema applies as coercion target (iterable has no native schema of its own).
 - Bounded queue (`maxsize=2`) between Python producer and Rust consumer.
-- pyarrow is an optional dep via `transferred[iterable]` extra. Base install stays lean; missing pyarrow at `PyIterableSource` construction raises `ImportError` with install hint.
+- pyarrow is an optional dep via `transferred[arrow]` extra (`transferred[iterable]` aliased). Base install stays lean; missing pyarrow at `ArrowSource` construction raises `ImportError` with install hint.
 
 **Tasks:**
 
-- [x] `PyIterableSource` class (Python).
-- [ ] Source coercion dispatcher: `Iterable` → `PyIterableSource`, `Source` → passthrough.
+- [x] `ArrowSource` class (`transferred.arrow`) + `iterable_to_arrow` converter (`transferred.iterable`).
+- [x] Source coercion dispatcher in Python `Transfer` wrapper: `Iterable` → `iterable_to_arrow`, source → passthrough.
 - [x] Per-chunk pyarrow conversion (chunks freed as Rust consumes them; users steered toward generators over lists via docstring).
 - [ ] Bounded inter-thread queue.
-- [ ] Tests: list-of-dicts, generator, dataclass, mixed-null columns, schema coercion to destination types.
+- [x] Tests: list-of-dicts, generator, dataclass, pydantic, mixed-null columns, auto-coercion, dict rejection.
 - [ ] Docs: memory profile, batch_size tuning.
 - [x] **Docstrings with usage examples** on every public Python class (`Transfer`, `ParquetSource`, `ParquetDestination`, `RunReport`, `ElError`, `SourceError`, `DestinationError`, `ArrowError`, `IoError`). Surface in IDE hover.
 

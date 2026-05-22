@@ -7,7 +7,7 @@ use tokio::runtime::Builder;
 use transferred_core::{Destination, Source, Transfer};
 
 use crate::error::to_pyerr;
-use crate::iterable::PyRecordBatchReaderSource;
+use crate::arrow::PyArrowSource;
 use crate::parquet::{PyParquetDestination, PyParquetSource};
 use crate::report::PyRunReport;
 
@@ -79,7 +79,7 @@ fn extract_source(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Source + Send>> {
             .ok_or_else(already_consumed)?;
         return Ok(Box::new(inner));
     }
-    if let Ok(cell) = obj.cast::<PyRecordBatchReaderSource>() {
+    if let Ok(cell) = obj.cast::<PyArrowSource>() {
         let inner = cell
             .try_borrow_mut()?
             .inner

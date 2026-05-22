@@ -9,18 +9,18 @@ from transferred._native import (
     ParquetSource,
     RunReport,
     SourceError,
-    Transfer,
 )
-from transferred.iterable import PyIterableSource
+from transferred.arrow import ArrowSource
+from transferred.transfer import Transfer
 
 __all__ = [
     "ArrowError",
+    "ArrowSource",
     "DestinationError",
     "ElError",
     "IoError",
     "ParquetDestination",
     "ParquetSource",
-    "PyIterableSource",
     "RunReport",
     "SourceError",
     "Transfer",
