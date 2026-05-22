@@ -78,17 +78,19 @@ Transfer(source=[{"id": 1}, {"id": 2}], destination=Parquet("...")).run()
 Transfer(source=order_iter, destination=Parquet("...")).run()
 ```
 
-Dispatcher rules (0.0.2):
+Module layout (0.0.2):
 
-- `Source` instance → used directly.
-- Any other `Iterable` → wrapped in `PyIterableSource`. Chunks rows into `pa.RecordBatch` of `batch_size` (default 4096), one FFI crossing per batch, schema inferred from first batch.
+- `transferred.arrow.ArrowSource` — accepts a `pa.RecordBatchReader` only. The Arrow seam into Rust. Future overloads (`pa.Table`, `pa.RecordBatch`) drop in here.
+- `transferred.iterable.iterable_to_arrow` — converts an iterable of `dict` / `@dataclass` / `pydantic.BaseModel` into an `ArrowSource` via `pa.RecordBatch.from_pylist`. Depends on `arrow` (one-way), not the other way.
+- `transferred.transfer.Transfer` — Python wrapper around `_native.Transfer`. Coerces iterables on construction.
+
+Dispatcher rules in `Transfer.__init__`:
+
+- `Source` instance (e.g. `ParquetSource`, `ArrowSource`) → used directly.
+- Any other `Iterable` (excluding `str`/`bytes`/`bytearray`/`dict`) → wrapped via `iterable_to_arrow`. Rows are batched into `pa.RecordBatch` of `_BATCH_SIZE` (4096), one FFI crossing per batch, schema inferred from first batch.
 - Anything else → `TypeError`.
 
-Explicit wrapper (`PyIterableSource(...)`) stays available when caller needs to set `batch_size` or override inference.
-
-Row shapes accepted by `PyIterableSource`: `dict`, `dataclass`, `pydantic.BaseModel` (v1 + v2). All normalized to `dict[str, Any]` on the Python side via a once-sniffed converter; pyarrow then builds the `RecordBatch`. `namedtuple` / `attrs` / `msgspec.Struct` deferred — trivial to add when requested.
-
-Deferred to a later release: zero-copy `Arrow` source wrapping `pa.Table` / `pa.RecordBatchReader` via Arrow C Data Interface. Until then, pyarrow inputs take the slow `PyIterableSource` path (rebuild from Python objects). Documented cost; not the primary 0.0.2 user.
+Row shapes accepted by the iterable path: `dict`, `dataclass`, `pydantic.BaseModel` (v1 + v2). All normalized to `dict[str, Any]` on the Python side via a once-sniffed converter; pyarrow then builds the `RecordBatch`. `namedtuple` / `attrs` / `msgspec.Struct` deferred — trivial to add when requested.
 
 Source accepts `table=` OR `query=` (mutually exclusive):
 
@@ -159,7 +161,7 @@ report.coercions       # list[Coercion] — column, original type, target, level
 report.staging         # transient artifacts (deleted unless keep_staging=True)
 ```
 
-No row-level Python callbacks. The FFI boundary is crossed once per transfer (per-batch for `PyIterableSource`), not per row.
+No row-level Python callbacks. The FFI boundary is crossed once per transfer (per-batch for `ArrowSource`), not per row.
 
 ### Architecture
 
@@ -237,11 +239,11 @@ Concurrent transfers in one process (deferred):
 - Currently each transfer assumes it owns the worker's memory budget. Multiple `Transfer.run()` calls in one process compound memory.
 - For now, run independent transfers in separate processes if isolation matters.
 
-Python-side memory (`PyIterableSource`):
+Python-side memory (iterable path via `iterable_to_arrow`):
 
-- Generator sources stream one row at a time. Engine collects `batch_size` rows (default 4096) into a Python list, calls `pa.RecordBatch.from_pylist(chunk)`, drops the list, hands the batch to Rust via Arrow C Data Interface. One FFI crossing per batch.
-- Peak Python-side memory per batch ≈ `batch_size × avg_row_bytes × 2` (list + Arrow buffers briefly co-resident).
-- List sources: caller is responsible for what they materialise — engine cannot help if the user pre-builds a 10 GiB list. Documented as "use a generator if your data doesn't fit twice in RAM".
+- Generator sources stream one row at a time. The internal `_iterable_to_reader` collects `_BATCH_SIZE` rows (4096) into a tuple via `itertools.batched`, calls `pa.RecordBatch.from_pylist(chunk)`, drops the tuple, hands the batch to Rust via Arrow C Data Interface. One FFI crossing per batch.
+- Peak Python-side memory per batch ≈ `_BATCH_SIZE × avg_row_bytes × 2` (chunk + Arrow buffers briefly co-resident).
+- List sources: caller is responsible for what they materialise — engine cannot help if the user pre-builds a 10 GiB list. Documented in `ArrowSource` docstring as "prefer a generator over a materialized `list` for large inputs".
 - Bounded queue between Python producer and Rust consumer (`maxsize=2`) provides backpressure on the generator when Rust is slow. Useful under free-threaded Python; near-no-op under GIL.
 - `memory_budget_mb=` knob (deferred): translated to row count via running average row size, adjusts batch_size adaptively.
 
@@ -251,9 +253,9 @@ Rationale:
 - Both paths (Python via pyarrow, or Rust via PyO3) cross the CPython FFI **once per cell** — every read of a `PyLongObject` / `PyUnicodeObject` requires a CPython API call regardless of which language owns the loop. The speed gap is the constant factor (pyarrow ~2x faster than equivalent Rust + PyO3), not an order of magnitude.
 - The decisive factor is **code volume and maintenance**: ~200 lines of unsafe-ish PyO3 conversion + null handling + schema inference + nested-type support on the Rust side, versus a single `pa.RecordBatch.from_pylist()` call.
 - pyarrow has battle-tested type inference, null handling, nested types, and is the de-facto interop currency in the Python data ecosystem (Polars, DuckDB, pandas 2.0+).
-- Cost accepted: pyarrow ships as an **optional dep** via `transferred[iterable]` extra (~30 MB wheel). Base install stays lean for users who only use Rust-native sources/destinations (Parquet, future Postgres, BigQuery). Missing pyarrow at `PyIterableSource` construction raises `ImportError` with install hint.
+- Cost accepted: pyarrow ships as an **optional dep** via `transferred[arrow]` extra (`transferred[iterable]` aliased) (~30 MB wheel). Base install stays lean for users who only use Rust-native sources/destinations (Parquet, future Postgres, BigQuery). Missing pyarrow at `ArrowSource` construction raises `ImportError` with install hint.
 
-Implication for future `ArrowSource`: when `pa.Table` / `pa.RecordBatchReader` zero-copy lands, it bypasses this Python-side conversion entirely — Rust reads Arrow buffers directly via C Data Interface, no `from_pylist`, no per-cell FFI.
+Fast path for callers who already have Arrow: `ArrowSource(pa_record_batch_reader)` skips the iterable conversion and goes straight to the C Data Interface. Future overloads (`pa.Table`, `pa.RecordBatch`) extend this fast path.
 
 ### Runtime contract
 

@@ -213,6 +213,9 @@ name = "transferred"
 source = { editable = "." }
 
 [package.optional-dependencies]
+arrow = [
+    { name = "pyarrow" },
+]
 iterable = [
     { name = "pyarrow" },
 ]
@@ -229,8 +232,11 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pyarrow", marker = "extra == 'iterable'", specifier = ">=24" }]
-provides-extras = ["iterable"]
+requires-dist = [
+    { name = "pyarrow", marker = "extra == 'arrow'", specifier = ">=24" },
+    { name = "transferred", extras = ["arrow"], marker = "extra == 'iterable'" },
+]
+provides-extras = ["arrow", "iterable"]
 
 [package.metadata.requires-dev]
 dev = [

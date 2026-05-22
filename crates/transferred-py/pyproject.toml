@@ -22,7 +22,8 @@ classifiers = [
 dynamic = ["version"]
 
 [project.optional-dependencies]
-iterable = ["pyarrow>=24"]
+arrow = ["pyarrow>=24"]
+iterable = ["transferred[arrow]"]
 
 [project.urls]
 Repository = "https://github.com/skatromb/transferred"
