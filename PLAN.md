@@ -70,9 +70,9 @@ Goal: load API responses and Python-native data without forcing the user through
 
 **Tasks:**
 
-- [ ] `PyIterableSource` class (Python).
+- [x] `PyIterableSource` class (Python).
 - [ ] Source coercion dispatcher: `Iterable` → `PyIterableSource`, `Source` → passthrough.
-- [ ] Per-chunk pyarrow conversion + drop of source list.
+- [x] Per-chunk pyarrow conversion (chunks freed as Rust consumes them; users steered toward generators over lists via docstring).
 - [ ] Bounded inter-thread queue.
 - [ ] Tests: list-of-dicts, generator, dataclass, mixed-null columns, schema coercion to destination types.
 - [ ] Docs: memory profile, batch_size tuning.
