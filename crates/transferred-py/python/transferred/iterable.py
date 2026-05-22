@@ -22,6 +22,8 @@ class PyIterableSource:
     Accepts iterables of `dict`, `@dataclass` instances, or `pydantic.BaseModel`
     instances. Schema is inferred from the first batch.
 
+    Memory: prefer a generator over a materialized `list` for large inputs.
+
     Args:
         iterable: Any iterable yielding `dict`, dataclass, or `pydantic.BaseModel` rows.
 
@@ -32,9 +34,11 @@ class PyIterableSource:
 
     Example:
         >>> from transferred import ParquetDestination, Transfer, PyIterableSource
-        >>> rows = [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}]
+        >>> def rows():
+        ...     for i in range(1000):
+        ...         yield {"id": i, "name": f"row-{i}"}
         >>> Transfer(
-        ...     source=PyIterableSource(rows),
+        ...     source=PyIterableSource(rows()),
         ...     destination=ParquetDestination("out.parquet"),
         ... ).run()
     """
