@@ -11,10 +11,11 @@ check: rust-check python-check
 .PHONY: rust-check
 rust-check: fmt clippy cargo-test
 
-# Check formatting.
+# Format in place, then fail if anything changed. Fixes locally, fails in CI
 .PHONY: fmt
 fmt:
-	@cargo fmt --all -- --check
+	@cargo fmt --all
+	@git diff --exit-code -- '*.rs'
 
 # Lint with clippy, deny warnings.
 # Avoid `--all-features`: pyo3 `extension-module` breaks linkage outside maturin.
@@ -43,12 +44,13 @@ python-setup:
 		uv sync --group dev && \
 		uv run --no-sync maturin develop --uv
 
-# Lint + format-check Python sources.
+# Lint + format Python sources. Fixes locally, fails on CI
 .PHONY: ruff
 ruff: python-setup
 	@cd crates/transferred-py && \
-		uv run --no-sync ruff format --check && \
+		uv run --no-sync ruff format && \
 		uv run --no-sync ruff check
+	@git diff --exit-code -- '*.py'
 
 # Type-check Python sources against the auto-generated `_native` stubs.
 # Catches drift like missing exception classes in the stub.
