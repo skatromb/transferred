@@ -24,7 +24,7 @@ class ParquetDestination:
     Example:
         >>> ParquetDestination("out.parquet", compression="zstd")
     """
-    def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path, compression: builtins.str = 'zstd') -> ParquetDestination: ...
+    def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path, compression: builtins.str = 'zstd') -> typing.Self: ...
 
 @typing.final
 class ParquetSource:
@@ -43,7 +43,7 @@ class ParquetSource:
         ... ).run()
         ```
     """
-    def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path) -> ParquetSource: ...
+    def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path) -> typing.Self: ...
 
 @typing.final
 class RunReport:
@@ -79,7 +79,6 @@ class RunReport:
         """
     def __repr__(self) -> builtins.str: ...
 
-@typing.final
 class Transfer:
     r"""
     Orchestrates a single source → destination run. Single-shot: each instance can run once.
@@ -99,7 +98,7 @@ class Transfer:
         12481902
         ```
     """
-    def __new__(cls, source: typing.Any, destination: typing.Any) -> Transfer: ...
+    def __new__(cls, source: typing.Any, destination: typing.Any) -> typing.Self: ...
     def run(self) -> RunReport: ...
 
 @typing.final
@@ -108,7 +107,7 @@ class _ArrowSource:
     Internal `PyO3` wrapper around a pyarrow `RecordBatchReader`. Constructed by
     the user-facing Python `ArrowSource`; not intended to be used directly.
     """
-    def __new__(cls, reader: typing.Any) -> _ArrowSource: ...
+    def __new__(cls, reader: typing.Any) -> typing.Self: ...
 
 
 class ElError(Exception):

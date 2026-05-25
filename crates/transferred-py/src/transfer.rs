@@ -6,8 +6,8 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use tokio::runtime::Builder;
 use transferred_core::{Destination, Source, Transfer};
 
-use crate::error::to_pyerr;
 use crate::arrow::PyArrowSource;
+use crate::error::to_pyerr;
 use crate::parquet::{PyParquetDestination, PyParquetSource};
 use crate::report::PyRunReport;
 
@@ -28,7 +28,12 @@ use crate::report::PyRunReport;
 ///     12481902
 ///     ```
 #[gen_stub_pyclass]
-#[pyclass(name = "Transfer", module = "transferred._native", unsendable)]
+#[pyclass(
+    name = "Transfer",
+    module = "transferred._native",
+    unsendable,
+    subclass
+)]
 pub struct PyTransfer {
     source: Option<Box<dyn Source + Send>>,
     destination: Option<Box<dyn Destination + Send>>,
@@ -37,6 +42,10 @@ pub struct PyTransfer {
 #[gen_stub_pymethods]
 #[pymethods]
 impl PyTransfer {
+    #[gen_stub(override_return_type(
+        type_repr = "typing.Self",
+        imports = ("typing")
+    ))]
     #[new]
     fn new(source: &Bound<'_, PyAny>, destination: &Bound<'_, PyAny>) -> PyResult<Self> {
         let source = extract_source(source)?;
