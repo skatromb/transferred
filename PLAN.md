@@ -66,7 +66,6 @@ Goal: load API responses and Python-native data without forcing the user through
 - Auto-coercion in `Transfer(source=...)` — raw iterables (excluding `str`/`bytes`/`bytearray`/`dict`) routed through `iterable_to_arrow`; existing sources pass through.
 - Schema inference from first batch via `pa.RecordBatch.from_pylist`.
 - Destination schema applies as coercion target (iterable has no native schema of its own).
-- Bounded queue (`maxsize=2`) between Python producer and Rust consumer.
 - pyarrow is an optional dep via `transferred[arrow]` extra (`transferred[iterable]` aliased). Base install stays lean; missing pyarrow at `ArrowSource` construction raises `ImportError` with install hint.
 
 **Tasks:**
@@ -74,10 +73,22 @@ Goal: load API responses and Python-native data without forcing the user through
 - [x] `ArrowSource` class (`transferred.arrow`) + `iterable_to_arrow` converter (`transferred.iterable`).
 - [x] Source coercion dispatcher in Python `Transfer` wrapper: `Iterable` → `iterable_to_arrow`, source → passthrough.
 - [x] Per-chunk pyarrow conversion (chunks freed as Rust consumes them; users steered toward generators over lists via docstring).
-- [ ] Bounded inter-thread queue.
 - [x] Tests: list-of-dicts, generator, dataclass, pydantic, mixed-null columns, auto-coercion, dict rejection.
-- [ ] Docs: memory profile, batch_size tuning.
 - [x] **Docstrings with usage examples** on every public Python class (`Transfer`, `ParquetSource`, `ParquetDestination`, `RunReport`, `ElError`, `SourceError`, `DestinationError`, `ArrowError`, `IoError`). Surface in IDE hover.
+
+## 0.0.3 — Intermediate Parquet -> Parquet perf test
+
+**Scope:** intermediate Parquet performance test. Includes memory profiling across iterable + Parquet paths so regressions are caught later.
+
+**Tasks:**
+
+- [ ] Look at real size of data without compression
+- [ ] Test against natural parquet lib
+- [ ] Test load to 1 file or to multiple files
+- [ ] Adapt `Path` to what's expected in Parquet (wildcards like `path/to/partitions/*.parquet`)
+- [ ] Memory profile across workloads: iterable (generator vs list), Parquet round-trip, varying `_BATCH_SIZE`. Establish baseline numbers.
+- [ ] Reusable memory-monitoring harness (peak RSS / Arrow buffer accounting) wired into a perf suite. Future PRs can assert ceilings to prevent regressions.
+- [ ] Docs: memory profile, `batch_size` tuning guidance.
 
 ## 0.1.0 — Postgres source → BigQuery destination
 
