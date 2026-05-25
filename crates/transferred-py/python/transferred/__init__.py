@@ -11,17 +11,21 @@ from transferred._native import (
     SourceError,
 )
 from transferred.arrow import ArrowSource
+from transferred.destination import Destination
+from transferred.source import Source
 from transferred.transfer import Transfer
 
 __all__ = [
     "ArrowError",
     "ArrowSource",
+    "Destination",
     "DestinationError",
     "ElError",
     "IoError",
     "ParquetDestination",
     "ParquetSource",
     "RunReport",
+    "Source",
     "SourceError",
     "Transfer",
 ]

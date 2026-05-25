@@ -4,22 +4,25 @@ Bridges Python-native data (`dict` / `@dataclass` / `pydantic.BaseModel`) to the
 Arrow seam. Requires pyarrow — install via `pip install transferred[iterable]`.
 """
 
-from __future__ import annotations
-
 import dataclasses
 from collections.abc import Callable, Iterable
 from itertools import batched, chain
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 from transferred.arrow import ArrowSource
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    from _typeshed import DataclassInstance
+    from pydantic import BaseModel
+
+    Row: TypeAlias = dict[str, Any] | DataclassInstance | BaseModel
+    """A single input row: `dict`, `@dataclass` instance, or `pydantic.BaseModel`."""
 
 _BATCH_SIZE = 4096
 
 
-def iterable_to_arrow(iterable: Iterable[Any]) -> ArrowSource:
+def iterable_to_arrow(iterable: Iterable[Row]) -> ArrowSource:
     """Convert an iterable of dict / `@dataclass` / `pydantic.BaseModel` rows
     into an `ArrowSource`.
 

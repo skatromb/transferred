@@ -4,8 +4,6 @@ Accepts a pyarrow `RecordBatchReader` and exposes it as a `transferred` source.
 Requires pyarrow — install via `pip install transferred[arrow]`.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING
 
 from transferred._native import _ArrowSource
@@ -40,4 +38,18 @@ class ArrowSource:
     _native_source: _ArrowSource
 
     def __init__(self, reader: pa.RecordBatchReader) -> None:
+        try:
+            import pyarrow as pa
+        except ImportError as e:
+            raise ImportError(
+                "ArrowSource requires `pyarrow`. "
+                "Install with: `pip install transferred[arrow]`"
+            ) from e
+
+        if not isinstance(reader, pa.RecordBatchReader):
+            raise TypeError(
+                f"reader must be a pyarrow.RecordBatchReader, "
+                f"got {type(reader).__name__!r}"
+            )
+
         self._native_source = _ArrowSource(reader)
