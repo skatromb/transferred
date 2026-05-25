@@ -35,11 +35,13 @@ report.bytes_written    # 1_503_948_211
 report.duration_seconds # 4.218731
 ```
 
-## Crates
+## Promises
 
-- [`transferred-core`](https://crates.io/crates/transferred-core) — connector-agnostic traits (`Source`, `Destination`, `Transfer`, `ElError`, `RunReport`).
-- [`transferred-parquet`](https://crates.io/crates/transferred-parquet) — local Parquet source and destination.
-- [`transferred-py`](https://crates.io/crates/transferred-py) — PyO3 bindings powering the `transferred` Python package.
+- ✅ Make data transfers as simple as it could be
+- 🚧 Enforce best practices by default
+- 🚧 Incremental yet consistent by default
+- 🚧 Blazing fast
+- ✅ No OOMs!
 
 ## License
 

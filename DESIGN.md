@@ -244,7 +244,6 @@ Python-side memory (iterable path via `iterable_to_arrow`):
 - Generator sources stream one row at a time. The internal `_iterable_to_reader` collects `_BATCH_SIZE` rows (4096) into a tuple via `itertools.batched`, calls `pa.RecordBatch.from_pylist(chunk)`, drops the tuple, hands the batch to Rust via Arrow C Data Interface. One FFI crossing per batch.
 - Peak Python-side memory per batch ≈ `_BATCH_SIZE × avg_row_bytes × 2` (chunk + Arrow buffers briefly co-resident).
 - List sources: caller is responsible for what they materialise — engine cannot help if the user pre-builds a 10 GiB list. Documented in `ArrowSource` docstring as "prefer a generator over a materialized `list` for large inputs".
-- Bounded queue between Python producer and Rust consumer (`maxsize=2`) provides backpressure on the generator when Rust is slow. Useful under free-threaded Python; near-no-op under GIL.
 - `memory_budget_mb=` knob (deferred): translated to row count via running average row size, adjusts batch_size adaptively.
 
 **Conversion seam — design intent.** Row-shape normalization (dict / dataclass / pydantic → `dict[str, Any]`) and dict → Arrow batch building both happen on the **Python side**. Rust only ever sees `arrow::RecordBatch` arriving across the C Data Interface, single hot path.
@@ -263,12 +262,36 @@ Fast path for callers who already have Arrow: `ArrowSource(pa_record_batch_reade
     - BQ: Storage Write API in `pending` mode against a transient staging table in the destination dataset, then a server-side copy job with `WRITE_TRUNCATE` from staging into the final table, then `DROP TABLE staging`. Atomicity comes from the copy job; the Storage Write commit makes the staging table whole, the copy-replace makes the final table whole. Partitioning, clustering, description, labels, IAM on the final table are preserved (data replaced, table object not recreated). Schema enforcement is server-side: AppendRows rejects mismatched rows, the copy job rejects mismatched schemas. No client-side staging in GCS, no Parquet encoding, no `staging_bucket` knob on the public API. Errors surfaced as `ElError` subclasses.
     - Postgres: `BEGIN; DROP target; RENAME staging; COMMIT;`. Client-side schema compare needed here since there's no equivalent server-side enforcement.
   Transfers never leave the destination half-written. `mode="append"` and `mode="upsert"` are out of scope for the pre-1.0 line. `on_schema_change="replace"` to opt into destructive schema replacement is a deferred kwarg.
-- **Source filter surface.** `table=` and `query=` are the two ways to bound the extract. No partial filter DSL on top — keeps the API one knob wide. Incremental loads (later) reuse `query=` plus a `WatermarkSpec` (?).
+- **Source filter surface.** `table=` and `query=` are the two ways to bound the extract. No partial filter DSL on top — keeps the API one knob wide.
 - **Credentials.** All GCP auth delegates to `gcp_auth`: Application Default Credentials, `GOOGLE_APPLICATION_CREDENTIALS` service-account JSON, gcloud user creds, workload identity. Postgres uses standard DSN-embedded creds or libpq env vars.
 - **Run report.** `RunReport` returned by `.run()` is the canonical post-run record. Logs are for trace; `RunReport` is for programs.
 - **Logging.** Rust uses `tracing`. A bridge layer emits events into Python's `logging` so users get one config story (`logging.getLogger("transferred").setLevel(...)`).
 - **Batching.** Reader batch size is its own default (Parquet ≈ 1024 rows). No bytes target enforced; in-flight memory bounded by 1 batch per partition (see Memory model).
 - **Concurrency.** Async end-to-end on the tokio multi-thread runtime owned by the Rust side. Partitions within one transfer run concurrently (deferred); separate transfers run in separate processes. PyO3 releases the GIL on every entry. Supported interpreters: Python 3.14 standard and free-threaded (`cp314`, `cp314t`) — see Tech stack.
+
+### Incremental loads
+
+Incremental loads should be default when they're available. If incremental load is not supported by Source and Destination, `full_refresh` is used.
+
+Requirements from `Source`:
+- impl `TrackingField`: `tracking_column()` (like `updated_at` — to get new batch of rows for INSERT + UPDATE at `Destination`)
+- might impl `IdField`: `id_field()` (should have unique identifying column for UPDATE and DELETE at `Destination`)
+
+Abilities of `Source` based on requirements:
+- impl `InsertAndUpdate(TrackingField)`:
+    - `stream_inserts_and_updates` query rows that were updated >= current `Destination`'s `...?(get_current_track()? — bad name)` 
+- impl `PropagateDeletes(IdField)`:
+    - `stream_deletes(id)` stream ids from `Destination` that are deleted at `Source`. Should be able to be streamed, not all values at once to support 1 billion rows tables.
+
+Requirements from `Destination`:
+- impl `IdField` — for UPDATE and DELETE
+
+Abilities of `Destination` based on requirements:
+- impl `IncrementalMerge(IdField? — maybe getting this from `Source`?)`: `merge_rows()` to apply INSERTs and UPDATEs. If row exists (by `IdFIeld`), we UPDATE it, if not — INSERT.
+    - if not `IdField`, streams inserts and producing possible duplicates, since it doesn't know if row is updated or it's a newly created row.
+- might impl `IncrementalDeletes` to sync deleted rows:
+    - `stream_existing_ids(IdField)`, so that source may check then, if they still exist
+    - `apply_deleted_rows(IdField)`, so that it deletes those rows, that are reported as absent by source.
 
 ### Type mapping
 
