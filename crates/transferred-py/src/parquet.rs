@@ -29,6 +29,10 @@ pub struct PyParquetSource {
 #[gen_stub_pymethods]
 #[pymethods]
 impl PyParquetSource {
+    #[gen_stub(override_return_type(
+        type_repr = "typing.Self",
+        imports = ("typing")
+    ))]
     #[new]
     fn new(path: PathBuf) -> Self {
         Self {
@@ -58,6 +62,10 @@ pub struct PyParquetDestination {
 #[gen_stub_pymethods]
 #[pymethods]
 impl PyParquetDestination {
+    #[gen_stub(override_return_type(
+        type_repr = "typing.Self",
+        imports = ("typing")
+    ))]
     #[new]
     #[pyo3(signature = (path, compression = "zstd"))]
     fn new(path: PathBuf, compression: &str) -> PyResult<Self> {

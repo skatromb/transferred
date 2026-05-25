@@ -27,6 +27,10 @@ pub struct PyArrowSource {
 #[gen_stub_pymethods]
 #[pymethods]
 impl PyArrowSource {
+    #[gen_stub(override_return_type(
+        type_repr = "typing.Self",
+        imports = ("typing")
+    ))]
     #[new]
     fn new(reader: &Bound<'_, PyAny>) -> PyResult<Self> {
         let reader = ArrowArrayStreamReader::from_pyarrow_bound(reader)?;

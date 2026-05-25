@@ -1,21 +1,20 @@
-"""Python `Transfer` wrapper. Auto-coerces raw row iterables into `ArrowSource`."""
+"""Python `Transfer` subclass. Auto-coerces raw row iterables into `ArrowSource`."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Self
 
-from transferred._native import RunReport
 from transferred._native import Transfer as _NativeTransfer
 
 
-class Transfer:
+class Transfer(_NativeTransfer):
     """Orchestrate a single source → destination run. Single-shot.
 
     Args:
-        source: A `transferred` source (e.g. `ParquetSource`, `ArrowSource`) or a
-            raw row iterable (auto-wrapped via `ArrowSource`). Iterables of
-            `dict`, `@dataclass`, or `pydantic.BaseModel` are supported.
+        source: A `transferred` source (e.g. `ParquetSource`, `ArrowSource`) or
+            any iterable of `dict` / `@dataclass` / `pydantic.BaseModel` rows
+            (auto-wrapped via `iterable_to_arrow`).
         destination: A `transferred` destination (e.g. `ParquetDestination`).
 
     Example:
@@ -29,14 +28,9 @@ class Transfer:
         ... ).run()
     """
 
-    def __init__(self, source: Any, destination: Any) -> None:
+    def __new__(cls, source: Any, destination: Any) -> Self:
         if isinstance(source, Iterable):
             from transferred.iterable import iterable_to_arrow
 
             source = iterable_to_arrow(source)
-
-        self._native = _NativeTransfer(source=source, destination=destination)
-
-    def run(self) -> RunReport:
-        """Execute the transfer. Single-shot."""
-        return self._native.run()
+        return super().__new__(cls, source, destination)
