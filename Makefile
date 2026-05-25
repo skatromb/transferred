@@ -90,6 +90,11 @@ python-dev-build:
 VERSION := $(shell cargo metadata --no-deps --format-version 1 \
 	| jq -r '.packages[] | select(.name=="transferred-core") | .version')
 
+# Refresh Cargo.lock after manually editing `version = ...` in Cargo.toml.
+.PHONY: bump-lock
+bump-lock:
+	@cargo update -p transferred-core -p transferred-parquet -p transferred-py
+
 # Pre-flight: on main, clean tree, in sync with origin.
 .PHONY: release-check
 release-check:
