@@ -75,6 +75,8 @@ Goal: load API responses and Python-native data without forcing the user through
 - [x] Per-chunk pyarrow conversion (chunks freed as Rust consumes them; users steered toward generators over lists via docstring).
 - [x] Tests: list-of-dicts, generator, dataclass, pydantic, mixed-null columns, auto-coercion, dict rejection.
 - [x] **Docstrings with usage examples** on every public Python class (`Transfer`, `ParquetSource`, `ParquetDestination`, `RunReport`, `ElError`, `SourceError`, `DestinationError`, `ArrowError`, `IoError`). Surface in IDE hover.
+- [ ] Ergonomics test
+- [ ] Deploy 0.0.2
 
 ## 0.0.3 — Intermediate Parquet -> Parquet perf test
 
