@@ -1,5 +1,7 @@
 """`Transfer` a source → destination."""
 
+from __future__ import annotations
+
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Self
 
@@ -25,10 +27,16 @@ class Transfer(_Transfer):
         >>> rows = ({"id": i, "name": f"row-{i}"} for i in range(1000))
         >>> destination = ParquetDestination("out.parquet")
         >>>
-        >>> Transfer(
+        >>> report = Transfer(
         ...     source=rows,
         ...     destination=destination,
         ... ).run()
+        >>>
+        >>> print(report)
+        RunReport:
+          rows:     1,000
+          written:  5.18 KiB
+          duration: ...
     """
 
     def __new__(

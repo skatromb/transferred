@@ -44,5 +44,9 @@ dev = [
     "ty>=0.0.37",
 ]
 
+[tool.pytest.ini_options]
+addopts = "--doctest-modules"
+doctest_optionflags = "ELLIPSIS"
+
 [tool.ruff]
 extend-exclude = ["python/transferred/_native/__init__.pyi"]

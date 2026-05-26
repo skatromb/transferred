@@ -29,6 +29,9 @@ pyo3-stub-gen = { version = "0.22", default-features = false, features = ["infer
 tokio = { workspace = true }
 futures = { workspace = true }
 async-trait = { workspace = true }
+humansize = "2"
+humantime = "2"
+thousands = "0.2"
 
 [[bin]]
 name = "stub_gen"

@@ -1,7 +1,11 @@
 //! `RunReport` Python class.
 
+use std::time::Duration;
+
+use humansize::{BINARY, format_size};
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
+use thousands::Separable;
 use transferred_core::RunReport;
 
 /// Post-run statistics returned by `Transfer.run()`.
@@ -56,6 +60,17 @@ impl PyRunReport {
             self.inner.rows,
             self.inner.bytes_written,
             self.inner.duration.as_secs_f64()
+        )
+    }
+
+    fn __str__(&self) -> String {
+        let ms = u64::try_from(self.inner.duration.as_millis()).unwrap_or(u64::MAX);
+        let duration = Duration::from_millis(ms);
+        format!(
+            "RunReport:\n  rows:     {}\n  written:  {}\n  duration: {}",
+            self.inner.rows.separate_with_commas(),
+            format_size(self.inner.bytes_written, BINARY),
+            humantime::format_duration(duration),
         )
     }
 }
