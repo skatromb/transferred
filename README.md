@@ -28,11 +28,10 @@ report = Transfer(
 ).run()
 
 print(report)
-# RunReport(rows=12481902, bytes_written=1503948211, duration_seconds=4.218731)
-
-report.rows             # 12_481_902
-report.bytes_written    # 1_503_948_211
-report.duration_seconds # 4.218731
+# RunReport:
+#   rows:     12,481,902
+#   written:  1.40 GiB
+#   duration: 4s 218ms
 ```
 
 ## Promises
