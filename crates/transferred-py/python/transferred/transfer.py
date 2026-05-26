@@ -4,14 +4,14 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Self
 
 from transferred._base import Destination, Source
-from transferred._native import Transfer as _NativeTransfer
+from transferred._native import _Transfer
 
 if TYPE_CHECKING:
     import pydantic
     from _typeshed import DataclassInstance
 
 
-class Transfer(_NativeTransfer):
+class Transfer(_Transfer):
     """Orchestrate a single source → destination run. Single-shot.
 
     Args:

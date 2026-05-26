@@ -29,7 +29,7 @@ use crate::report::PyRunReport;
 ///     ```
 #[gen_stub_pyclass]
 #[pyclass(
-    name = "Transfer",
+    name = "_Transfer",
     module = "transferred._native",
     unsendable,
     subclass

@@ -7,7 +7,6 @@ import pathlib
 import typing
 __all__ = [
     "RunReport",
-    "Transfer",
 ]
 
 @typing.final
@@ -43,28 +42,6 @@ class RunReport:
         Wall-clock duration of the transfer, in seconds.
         """
     def __repr__(self) -> builtins.str: ...
-
-class Transfer:
-    r"""
-    Orchestrates a single source → destination run. Single-shot: each instance can run once.
-    
-    Args:
-        source: A transferred source (e.g. `ParquetSource`).
-        destination: A transferred destination (e.g. `ParquetDestination`).
-    
-    Example:
-        ```py
-        >>> from transferred import ParquetSource, ParquetDestination, Transfer
-        >>> report = Transfer(
-        ...     source=ParquetSource("in.parquet"),
-        ...     destination=ParquetDestination("out.parquet", compression="zstd"),
-        ... ).run()
-        >>> report.rows
-        12481902
-        ```
-    """
-    def __new__(cls, source: typing.Any, destination: typing.Any) -> typing.Self: ...
-    def run(self) -> RunReport: ...
 
 @typing.final
 class _ArrowSource:
@@ -106,6 +83,28 @@ class _ParquetSource:
         ```
     """
     def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path) -> typing.Self: ...
+
+class _Transfer:
+    r"""
+    Orchestrates a single source → destination run. Single-shot: each instance can run once.
+    
+    Args:
+        source: A transferred source (e.g. `ParquetSource`).
+        destination: A transferred destination (e.g. `ParquetDestination`).
+    
+    Example:
+        ```py
+        >>> from transferred import ParquetSource, ParquetDestination, Transfer
+        >>> report = Transfer(
+        ...     source=ParquetSource("in.parquet"),
+        ...     destination=ParquetDestination("out.parquet", compression="zstd"),
+        ... ).run()
+        >>> report.rows
+        12481902
+        ```
+    """
+    def __new__(cls, source: typing.Any, destination: typing.Any) -> typing.Self: ...
+    def run(self) -> RunReport: ...
 
 
 class ElError(Exception):
