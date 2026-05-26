@@ -25,10 +25,15 @@ class Transfer(_Transfer):
         >>> rows = ({"id": i, "name": f"row-{i}"} for i in range(1000))
         >>> destination = ParquetDestination("out.parquet")
         >>>
-        >>> Transfer(
+        >>> report = Transfer(
         ...     source=rows,
         ...     destination=destination,
         ... ).run()
+        >>> print(report)
+        RunReport:
+          rows:     1,000
+          written:  5.18 KiB
+          duration: 0s
     """
 
     def __new__(

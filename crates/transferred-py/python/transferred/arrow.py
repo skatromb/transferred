@@ -26,12 +26,19 @@ class ArrowSource(Source):
         >>> import pyarrow as pa
         >>> from transferred import ArrowSource, ParquetDestination, Transfer
         >>>
-        >>> reader = pa.RecordBatchReader.from_batches(...)
+        >>> schema = pa.schema([("id", pa.int64())])
+        >>> batch = pa.record_batch([pa.array([1, 2, 3])], schema=schema)
+        >>> reader = pa.RecordBatchReader.from_batches(schema, [batch])
         >>>
-        >>> Transfer(
+        >>> report = Transfer(
         ...     source=ArrowSource(reader),
         ...     destination=ParquetDestination("out.parquet"),
         ... ).run()
+        >>> print(report)
+        RunReport:
+          rows:     3
+          written:  519 B
+          duration: 0s
     """
 
     _native_source: _ArrowSource

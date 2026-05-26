@@ -14,10 +14,15 @@ class ParquetSource(Source):
 
     Example:
         >>> from transferred import ParquetSource, ParquetDestination, Transfer
-        >>> Transfer(
-        ...     source=ParquetSource("in.parquet"),
-        ...     destination=ParquetDestination("out.parquet"),
+        >>> report = Transfer(
+        ...     source=ParquetSource("small.parquet"),
+        ...     destination=ParquetDestination("compressed.parquet"),
         ... ).run()
+        >>> print(report)
+        RunReport:
+          rows:     3
+          written:  819 B
+          duration: 0s
     """
 
     _native_source: _ParquetSource
@@ -34,7 +39,8 @@ class ParquetDestination(Destination):
         compression: One of `"zstd"` (default), `"snappy"`, `"uncompressed"`.
 
     Example:
-        >>> ParquetDestination("out.parquet", compression="zstd")
+        >>> from transferred import ParquetDestination
+        >>> destination = ParquetDestination("out.parquet", compression="zstd")
     """
 
     _native_destination: _ParquetDestination
