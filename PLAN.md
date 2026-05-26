@@ -76,8 +76,8 @@ Goal: load API responses and Python-native data without forcing the user through
 - [x] Tests: list-of-dicts, generator, dataclass, pydantic, mixed-null columns, auto-coercion, dict rejection.
 - [x] **Docstrings with usage examples** on every public Python class (`Transfer`, `ParquetSource`, `ParquetDestination`, `RunReport`, `ElError`, `SourceError`, `DestinationError`, `ArrowError`, `IoError`). Surface in IDE hover.
 - [x] Tighten Python `Transfer` type annotations: replace `source: Any, destination: Any` on `__new__` with `Source | Iterable[dict | dataclass | BaseModel]` for source + concrete destination type. May need a `Source` Protocol or native pyclass union.
-- [ ] Ergonomics test
-- [ ] Deploy 0.0.2
+- [x] Ergonomics test
+- [x] Deploy 0.0.2
 
 ## 0.0.3 — Intermediate Parquet -> Parquet perf test
 
