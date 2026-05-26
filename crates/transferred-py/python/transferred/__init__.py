@@ -14,16 +14,20 @@ from transferred.parquet import ParquetDestination, ParquetSource
 from transferred.transfer import Transfer
 
 __all__ = [
-    "ArrowError",
-    "ArrowSource",
+    # Commons
+    "Source",
     "Destination",
+    "Transfer",
+    "RunReport",
+    # Errors
+    "ArrowError",
     "DestinationError",
     "ElError",
     "IoError",
+    "SourceError",
+    # Arrow
+    "ArrowSource",
+    # Parquet
     "ParquetDestination",
     "ParquetSource",
-    "RunReport",
-    "Source",
-    "SourceError",
-    "Transfer",
 ]
