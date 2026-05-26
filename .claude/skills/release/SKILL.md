@@ -49,7 +49,7 @@ Fix issues before tagging, even if it means another PR.
 
 ## 2 — Version bump
 
-Edit `version = "..."` in workspace root `Cargo.toml`, then:
+Edit `version = "..."` in workspace root `Cargo.toml` and update whole README.md, then:
 
 ```bash
 make bump-lock
@@ -105,8 +105,7 @@ Check:
 
 Restore dev install: `make python-setup`.
 
-## 7 — README + crates.io
+## 7 — Verify pages
 
 - Check `https://pypi.org/project/transferred/X.Y.Z/` renders
 - Check each crate page on crates.io
-- Update `Status:` line in `README.md`. Example: `Status: 0.0.1. Parquet source + destination only.` → `Status: 0.0.2. Adds Python-native iterable source.`
