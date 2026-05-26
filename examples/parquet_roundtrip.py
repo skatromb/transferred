@@ -1,8 +1,14 @@
+# /// script
+# requires-python = ">=3.14"
+# dependencies = [
+#     "transferred",
+#     "pyarrow",
+# ]
+# ///
 """Parquet round-trip with `transferred`.
 
 Run:
-    pip install transferred pyarrow
-    python parquet_roundtrip.py
+    uv run parquet_roundtrip.py
 """
 
 from pathlib import Path
