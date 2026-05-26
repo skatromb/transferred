@@ -39,7 +39,7 @@ class ArrowSource(Source):
         RunReport:
           rows:     3
           written:  519 B
-          duration: 0s
+          duration: ...
     """
 
     _native_source: _ArrowSource

@@ -27,7 +27,7 @@ class ParquetSource(Source):
         RunReport:
           rows:     3
           written:  819 B
-          duration: 0s
+          duration: ...
     """
 
     _native_source: _ParquetSource

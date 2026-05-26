@@ -36,7 +36,7 @@ class Transfer(_Transfer):
         RunReport:
           rows:     1,000
           written:  5.18 KiB
-          duration: 0s
+          duration: ...
     """
 
     def __new__(

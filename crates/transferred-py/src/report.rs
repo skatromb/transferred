@@ -64,7 +64,8 @@ impl PyRunReport {
     }
 
     fn __str__(&self) -> String {
-        let duration = Duration::from_secs(self.inner.duration.as_secs());
+        let ms = u64::try_from(self.inner.duration.as_millis()).unwrap_or(u64::MAX);
+        let duration = Duration::from_millis(ms);
         format!(
             "RunReport:\n  rows:     {}\n  written:  {}\n  duration: {}",
             self.inner.rows.separate_with_commas(),
