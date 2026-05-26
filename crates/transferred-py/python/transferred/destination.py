@@ -1,8 +1,9 @@
-"""`Destination` — union of all `transferred` destination types."""
+"""`Destination` — base for all `transferred` destinations."""
 
-from typing import TypeAlias
+from typing import Any
 
-from transferred._native import ParquetDestination
 
-Destination: TypeAlias = ParquetDestination
-"""Any `transferred` destination accepted by `Transfer(destination=...)`."""
+class Destination:
+    """A `transferred` data destination. Subclasses are passed to `Transfer(destination=...)`."""
+
+    _native_destination: Any

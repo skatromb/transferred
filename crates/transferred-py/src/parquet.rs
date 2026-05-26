@@ -21,7 +21,7 @@ use transferred_parquet::{Compression, ParquetDestination, ParquetSource};
 ///     ... ).run()
 ///     ```
 #[gen_stub_pyclass]
-#[pyclass(name = "ParquetSource", module = "transferred._native", unsendable)]
+#[pyclass(name = "_ParquetSource", module = "transferred._native", unsendable)]
 pub struct PyParquetSource {
     pub(crate) inner: Option<ParquetSource>,
 }
@@ -51,7 +51,7 @@ impl PyParquetSource {
 ///     >>> ParquetDestination("out.parquet", compression="zstd")
 #[gen_stub_pyclass]
 #[pyclass(
-    name = "ParquetDestination",
+    name = "_ParquetDestination",
     module = "transferred._native",
     unsendable
 )]

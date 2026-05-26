@@ -7,17 +7,16 @@ Requires pyarrow — install via `pip install transferred[arrow]`.
 from typing import TYPE_CHECKING
 
 from transferred._native import _ArrowSource
+from transferred.source import Source
 
 if TYPE_CHECKING:
     import pyarrow as pa
 
 
-class ArrowSource:
-    """Wrap a pyarrow `RecordBatchReader` as a `transferred` source.
+class ArrowSource(Source):
+    """Make a `transferred.Source` from a `pyarrow.RecordBatchReader`.
 
-    For Python-native iterables (`dict` / `@dataclass` / `pydantic.BaseModel`),
-    use `transferred.iterable.iterable_to_arrow` or pass the iterable straight
-    to `Transfer(source=...)` and let auto-coercion handle the wrap.
+    Requires pyarrow — install via `pip install transferred[arrow]`.
 
     Raises:
         ImportError: pyarrow not installed. Install `transferred[arrow]`.

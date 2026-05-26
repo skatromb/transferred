@@ -22,14 +22,8 @@ if TYPE_CHECKING:
 _BATCH_SIZE = 4096
 
 
-def iterable_to_arrow(iterable: Iterable[Row]) -> ArrowSource:
-    """Convert an iterable of dict / `@dataclass` / `pydantic.BaseModel` rows
-    into an `ArrowSource`.
-
-    Schema is inferred from the first batch; subsequent batches are built lazily
-    as the source is consumed.
-
-    Memory: prefer a generator over a materialized `list` for large inputs.
+def _iterable_to_arrow(iterable: Iterable[Row]) -> ArrowSource:
+    """Wrap an iterable of dict / dataclass / pydantic rows as an `ArrowSource`.
 
     Raises:
         ImportError: pyarrow not installed.

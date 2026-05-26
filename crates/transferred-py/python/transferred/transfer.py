@@ -1,4 +1,4 @@
-"""Python `Transfer` subclass. Auto-coerces raw row iterables into `ArrowSource`."""
+"""`Transfer` a source → destination."""
 
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Self
@@ -15,10 +15,9 @@ class Transfer(_NativeTransfer):
     """Orchestrate a single source → destination run. Single-shot.
 
     Args:
-        source: A `transferred` source (e.g. `ParquetSource`, `ArrowSource`) or
-            any iterable of `dict` / `@dataclass` / `pydantic.BaseModel` rows
-            (auto-wrapped via `iterable_to_arrow`).
-        destination: A `transferred` destination (e.g. `ParquetDestination`).
+        source: A `transferred.Source` or an iterable of
+            `dict` / `@dataclass` / `pydantic.BaseModel` rows.
+        destination: A `transferred.Destination`.
 
     Example:
         >>> from transferred import ParquetDestination, Transfer
@@ -35,9 +34,9 @@ class Transfer(_NativeTransfer):
         if isinstance(source, Source):
             pass
         elif isinstance(source, Iterable):
-            from transferred.iterable import iterable_to_arrow
+            from transferred.iterable import _iterable_to_arrow
 
-            source = iterable_to_arrow(source)
+            source = _iterable_to_arrow(source)
         else:
             raise TypeError(
                 f"source must be a transferred source or an iterable of rows, "

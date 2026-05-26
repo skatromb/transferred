@@ -1,9 +1,9 @@
-"""`Source` — union of all `transferred` source types."""
+"""`Source` — base for all `transferred` sources."""
 
-from typing import TypeAlias
+from typing import Any
 
-from transferred._native import ParquetSource
-from transferred.arrow import ArrowSource
 
-Source: TypeAlias = ParquetSource | ArrowSource
-"""Any `transferred` source accepted by `Transfer(source=...)`."""
+class Source:
+    """A `transferred` data source. Subclasses are passed to `Transfer(source=...)`."""
+
+    _native_source: Any

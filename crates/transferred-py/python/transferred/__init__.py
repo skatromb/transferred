@@ -5,13 +5,12 @@ from transferred._native import (
     DestinationError,
     ElError,
     IoError,
-    ParquetDestination,
-    ParquetSource,
     RunReport,
     SourceError,
 )
 from transferred.arrow import ArrowSource
 from transferred.destination import Destination
+from transferred.parquet import ParquetDestination, ParquetSource
 from transferred.source import Source
 from transferred.transfer import Transfer
 
