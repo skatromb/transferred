@@ -1,9 +1,5 @@
-"""`Destination` — base for all `transferred` destinations."""
+"""All `transferred` destinations. Pass any to `Transfer(destination=...)`."""
 
-from typing import Any
+from transferred.parquet import ParquetDestination
 
-
-class Destination:
-    """A `transferred` data destination. Subclasses are passed to `Transfer(destination=...)`."""
-
-    _native_destination: Any
+__all__ = ["ParquetDestination"]

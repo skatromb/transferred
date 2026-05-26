@@ -6,8 +6,8 @@ Requires pyarrow — install via `pip install transferred[arrow]`.
 
 from typing import TYPE_CHECKING
 
+from transferred._base import Source
 from transferred._native import _ArrowSource
-from transferred.source import Source
 
 if TYPE_CHECKING:
     import pyarrow as pa

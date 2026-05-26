@@ -1,5 +1,6 @@
 """transferred — the most convenient data transfer tool."""
 
+from transferred._base import Destination, Source
 from transferred._native import (
     ArrowError,
     DestinationError,
@@ -9,9 +10,7 @@ from transferred._native import (
     SourceError,
 )
 from transferred.arrow import ArrowSource
-from transferred.destination import Destination
 from transferred.parquet import ParquetDestination, ParquetSource
-from transferred.source import Source
 from transferred.transfer import Transfer
 
 __all__ = [

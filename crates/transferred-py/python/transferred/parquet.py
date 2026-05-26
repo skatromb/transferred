@@ -2,9 +2,8 @@
 
 from pathlib import Path
 
+from transferred._base import Destination, Source
 from transferred._native import _ParquetDestination, _ParquetSource
-from transferred.destination import Destination
-from transferred.source import Source
 
 
 class ParquetSource(Source):
