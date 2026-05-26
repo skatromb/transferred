@@ -7,8 +7,6 @@ The most convenient data transfer tool.
 
 `transferred` moves table-shaped data between systems. Blazing fast, no transformations supported — hand them over to someone else.
 
-Status: 0.0.1. Parquet source + destination only. Postgres and BigQuery land in 0.1.0. See [PLAN.md](./PLAN.md).
-
 ## Install
 
 ```bash
@@ -33,6 +31,18 @@ print(report)
 #   written:  1.40 GiB
 #   duration: 4s 218ms
 ```
+
+## Supported
+
+Sources:
+- Local Parquet — `ParquetSource`
+- Arrow `RecordBatchReader` — `ArrowSource`
+- Python iterables of `dict` / `@dataclass` / `pydantic.BaseModel`
+
+Destinations:
+- Local Parquet — `ParquetDestination` (zstd / snappy / uncompressed)
+
+Postgres + BigQuery land later. See [PLAN.md](./PLAN.md).
 
 ## Promises
 
