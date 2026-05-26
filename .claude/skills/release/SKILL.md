@@ -17,7 +17,7 @@ Use `make` targets where they exist. If a step has no target, do it by hand or e
 
 - All scope items for the version in `PLAN.md` are `[x]` except `Deploy 0.0.x`.
 - `main` is green.
-- `make check` passes locally.
+- `make pre-release` passes locally.
 
 ## 1 — Pre-release ergonomics test
 

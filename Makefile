@@ -95,6 +95,11 @@ VERSION := $(shell cargo metadata --no-deps --format-version 1 \
 bump-lock:
 	@cargo update -p transferred-core -p transferred-parquet -p transferred-py
 
+# Full pre-release validation: lint, tests, types, examples.
+# Run before bumping the version.
+.PHONY: pre-release
+pre-release: check examples
+
 # Pre-flight: on main, clean tree, in sync with origin.
 .PHONY: release-check
 release-check:
@@ -116,3 +121,15 @@ release-tag: release-check
 	@git tag -a "v$(VERSION)" -m "v$(VERSION)"
 	@git push origin "v$(VERSION)"
 	@echo "pushed tag v$(VERSION)"
+
+# Check validity of every examples/*.py against the current build.
+.PHONY: examples
+examples: python-setup
+	@set -e; for file in examples/*.py; do \
+		out=$$( (cd examples && \
+			uv run --python ../crates/transferred-py/.venv \
+				--with pyarrow --with pydantic \
+				python "$$(basename $$file)") 2>&1 ) \
+			&& echo "ok   $$file" \
+			|| { echo "fail $$file"; echo "$$out"; exit 1; }; \
+	done

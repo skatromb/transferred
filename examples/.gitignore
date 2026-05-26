@@ -1,1 +1,4 @@
 compressed.parquet
+from_dicts.parquet
+from_dataclasses.parquet
+from_pydantic.parquet
