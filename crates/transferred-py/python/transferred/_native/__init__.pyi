@@ -54,54 +54,23 @@ class _ArrowSource:
 @typing.final
 class _ParquetDestination:
     r"""
-    Local single-file Parquet destination. Writes via tmp file + atomic rename.
-    
-    Args:
-        path: Filesystem path to the output `.parquet` file.
-        compression: One of `"zstd"` (default), `"snappy"`, `"uncompressed"`.
-    
-    Example:
-        >>> ParquetDestination("out.parquet", compression="zstd")
+    Internal `PyO3` wrapper around `transferred_parquet::ParquetDestination`.
+    Constructed by the user-facing Python `ParquetDestination`; not used directly.
     """
     def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path, compression: builtins.str = 'zstd') -> typing.Self: ...
 
 @typing.final
 class _ParquetSource:
     r"""
-    Local single-file Parquet source. No I/O performed at construction.
-    
-    Args:
-        path: Filesystem path to the input `.parquet` file.
-    
-    Example:
-        ```py
-        >>> from transferred import ParquetSource, ParquetDestination, Transfer
-        >>> Transfer(
-        ...     source=ParquetSource("in.parquet"),
-        ...     destination=ParquetDestination("out.parquet"),
-        ... ).run()
-        ```
+    Internal `PyO3` wrapper around `transferred_parquet::ParquetSource`.
+    Constructed by the user-facing Python `ParquetSource`; not used directly.
     """
     def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path) -> typing.Self: ...
 
 class _Transfer:
     r"""
-    Orchestrates a single source → destination run. Single-shot: each instance can run once.
-    
-    Args:
-        source: A transferred source (e.g. `ParquetSource`).
-        destination: A transferred destination (e.g. `ParquetDestination`).
-    
-    Example:
-        ```py
-        >>> from transferred import ParquetSource, ParquetDestination, Transfer
-        >>> report = Transfer(
-        ...     source=ParquetSource("in.parquet"),
-        ...     destination=ParquetDestination("out.parquet", compression="zstd"),
-        ... ).run()
-        >>> report.rows
-        12481902
-        ```
+    Internal `PyO3` wrapper around `transferred_core::Transfer`. Subclassed by the
+    user-facing Python `Transfer`; not used directly.
     """
     def __new__(cls, source: typing.Any, destination: typing.Any) -> typing.Self: ...
     def run(self) -> RunReport: ...
