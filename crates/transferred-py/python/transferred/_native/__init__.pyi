@@ -42,6 +42,7 @@ class RunReport:
         Wall-clock duration of the transfer, in seconds.
         """
     def __repr__(self) -> builtins.str: ...
+    def __str__(self) -> builtins.str: ...
 
 @typing.final
 class _ArrowSource:
