@@ -14,10 +14,15 @@ class ParquetSource(Source):
 
     Example:
         >>> from transferred import ParquetSource, ParquetDestination, Transfer
+        >>>
+        >>> source = ParquetSource("small.parquet")
+        >>> destination = ParquetDestination("compressed.parquet")
+        >>>
         >>> report = Transfer(
-        ...     source=ParquetSource("small.parquet"),
-        ...     destination=ParquetDestination("compressed.parquet"),
+        ...     source=source,
+        ...     destination=destination,
         ... ).run()
+        >>>
         >>> print(report)
         RunReport:
           rows:     3

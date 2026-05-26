@@ -1,5 +1,7 @@
 """`Transfer` a source → destination."""
 
+from __future__ import annotations
+
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Self
 
@@ -29,6 +31,7 @@ class Transfer(_Transfer):
         ...     source=rows,
         ...     destination=destination,
         ... ).run()
+        >>>
         >>> print(report)
         RunReport:
           rows:     1,000

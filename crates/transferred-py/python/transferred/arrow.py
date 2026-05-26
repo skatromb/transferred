@@ -34,6 +34,7 @@ class ArrowSource(Source):
         ...     source=ArrowSource(reader),
         ...     destination=ParquetDestination("out.parquet"),
         ... ).run()
+        >>>
         >>> print(report)
         RunReport:
           rows:     3
