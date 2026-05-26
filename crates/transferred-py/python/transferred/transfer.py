@@ -1,14 +1,14 @@
 """`Transfer` a source → destination."""
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING, Any, Self
 
+from transferred._base import Destination, Source
 from transferred._native import Transfer as _NativeTransfer
-from transferred.destination import Destination
-from transferred.source import Source
 
 if TYPE_CHECKING:
-    from transferred.iterable import Row
+    import pydantic
+    from _typeshed import DataclassInstance
 
 
 class Transfer(_NativeTransfer):
@@ -23,14 +23,20 @@ class Transfer(_NativeTransfer):
         >>> from transferred import ParquetDestination, Transfer
         >>>
         >>> rows = ({"id": i, "name": f"row-{i}"} for i in range(1000))
+        >>> destination = ParquetDestination("out.parquet")
         >>>
         >>> Transfer(
         ...     source=rows,
-        ...     destination=ParquetDestination("out.parquet"),
+        ...     destination=destination,
         ... ).run()
     """
 
-    def __new__(cls, source: Source | Iterable[Row], destination: Destination) -> Self:
+    def __new__(
+        cls,
+        source: Source
+        | Iterable[dict[str, Any] | DataclassInstance | pydantic.BaseModel],
+        destination: Destination,
+    ) -> Self:
         if isinstance(source, Source):
             pass
         elif isinstance(source, Iterable):

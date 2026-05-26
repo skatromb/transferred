@@ -1,9 +1,6 @@
-"""`Source` — base for all `transferred` sources."""
+"""All `transferred` sources. Pass any to `Transfer(source=...)`."""
 
-from typing import Any
+from transferred.arrow import ArrowSource
+from transferred.parquet import ParquetSource
 
-
-class Source:
-    """A `transferred` data source. Subclasses are passed to `Transfer(source=...)`."""
-
-    _native_source: Any
+__all__ = ["ArrowSource", "ParquetSource"]
