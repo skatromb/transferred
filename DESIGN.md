@@ -81,13 +81,13 @@ Transfer(source=order_iter, destination=Parquet("...")).run()
 Module layout (0.0.2):
 
 - `transferred.arrow.ArrowSource` — accepts a `pa.RecordBatchReader` only. The Arrow seam into Rust. Future overloads (`pa.Table`, `pa.RecordBatch`) drop in here.
-- `transferred.iterable.iterable_to_arrow` — converts an iterable of `dict` / `@dataclass` / `pydantic.BaseModel` into an `ArrowSource` via `pa.RecordBatch.from_pylist`. Depends on `arrow` (one-way), not the other way.
+- `transferred.iterable._iterable_to_arrow` — converts an iterable of `dict` / `@dataclass` / `pydantic.BaseModel` into an `ArrowSource` via `pa.RecordBatch.from_pylist`. Depends on `arrow` (one-way), not the other way.
 - `transferred.transfer.Transfer` — Python wrapper around `_native.Transfer`. Coerces iterables on construction.
 
 Dispatcher rules in `Transfer.__init__`:
 
 - `Source` instance (e.g. `ParquetSource`, `ArrowSource`) → used directly.
-- Any other `Iterable` (excluding `str`/`bytes`/`bytearray`/`dict`) → wrapped via `iterable_to_arrow`. Rows are batched into `pa.RecordBatch` of `_BATCH_SIZE` (4096), one FFI crossing per batch, schema inferred from first batch.
+- Any other `Iterable` (excluding `str`/`bytes`/`bytearray`/`dict`) → wrapped via `_iterable_to_arrow`. Rows are batched into `pa.RecordBatch` of `_BATCH_SIZE` (4096), one FFI crossing per batch, schema inferred from first batch.
 - Anything else → `TypeError`.
 
 Row shapes accepted by the iterable path: `dict`, `dataclass`, `pydantic.BaseModel` (v1 + v2). All normalized to `dict[str, Any]` on the Python side via a once-sniffed converter; pyarrow then builds the `RecordBatch`. `namedtuple` / `attrs` / `msgspec.Struct` deferred — trivial to add when requested.
@@ -239,7 +239,7 @@ Concurrent transfers in one process (deferred):
 - Currently each transfer assumes it owns the worker's memory budget. Multiple `Transfer.run()` calls in one process compound memory.
 - For now, run independent transfers in separate processes if isolation matters.
 
-Python-side memory (iterable path via `iterable_to_arrow`):
+Python-side memory (iterable path via `_iterable_to_arrow`):
 
 - Generator sources stream one row at a time. The internal `_iterable_to_reader` collects `_BATCH_SIZE` rows (4096) into a tuple via `itertools.batched`, calls `pa.RecordBatch.from_pylist(chunk)`, drops the tuple, hands the batch to Rust via Arrow C Data Interface. One FFI crossing per batch.
 - Peak Python-side memory per batch ≈ `_BATCH_SIZE × avg_row_bytes × 2` (chunk + Arrow buffers briefly co-resident).

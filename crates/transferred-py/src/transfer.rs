@@ -114,6 +114,10 @@ fn extract_destination(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Destination +
             .ok_or_else(already_consumed)?;
         return Ok(Box::new(inner));
     }
+    // PyO3 convention: Python wrappers expose a `_native_destination` attr holding a native destination.
+    if let Ok(inner) = obj.getattr("_native_destination") {
+        return extract_destination(&inner);
+    }
     Err(pyo3::exceptions::PyTypeError::new_err(
         "destination must be a transferred destination object",
     ))

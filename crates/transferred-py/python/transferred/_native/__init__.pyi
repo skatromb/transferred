@@ -6,44 +6,9 @@ import os
 import pathlib
 import typing
 __all__ = [
-    "ParquetDestination",
-    "ParquetSource",
     "RunReport",
     "Transfer",
 ]
-
-@typing.final
-class ParquetDestination:
-    r"""
-    Local single-file Parquet destination. Writes via tmp file + atomic rename.
-    
-    Args:
-        path: Filesystem path to the output `.parquet` file.
-        compression: One of `"zstd"` (default), `"snappy"`, `"uncompressed"`.
-    
-    Example:
-        >>> ParquetDestination("out.parquet", compression="zstd")
-    """
-    def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path, compression: builtins.str = 'zstd') -> typing.Self: ...
-
-@typing.final
-class ParquetSource:
-    r"""
-    Local single-file Parquet source. No I/O performed at construction.
-    
-    Args:
-        path: Filesystem path to the input `.parquet` file.
-    
-    Example:
-        ```py
-        >>> from transferred import ParquetSource, ParquetDestination, Transfer
-        >>> Transfer(
-        ...     source=ParquetSource("in.parquet"),
-        ...     destination=ParquetDestination("out.parquet"),
-        ... ).run()
-        ```
-    """
-    def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path) -> typing.Self: ...
 
 @typing.final
 class RunReport:
@@ -108,6 +73,39 @@ class _ArrowSource:
     the user-facing Python `ArrowSource`; not intended to be used directly.
     """
     def __new__(cls, reader: typing.Any) -> typing.Self: ...
+
+@typing.final
+class _ParquetDestination:
+    r"""
+    Local single-file Parquet destination. Writes via tmp file + atomic rename.
+    
+    Args:
+        path: Filesystem path to the output `.parquet` file.
+        compression: One of `"zstd"` (default), `"snappy"`, `"uncompressed"`.
+    
+    Example:
+        >>> ParquetDestination("out.parquet", compression="zstd")
+    """
+    def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path, compression: builtins.str = 'zstd') -> typing.Self: ...
+
+@typing.final
+class _ParquetSource:
+    r"""
+    Local single-file Parquet source. No I/O performed at construction.
+    
+    Args:
+        path: Filesystem path to the input `.parquet` file.
+    
+    Example:
+        ```py
+        >>> from transferred import ParquetSource, ParquetDestination, Transfer
+        >>> Transfer(
+        ...     source=ParquetSource("in.parquet"),
+        ...     destination=ParquetDestination("out.parquet"),
+        ... ).run()
+        ```
+    """
+    def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path) -> typing.Self: ...
 
 
 class ElError(Exception):

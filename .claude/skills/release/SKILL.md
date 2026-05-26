@@ -33,10 +33,8 @@ Exercise every public class added or changed this version. For 0.0.2 example:
 ```python
 from transferred import Transfer, ParquetDestination
 from transferred.arrow import ArrowSource
-from transferred.iterable import iterable_to_arrow
 
 help(ArrowSource)
-help(iterable_to_arrow)
 Transfer(source=[{"a": 1}], destination=ParquetDestination("/tmp/x.parquet")).run()
 ```
 

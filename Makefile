@@ -11,11 +11,11 @@ check: rust-check python-check
 .PHONY: rust-check
 rust-check: fmt clippy cargo-test
 
-# Format in place, then fail if anything changed. Fixes locally, fails in CI
+# Format in place. Auto-fixes locally; CI fails if anything changed.
 .PHONY: fmt
 fmt:
 	@cargo fmt --all
-	@git diff --exit-code -- '*.rs'
+	@if [ -n "$$CI" ]; then git diff --exit-code -- '*.rs'; fi
 
 # Lint with clippy, deny warnings.
 # Avoid `--all-features`: pyo3 `extension-module` breaks linkage outside maturin.
@@ -44,13 +44,13 @@ python-setup:
 		uv sync --group dev && \
 		uv run --no-sync maturin develop --uv
 
-# Lint + format Python sources. Fixes locally, fails on CI
+# Lint + format Python sources. Auto-fixes locally; CI fails if anything changed.
 .PHONY: ruff
 ruff: python-setup
 	@cd crates/transferred-py && \
 		uv run --no-sync ruff format && \
 		uv run --no-sync ruff check
-	@git diff --exit-code -- '*.py'
+	@if [ -n "$$CI" ]; then git diff --exit-code -- '*.py'; fi
 
 # Type-check Python sources against the auto-generated `_native` stubs.
 # Catches drift like missing exception classes in the stub.
@@ -59,10 +59,10 @@ ty: python-setup
 	@cd crates/transferred-py && \
 	uv run --no-sync ty check
 
-# Fail if regenerated stubs differ from committed file.
+# Regen stubs; CI fails if regen produced changes.
 .PHONY: stubs-check
 stubs-check: stubs
-	@git diff --exit-code crates/transferred-py/python/transferred/_native/__init__.pyi
+	@if [ -n "$$CI" ]; then git diff --exit-code crates/transferred-py/python/transferred/_native/__init__.pyi; fi
 
 # Regenerate `_native.pyi` stubs from `#[gen_stub_*]` annotations.
 .PHONY: stubs

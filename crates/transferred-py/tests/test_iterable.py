@@ -1,4 +1,4 @@
-"""`Transfer` iterable coercion + `iterable_to_arrow` + `ArrowSource` round-trips.
+"""`Transfer` iterable coercion + `_iterable_to_arrow` + `ArrowSource` round-trips.
 
 Drives Python-native iterables (list, generator, dataclass, pydantic) through
 the Rust engine to a Parquet file, then verifies row count + column shape.
@@ -15,7 +15,7 @@ import pytest
 from pydantic import BaseModel
 
 from transferred import ArrowSource, ParquetDestination, Transfer
-from transferred.iterable import iterable_to_arrow
+from transferred.iterable import _iterable_to_arrow
 
 
 def _transfer_run(source: Any, out: Path) -> int:
@@ -95,19 +95,19 @@ def test_many_rows_across_multiple_batches(tmp_path: Path) -> None:
     assert pq.read_table(out).num_rows == 10_000
 
 
-def test_iterable_to_arrow_empty_raises() -> None:
+def test__iterable_to_arrow_empty_raises() -> None:
     with pytest.raises(ValueError, match="empty"):
-        iterable_to_arrow([])
+        _iterable_to_arrow([])
 
 
-def test_iterable_to_arrow_tuples_raise() -> None:
+def test__iterable_to_arrow_tuples_raise() -> None:
     """Tuples don't have column names."""
     with pytest.raises(TypeError, match="unsupported row type"):
-        iterable_to_arrow([(1, 2, 3)])  # ty: ignore[invalid-argument-type]
+        _iterable_to_arrow([(1, 2, 3)])  # ty: ignore[invalid-argument-type]
 
 
-def test_iterable_to_arrow_returns_arrow_source() -> None:
-    src = iterable_to_arrow([{"id": 1}])
+def test__iterable_to_arrow_returns_arrow_source() -> None:
+    src = _iterable_to_arrow([{"id": 1}])
     assert isinstance(src, ArrowSource)
 
 
@@ -124,7 +124,7 @@ def test_transfer_passes_through_explicit_arrow_source(tmp_path: Path) -> None:
     rows = [{"id": i} for i in range(4)]
     out = tmp_path / "out.parquet"
 
-    src = iterable_to_arrow(rows)
+    src = _iterable_to_arrow(rows)
     report = Transfer(source=src, destination=ParquetDestination(out)).run()
     assert report.rows == 4
 
