@@ -144,6 +144,8 @@ Goal: original thesis. Atomic full load from PG to BQ.
 ## Later — deliberately deferred
 
 - Incremental loads. Deferred; model TBD.
+- Airflow / Dagster / whatever is popular operators
+- Multiple destinations `Transfer`s
 - CRS reprojection (`proj` FFI), `ST_MakeValid`, Z/M handling.
 - Hstore / ltree / composite promotion from `arrow.opaque` to structured Arrow forms.
 - `strict_mode` flag.
