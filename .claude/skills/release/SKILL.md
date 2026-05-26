@@ -43,6 +43,7 @@ Check:
 - Public classes importable from documented module paths
 - Error messages clear when wrong types passed in
 - `RunReport.__repr__` reads well
+- Ensure README.md stays actual end-to-end
 
 Fix issues before tagging, even if it means another PR.
 
