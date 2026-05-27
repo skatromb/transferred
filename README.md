@@ -35,12 +35,12 @@ print(report)
 ## Supported
 
 Sources:
-- Local Parquet — `ParquetSource`
-- Arrow `RecordBatchReader` — `ArrowSource`
-- Python iterables of `dict` / `@dataclass` / `pydantic.BaseModel`
+- Parquet file — `ParquetSource`
+- Arrow `RecordBatchReader` — `ArrowSource` (requires `pip install transferred[arrow]`)
+- Python iterables of `dict` / `@dataclass` / `pydantic.BaseModel` (requires `pip install transferred[iterable]`)
 
 Destinations:
-- Local Parquet — `ParquetDestination` (zstd / snappy / uncompressed)
+- Parquet file — `ParquetDestination` (zstd / snappy / uncompressed)
 
 Postgres + BigQuery land later. See [PLAN.md](./PLAN.md).
 
