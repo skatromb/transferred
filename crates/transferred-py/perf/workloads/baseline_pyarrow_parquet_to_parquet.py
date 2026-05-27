@@ -1,8 +1,11 @@
-"""Parquet → Parquet, single seed file, single output file.
+"""Baseline: Parquet → Parquet via raw pyarrow, no `transferred`.
 
-Standalone script — invoked as a subprocess by `perf.harness`. Two subcommands:
-    setup <seed_path>       — writes seed Parquet (not measured)
-    run <seed_path> <out>   — runs Transfer, emits JSON result on stdout
+Shadows `parquet_to_parquet_single` so the harness reports cost of
+`transferred`'s seam vs the underlying arrow/parquet libs.
+
+Subcommands:
+    setup <seed_path>       — writes seed Parquet (same shape as transferred workload)
+    run <seed_path> <out>   — pyarrow streamed read + write, emits JSON result
 """
 
 from __future__ import annotations
@@ -17,10 +20,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from transferred import ParquetDestination, ParquetSource, Transfer
-
-NAME = "parquet→parquet (single)"
-# Schema: i64 + f64 + variable-length string. Override row count with PERF_ROWS=N.
+NAME = "baseline pyarrow parquet→parquet"
 ROWS = int(os.environ.get("PERF_ROWS", "4_000_000").replace("_", ""))
 SEED_BATCH = 1_000_000
 
@@ -46,15 +46,15 @@ def run(seed: Path, out: Path) -> None:
     gc.collect()
     arrow_before = pa.total_allocated_bytes()
     wall_start = time.monotonic()
-    report = Transfer(
-        source=ParquetSource(seed),
-        destination=ParquetDestination(out, compression="zstd"),
-    ).run()
+    reader = pq.ParquetFile(seed)
+    with pq.ParquetWriter(out, reader.schema_arrow, compression="zstd") as writer:
+        for batch in reader.iter_batches():
+            writer.write_batch(batch)
     wall_seconds = time.monotonic() - wall_start
     arrow_after = pa.total_allocated_bytes()
 
     result = {
-        "rows": report.rows,
+        "rows": ROWS,
         "output_bytes": out.stat().st_size,
         "wall_seconds": wall_seconds,
         "peak_arrow_bytes": max(arrow_before, arrow_after),
