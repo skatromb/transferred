@@ -1,80 +1,41 @@
 """Baseline: Parquet → Parquet via raw pyarrow, no `transferred`.
 
-Shadows `parquet_to_parquet_single` so the harness reports cost of
-`transferred`'s seam vs the underlying arrow/parquet libs.
-
-Subcommands:
-    setup <seed_path>       — writes seed Parquet (same shape as transferred workload)
-    run <seed_path> <out>   — pyarrow streamed read + write, emits JSON result
+Shadows `parquet_to_parquet_single` to isolate the cost of `transferred`'s
+seam from the underlying arrow/parquet libs.
 """
 
 from __future__ import annotations
 
-import gc
-import json
-import os
 import sys
-import time
 from pathlib import Path
 
-import pyarrow as pa
 import pyarrow.parquet as pq
 
+from perf.data import ROWS, ROWS_PER_GROUP, write_seed_parquet
+from perf.workload import cli, emit_result, measure
+
 NAME = "baseline pyarrow parquet→parquet"
-ROWS = int(os.environ.get("PERF_ROWS", "4_000_000").replace("_", ""))
-SEED_BATCH = 1_000_000
-
-
-def _batch(start: int, n: int) -> pa.RecordBatch:
-    return pa.RecordBatch.from_pydict(
-        {
-            "i64": pa.array(range(start, start + n), type=pa.int64()),
-            "f64": pa.array([i * 1.5 for i in range(start, start + n)], type=pa.float64()),
-            "str": pa.array([f"row-{i}" for i in range(start, start + n)], type=pa.string()),
-        }
-    )
 
 
 def setup(seed: Path) -> None:
-    schema = _batch(0, 1).schema
-    with pq.ParquetWriter(seed, schema, compression="zstd") as writer:
-        for start in range(0, ROWS, SEED_BATCH):
-            writer.write_batch(_batch(start, min(SEED_BATCH, ROWS - start)))
+    write_seed_parquet(seed)
 
 
 def run(seed: Path, out: Path) -> None:
-    gc.collect()
-    arrow_before = pa.total_allocated_bytes()
-    wall_start = time.monotonic()
-    reader = pq.ParquetFile(seed)
-    # batch_size=1M matches parquet-rs's DEFAULT_MAX_ROW_GROUP_ROW_COUNT (1024*1024).
-    # pyarrow's iter_batches default is 65536 — using it produces ~16x more (smaller)
-    # row groups, which compress worse with zstd. Match transferred's row-group layout
-    # so the comparison isolates write throughput, not row-group strategy.
-    with pq.ParquetWriter(out, reader.schema_arrow, compression="zstd") as writer:
-        for batch in reader.iter_batches(batch_size=1_000_000):
-            writer.write_batch(batch)
-    wall_seconds = time.monotonic() - wall_start
-    arrow_after = pa.total_allocated_bytes()
+    def _transfer() -> None:
+        reader = pq.ParquetFile(seed)
+        with pq.ParquetWriter(out, reader.schema_arrow, compression="zstd") as writer:
+            for batch in reader.iter_batches(batch_size=ROWS_PER_GROUP):
+                writer.write_batch(batch)
 
-    result = {
-        "rows": ROWS,
-        "output_bytes": out.stat().st_size,
-        "wall_seconds": wall_seconds,
-        "peak_arrow_bytes": max(arrow_before, arrow_after),
-    }
-    json.dump(result, sys.stdout)
-
-
-def main(argv: list[str]) -> None:
-    cmd = argv[1]
-    if cmd == "setup":
-        setup(Path(argv[2]))
-    elif cmd == "run":
-        run(Path(argv[2]), Path(argv[3]))
-    else:
-        raise SystemExit(f"unknown subcommand: {cmd!r}")
+    _, wall_seconds, peak_arrow_bytes = measure(_transfer)
+    emit_result(
+        rows=ROWS,
+        out=out,
+        wall_seconds=wall_seconds,
+        peak_arrow_bytes=peak_arrow_bytes,
+    )
 
 
 if __name__ == "__main__":
-    main(sys.argv)
+    cli(sys.argv, setup=setup, run=run)
