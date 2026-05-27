@@ -90,6 +90,29 @@ Goal: load API responses and Python-native data without forcing the user through
 - RSS plateaus at ~330 MiB even at 4B rows. Growth observed in short runs is allocator freelist ramp; macOS libmalloc decommits eventually (saw 334 → 133 MiB mid-run).
 - CPU/wall ≈ 1.0 at steady state — single-core bound. Real parallelism opportunity in `transferred-parquet`.
 - memray (Python heap) matches dhat — Python adds negligible heap on the Parquet → Parquet path. The 90 MiB RSS overhead vs Rust-only is dynamic linker + pyarrow `.so` mmap, not heap.
+- Throughput ≈ parity with raw pyarrow when row-group sizes match (transferred 13.1M vs pyarrow 13.6M rows/s). An earlier "transferred wins throughput" reading came from pyarrow's default `iter_batches(batch_size=65536)` creating ~16x more row groups than parquet-rs's `DEFAULT_MAX_ROW_GROUP_ROW_COUNT = 1M`, which compresses worse — not from transferred being faster.
+- Real advantage is **memory**: transferred ~2x less RSS on Parquet→Parquet (95 vs 224 MB), ~6x less on iterable-generator→Parquet (103 vs 631 MB). Streaming holds tight where pyarrow buffers.
+- Iterable-list form: 1.5 GB RSS at 4M rows. Docs must steer users to generators.
+
+
+Tested @ 4M rows. Baselines use `batch_size=1_000_000` to match parquet-rs's
+`DEFAULT_MAX_ROW_GROUP_ROW_COUNT` — without it pyarrow writes ~16x more row
+groups (its `iter_batches` default is 65536), compression diverges, and output
+sizes aren't comparable.
+
+┌───────────────────────────────────────┬────────┬────────┬────────┬────────┐
+│               Workload                │ wall s │ RSS MB │ rows/s │ out MB │
+├───────────────────────────────────────┼────────┼────────┼────────┼────────┤
+│ transferred parquet→parquet           │ 0.31   │ 94.7   │ 13.1M  │ 13.1   │
+├───────────────────────────────────────┼────────┼────────┼────────┼────────┤
+│ baseline pyarrow parquet→parquet      │ 0.29   │ 224.1  │ 13.6M  │ 13.4   │
+├───────────────────────────────────────┼────────┼────────┼────────┼────────┤
+│ transferred iterable-gen→parquet      │ 1.39   │ 103.2  │ 2.9M   │ 13.1   │
+├───────────────────────────────────────┼────────┼────────┼────────┼────────┤
+│ baseline pyarrow iterable-gen→parquet │ 1.68   │ 630.7  │ 2.4M   │ 13.4   │
+├───────────────────────────────────────┼────────┼────────┼────────┼────────┤
+│ transferred iterable-list→parquet     │ 0.78   │ 1527.6 │ 5.1M   │ 13.1   │
+└───────────────────────────────────────┴────────┴────────┴────────┴────────┘
 
 **Tasks:**
 
