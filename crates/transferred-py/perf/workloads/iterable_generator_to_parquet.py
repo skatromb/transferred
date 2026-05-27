@@ -1,7 +1,11 @@
-"""Parquet → Parquet, single seed file, single output file.
+"""Generator-of-dicts → Parquet.
 
-Standalone script — invoked as a subprocess by `perf.harness`. Two subcommands:
-    setup <seed_path>       — writes seed Parquet (not measured)
+Tests the `_iterable_to_arrow` path. Unlike Parquet→Parquet, this puts real
+work on the Python heap (dict construction per row, pyarrow conversion per
+batch), so memray sees something to attribute.
+
+Subcommands:
+    setup <seed_path>       — no-op (data generated in-process during run)
     run <seed_path> <out>   — runs Transfer, emits JSON result on stdout
 """
 
@@ -13,33 +17,23 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Iterator
 
 import pyarrow as pa
-import pyarrow.parquet as pq
 
-from transferred import ParquetDestination, ParquetSource, Transfer
+from transferred import ParquetDestination, Transfer
 
-NAME = "parquet→parquet (single)"
-# Schema: i64 + f64 + variable-length string. Override row count with PERF_ROWS=N.
+NAME = "iterable-generator→parquet"
 ROWS = int(os.environ.get("PERF_ROWS", "4_000_000").replace("_", ""))
-SEED_BATCH = 1_000_000
 
 
-def _batch(start: int, n: int) -> pa.RecordBatch:
-    return pa.RecordBatch.from_pydict(
-        {
-            "i64": pa.array(range(start, start + n), type=pa.int64()),
-            "f64": pa.array([i * 1.5 for i in range(start, start + n)], type=pa.float64()),
-            "str": pa.array([f"row-{i}" for i in range(start, start + n)], type=pa.string()),
-        }
-    )
+def _rows() -> Iterator[dict]:
+    for i in range(ROWS):
+        yield {"i64": i, "f64": i * 1.5, "str": f"row-{i}"}
 
 
 def setup(seed: Path) -> None:
-    schema = _batch(0, 1).schema
-    with pq.ParquetWriter(seed, schema, compression="zstd") as writer:
-        for start in range(0, ROWS, SEED_BATCH):
-            writer.write_batch(_batch(start, min(SEED_BATCH, ROWS - start)))
+    pass
 
 
 def run(seed: Path, out: Path) -> None:
@@ -47,7 +41,7 @@ def run(seed: Path, out: Path) -> None:
     arrow_before = pa.total_allocated_bytes()
     wall_start = time.monotonic()
     report = Transfer(
-        source=ParquetSource(seed),
+        source=_rows(),
         destination=ParquetDestination(out, compression="zstd"),
     ).run()
     wall_seconds = time.monotonic() - wall_start

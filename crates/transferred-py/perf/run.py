@@ -16,9 +16,21 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from perf.harness import Metrics, format_table, run_subprocess
-from perf.workloads import parquet_to_parquet_single
+from perf.workloads import (
+    baseline_pyarrow_iterable_to_parquet,
+    baseline_pyarrow_parquet_to_parquet,
+    iterable_generator_to_parquet,
+    iterable_list_to_parquet,
+    parquet_to_parquet_single,
+)
 
-WORKLOADS = [parquet_to_parquet_single]
+WORKLOADS = [
+    parquet_to_parquet_single,
+    baseline_pyarrow_parquet_to_parquet,
+    iterable_generator_to_parquet,
+    baseline_pyarrow_iterable_to_parquet,
+    iterable_list_to_parquet,
+]
 
 RESULTS_DIR = Path(__file__).resolve().parent / ".results"
 
