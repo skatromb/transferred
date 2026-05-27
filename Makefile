@@ -85,8 +85,7 @@ python-dev-build:
 # Run perf workloads. Forces a release-mode build first — debug builds skew numbers.
 .PHONY: perf
 perf: python-dev-build
-	@cd crates/transferred-py && \
-		uv run --no-sync python -m perf.run
+	@uv run --project crates/transferred-py --no-sync python -m perf.run
 
 # ============================================================================
 # Release
