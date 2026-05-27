@@ -82,6 +82,12 @@ python-dev-build:
 			uv sync --group dev && \
 			uv run --no-sync maturin develop --uv --release
 
+# Run perf workloads. Forces a release-mode build first — debug builds skew numbers.
+.PHONY: perf
+perf: python-dev-build
+	@cd crates/transferred-py && \
+		uv run --no-sync python -m perf.run
+
 # ============================================================================
 # Release
 # ============================================================================
