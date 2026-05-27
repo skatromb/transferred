@@ -47,8 +47,12 @@ def run(seed: Path, out: Path) -> None:
     arrow_before = pa.total_allocated_bytes()
     wall_start = time.monotonic()
     reader = pq.ParquetFile(seed)
+    # batch_size=1M matches parquet-rs's DEFAULT_MAX_ROW_GROUP_ROW_COUNT (1024*1024).
+    # pyarrow's iter_batches default is 65536 — using it produces ~16x more (smaller)
+    # row groups, which compress worse with zstd. Match transferred's row-group layout
+    # so the comparison isolates write throughput, not row-group strategy.
     with pq.ParquetWriter(out, reader.schema_arrow, compression="zstd") as writer:
-        for batch in reader.iter_batches():
+        for batch in reader.iter_batches(batch_size=1_000_000):
             writer.write_batch(batch)
     wall_seconds = time.monotonic() - wall_start
     arrow_after = pa.total_allocated_bytes()
