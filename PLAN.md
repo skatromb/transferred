@@ -116,16 +116,13 @@ sizes aren't comparable.
 
 **Tasks:**
 
-- [x] Perf harness (Python): peak RSS via `os.wait4` rusage, CPU via rusage, timeline RSS via `psutil` sampler. Subprocess-per-workload to isolate setup from run. Workloads emit JSON on stdout. dhat-heap (Rust) and memray (Python) profiling wired in via `make perf-dhat` / `make perf-memray`.
+- [x] Perf harness (Python): peak RSS via `os.wait4` rusage, CPU via rusage, timeline RSS via `psutil` sampler. Subprocess-per-workload to isolate setup from run. Workloads emit JSON on stdout.
 - [x] Workload: Parquet → Parquet single-file via `transferred`, `PERF_ROWS=N` env override.
-- [ ] Workloads: Parquet → Parquet multi-file, iterable-generator → Parquet, iterable-list → Parquet. Sweep `_BATCH_SIZE`.
-- [ ] Baseline: same workloads via raw `pyarrow.parquet`, no `transferred`.
-- [ ] Baseline: same workloads via a small arrow-rs + parquet-rs binary, driven through harness subprocess mode. `transferred-perf` crate already wraps `transferred-core` — extend with a second binary that drives arrow-rs/parquet-rs directly.
-- [ ] Investigate single-core ceiling in `transferred-parquet` — parallelism opportunity.
-- [ ] Real uncompressed data size measured per workload.
+- [x] Workloads: iterable-generator → Parquet, iterable-list → Parquet.
+- [x] Baseline: Parquet → Parquet + iterable-generator → Parquet via raw `pyarrow.parquet`, no `transferred`.
+- [x] Land the harness on `main`.
 - [ ] Wildcard `Path` support — `ParquetSource` accepts `path/to/partitions/*.parquet`.
-- [ ] Docs: memory profile results, `batch_size` tuning guidance, when to reach for `transferred` vs raw libs.
-- [ ] Land the harness on `main`: rebase `perf-harness-investigation` once the workload set and baselines are in.
+- [ ] Workload: Parquet → Parquet multi-file.
 
 ## 0.1.0 — Postgres source → BigQuery destination
 
