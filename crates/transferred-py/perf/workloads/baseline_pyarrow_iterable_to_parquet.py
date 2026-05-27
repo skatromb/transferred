@@ -24,7 +24,10 @@ import pyarrow.parquet as pq
 
 NAME = "baseline pyarrow iterable→parquet"
 ROWS = int(os.environ.get("PERF_ROWS", "4_000_000").replace("_", ""))
-BATCH = 65_536
+# Matches parquet-rs's DEFAULT_MAX_ROW_GROUP_ROW_COUNT (1024*1024). pyarrow's
+# defaults would produce smaller row groups → worse zstd compression → output
+# size diverges from transferred's, confounding the comparison.
+BATCH = 1_000_000
 
 
 def _rows() -> Iterator[dict]:
