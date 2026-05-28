@@ -25,7 +25,7 @@ use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use tempfile::tempdir;
 use transferred_core::Transfer;
 use transferred_core::test_utils::{TestDestination, TestSource};
-use transferred_parquet::{Compression, ParquetDestination, ParquetSource};
+use transferred_parquet::{Compression, GlobOrPaths, ParquetDestination, ParquetSource};
 
 fn schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![
@@ -178,7 +178,7 @@ async fn parquet_dogfood() {
 
     // Read from file back to memory
     let read_report = Transfer::new(
-        Box::new(ParquetSource::new(path.clone())),
+        Box::new(ParquetSource::new(GlobOrPaths::Paths(vec![path.clone()]))),
         Box::new(memory_destination),
     )
     .run()

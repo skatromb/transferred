@@ -69,7 +69,7 @@ class _ParquetSource:
     Internal `PyO3` wrapper around `transferred_parquet::ParquetSource`.
     Constructed by the user-facing Python `ParquetSource`; not used directly.
     """
-    def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path) -> typing.Self: ...
+    def __new__(cls, path: str | os.PathLike | list[str | os.PathLike]) -> typing.Self: ...
 
 class _Transfer:
     r"""

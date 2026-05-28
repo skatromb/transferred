@@ -21,6 +21,7 @@ parquet = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 futures = { workspace = true }
+glob = "0.3"
 tracing = { workspace = true }
 
 [dev-dependencies]
