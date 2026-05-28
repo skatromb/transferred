@@ -32,3 +32,9 @@ tempfile = "3"
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+indexing_slicing = "warn"
