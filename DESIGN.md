@@ -1,7 +1,5 @@
 # `transferred` — Design
 
-Status: 0.0.1 shipped (Parquet ↔ Parquet). Next: 0.0.2 Python-native iterable source.
-
 Package name `transferred` on both crates.io and PyPI. `el` was taken on both. Workspace is split into per-connector crates (`transferred-core`, `transferred-parquet`, `transferred-postgres`, `transferred-bigquery`) plus a Python binding crate. Workspace version is shared across all crates; untie only if release cadence diverges.
 
 ## Why
@@ -46,12 +44,14 @@ Breaking changes allowed, but require a minor bump (`0.x → 0.(x+1)`). Patch bu
 ```python
 from transferred import Transfer
 from transferred.sources import Postgres
-from transferred.destinations import Parquet, BigQuery
+from transferred.destinations import LocalFilesystem, BigQuery
+from transferred.formats import Parquet
 
-# Local parquet destination — primary 0.0.1 path, no cloud creds needed.
+# Local file destination — primary 0.0.1 path, no cloud creds needed.
+# Format inferred from path extension; pass `format=Parquet(...)` to override.
 Transfer(
     source=Postgres(dsn="postgres://...", table="public.orders"),
-    destination=Parquet(path="./out/orders.parquet"),
+    destination=LocalFilesystem(path="./out/orders.parquet"),
 ).run()
 
 # BigQuery destination — 0.1.0.
@@ -69,13 +69,13 @@ def fetch_orders():
     for page in api.paginate("/orders"):
         yield from page["results"]
 
-Transfer(source=fetch_orders(), destination=Parquet("out.parquet")).run()
+Transfer(source=fetch_orders(), destination=LocalFilesystem("out.parquet")).run()
 
 # List of dicts
-Transfer(source=[{"id": 1}, {"id": 2}], destination=Parquet("...")).run()
+Transfer(source=[{"id": 1}, {"id": 2}], destination=LocalFilesystem("out.parquet")).run()
 
 # Dataclasses — converted via dataclasses.asdict per chunk
-Transfer(source=order_iter, destination=Parquet("...")).run()
+Transfer(source=order_iter, destination=LocalFilesystem("out.parquet")).run()
 ```
 
 Module layout (0.0.2):
@@ -162,6 +162,51 @@ report.staging         # transient artifacts (deleted unless keep_staging=True)
 ```
 
 No row-level Python callbacks. The FFI boundary is crossed once per transfer (per-batch for `ArrowSource`), not per row.
+
+### File destinations and formats
+
+File-shaped destinations are decoupled from file formats. A destination describes **where** bytes land; a `FileFormat` describes **how** they are encoded.
+
+- `FileFormat` trait. Implementations carry encoder knobs:
+  - `Parquet(compression, row_group_size, ...)`
+  - `Avro(...)`
+  - `Json(...)`
+  - `Csv(...)`
+- File-shaped destinations carry an optional `format`:
+  - `LocalFilesystem(path, format=None)`
+  - `S3(bucket, key, format=None)`
+  - `GCS(bucket, key, format=None)`
+- Row-protocol destinations have no `format` knob — the wire protocol is the encoding:
+  - `BigQuery(project, dataset, table)` — Storage Write API.
+  - `Postgres(dsn, table)` — `COPY ... FROM STDIN`.
+
+**Format resolution** when the user does not pass `format=` explicitly:
+
+| Source              | `format=` arg | Behaviour                                                                              |
+| ------------------- | ------------- | -------------------------------------------------------------------------------------- |
+| File source         | absent        | Inherit source's format. Detected by path extension first; bytes-sniff on ambiguity.   |
+| File source         | present       | Convert source → requested format.                                                     |
+| Non-file source     | absent        | Default to `Parquet()`.                                                                |
+| Non-file source     | present       | Convert to requested format.                                                           |
+
+Byte-copy short-circuit (won't do): even when source and destination resolve to the same `FileFormat`, the engine always decodes through Arrow. Skipping the decode would bypass schema validation and coercion reporting, and the perf win does not justify a second code path.
+
+```python
+from transferred.destinations import LocalFilesystem, S3
+from transferred.formats import Csv, Avro
+
+# Inherit format from source extension.
+Transfer(source=parquet_src, destination=LocalFilesystem("out.parquet")).run()
+
+# Override format.
+Transfer(source=parquet_src, destination=LocalFilesystem("out.csv", format=Csv())).run()
+
+# Non-file source → default Parquet.
+Transfer(source=pg_src, destination=S3(bucket="dwh", key="orders/")).run()
+
+# Non-file source + explicit format.
+Transfer(source=pg_src, destination=S3(bucket="dwh", key="orders/", format=Avro())).run()
+```
 
 ### Architecture
 
@@ -355,37 +400,37 @@ Never silently coerce to `TEXT` or `BYTES` without a summary entry — that is t
 
 **Concrete coverage targets:**
 
-| Source type (Postgres)        | Arrow representation                 | Notes                                  |
-| ----------------------------- | ------------------------------------ | -------------------------------------- |
-| `int2`/`int4`/`int8`          | `Int16`/`Int32`/`Int64`              | Native.                                |
-| `numeric(p,s)`                | `Decimal128(p,s)` or `Decimal256`    | Native. `numeric` without precision → fail with override hint. |
-| `text`/`varchar`              | `Utf8`                               | Native.                                |
-| `bytea`                       | `Binary`                             | Native.                                |
-| `bool`                        | `Boolean`                            | Native.                                |
-| `date`                        | `Date32`                             | Native.                                |
-| `timestamp`/`timestamptz`     | `Timestamp(Microsecond, tz)`         | Native. `tz=None` for `timestamp`.     |
-| `interval`                    | `Interval(MonthDayNano)`             | Native, exact match.                   |
-| `uuid`                        | `FixedSizeBinary(16)` + `arrow.uuid` | Canonical extension.                   |
-| `json`/`jsonb`                | `Utf8` + `arrow.json`                | Canonical extension.                   |
-| `geometry`/`geography` (PostGIS) | `Binary` + `geoarrow.wkb` + CRS   | Community extension. CRS from `geometry_columns`. |
+| Source type (Postgres)        | Arrow representation                 | Notes                                                     |
+| ----------------------------- | ------------------------------------ | --------------------------------------------------------- |
+| `int2`/`int4`/`int8`          | `Int16`/`Int32`/`Int64`              | Native.                                                   |
+| `numeric(p,s)`                | `Decimal128(p,s)` or `Decimal256`    | Native. `numeric` without precision → fail with override  |
+| `text`/`varchar`              | `Utf8`                               | Native.                                                   |
+| `bytea`                       | `Binary`                             | Native.                                                   |
+| `bool`                        | `Boolean`                            | Native.                                                   |
+| `date`                        | `Date32`                             | Native.                                                   |
+| `timestamp`/`timestamptz`     | `Timestamp(Microsecond, tz)`         | Native. `tz=None` for `timestamp`.                        |
+| `interval`                    | `Interval(MonthDayNano)`             | Native, exact match.                                      |
+| `uuid`                        | `FixedSizeBinary(16)` + `arrow.uuid` | Canonical extension.                                      |
+| `json`/`jsonb`                | `Utf8` + `arrow.json`                | Canonical extension.                                      |
+| `geometry`/`geography` (PostGIS) | `Binary` + `geoarrow.wkb` + CRS   | Community extension. CRS from `geometry_columns`.         |
 | `tsrange`/`int4range`/...     | `Struct` + `transferred.pg_range`    | Private extension. Default destination fallback = expand. |
-| `hstore`, `ltree`, composites | `arrow.opaque` initially             | Later promotion to structured forms.   |
+| `hstore`, `ltree`, composites | `arrow.opaque` initially             | Later promotion to structured forms.                      |
 
 ### Tech stack
 
-| Concern          | Choice                                              | Reason                                              |
-| ---------------- | --------------------------------------------------- | --------------------------------------------------- |
-| Core             | Rust                                                | Performance, types, no GC.                          |
-| Python binding   | PyO3 + maturin, `cp314` + `cp314t`                  | Standard for adoption; free-threaded for concurrency correctness early. |
-| Internal format  | Apache Arrow (`arrow-rs`)                           | Zero-copy to BQ, Parquet, Polars.                   |
-| Async runtime    | Tokio                                               | Required by most cloud SDKs.                        |
-| Postgres         | `tokio-postgres` + binary `COPY`                    | `COPY` is the fastest extract path.                 |
-| BigQuery         | Storage Write API via tonic + googleapis            | Direct write, no Parquet/GCS staging.               |
-| GCP auth         | `gcp_auth`                                          | ADC, service-account JSON, gcloud, workload identity. |
-| Object storage   | `object_store` crate                                | Unified S3/GCS/Azure API.                           |
-| Parquet          | `parquet` (arrow-rs)                                | Same family as Arrow. Audit gaps vs Polars.         |
-| Errors           | `thiserror`, surfaced as `transferred.ElError`      | One root exception, typed subclasses.               |
-| Logging          | `tracing` bridged into Python `logging`             | One config story for users.                         |
+| Concern          | Choice                                              | Reason                                                         |
+| ---------------- | --------------------------------------------------- | -------------------------------------------------------------- |
+| Core             | Rust                                                | Performance, types, no GC.                                     |
+| Python binding   | PyO3 + maturin, `cp314` + `cp314t`                  | Standard for adoption; free-threaded included.                 |
+| Internal format  | Apache Arrow (`arrow-rs`)                           | Zero-copy to BQ, Parquet, Polars.                              |
+| Async runtime    | Tokio                                               | Required by most cloud SDKs.                                   |
+| Postgres         | `tokio-postgres` + binary `COPY`                    | `COPY` is the fastest extract path.                            |
+| BigQuery         | Storage Write API via tonic + googleapis            | Direct write, no Parquet/GCS staging.                          |
+| GCP auth         | `gcp_auth`                                          | ADC, service-account JSON, gcloud, workload identity.          |
+| Object storage   | `object_store` crate                                | Unified S3/GCS/Azure API.                                      |
+| Parquet          | `parquet` (arrow-rs)                                | Same family as Arrow. Audit gaps vs Polars.                    |
+| Errors           | `thiserror`, surfaced as `transferred.ElError`      | One root exception, typed subclasses.                          |
+| Logging          | `tracing` bridged into Python `logging`             | One config story for users.                                    |
 | License          | MIT                                                 | Liberal. Matches the rest of the analytical Python/Rust stack. |
 
 ### Known risks
