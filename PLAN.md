@@ -136,14 +136,6 @@ sizes aren't comparable.
 
 Update DESIGN.md after all Interlude decisions are made.
 
-### Schema inference
-
-I think I made it wrong deciding that schema should be inferred `Destination -> Arrow -> Source`.
-It's actually should (or also could?) be the opposite: we need to preserve `Source`'s schema.
-What should we do with schema resilience then? Just fail when `Source` schema is not compatible
-anymore with existing `Destination` — that means breaking change happened at the `Source`,
-so we need to raise in that case.
-
 ### `Source` and `Destination` abilities design
 
 If we'll make each `Source` and `Destination` development lean, so that you may implement just basics and they'll be ready to use, how could full functionality be pluggable? If we use traits and implementations as a marker, is it possible to check:
@@ -193,29 +185,50 @@ Goal: original thesis. Atomic full load from PG to BQ.
 - `transferred-bigquery` source: Storage Read API.
 - Round-trip integration tests (PG ↔ BQ).
 
-## 0.2 — widen the matrix
+## 0.2 — S3 + GCS
 
-- Add dependabot
 - S3 destination (Parquet) via `object_store`.
 - GCS destination (Parquet) — nearly free once S3 works.
-- `mode="append"` where atomic-replace is wrong.
-- Partitioned Parquet directory destination (enables true partition parallelism).
-- Type registry expansion driven by new connectors.
-- Concurrent transfers in one process — task-count cap, optional byte-aware semaphore.
 
-## Later — deliberately deferred
+## 0.3 — schema redesign
+
+Implements the source-owned schema direction decided during the Interlude. Supersedes the lighter-weight schema work that ships inline in 0.1.0.
+
+**Scope:**
+
+- Schema inference direction: `Source → Destination`. Source schema is ground truth; user overrides via `columns=` short-circuit source inference; coercion check resolves source → destination compatibility.
+- Loud-fail semantics:
+  - Static (plan-time): declared precision can never fit target → `SchemaError` before any read.
+  - Runtime (row-level): Arrow `cast` with `safe=true`. First overflow row aborts run. Atomic destinations guarantee no half-written state.
+- Drift framing (stateless): if destination already exists, compare source vs existing destination schema. Error:
+  ```
+  SchemaError: source column 'foo' (type Y) incompatible with existing destination
+  column 'foo' (type Z). Likely source schema drift. Override with columns=.
+  ```
+- Formal coercion engine — Tier 1 auto, Tier 2 warn, Tier 3 fail. Reporting via `RunReport.coercions`.
+- User schema API in Python: single `schema=` knob. Full by default; partial when an ellipsis key (`...: ...`) is present — remaining columns inferred. Source-side filtering via `columns=` / `skip_columns=` (mutually exclusive). Destination-native vocabulary.
+- Type registry — coverage extended beyond 0.1.0 baseline.
+
+**Tasks:**
+
+- [ ] Source schema introspection trait surface.
+- [ ] Destination schema validation trait surface (replaces 0.1.0 ad-hoc per-connector mapping).
+- [ ] Coercion engine: Arrow `cast` with `safe=true`, Tier-aware reporting wired into `RunReport`.
+- [ ] User schema API in Python: `schema=`, `schema_overrides=`, `columns=`, `skip_columns=`.
+- [ ] Migrate Parquet, PG, BQ connectors to new trait surface.
+
+## Backlog
 
 - Incremental loads. Deferred; model TBD.
 - Airflow / Dagster / whatever is popular operators
-- Multiple destinations `Transfer`s
 - CRS reprojection (`proj` FFI), `ST_MakeValid`, Z/M handling.
 - Hstore / ltree / composite promotion from `arrow.opaque` to structured Arrow forms.
 - `strict_mode` flag.
 - Resumability after partial failure.
 - CLI
-- Transformations beyond what type mapping forces.
-- Streaming and CDC.
-- Byte-aware memory semaphore (when partition parallelism reveals skew issues).
+- Multiple destinations `Transfer`s
 
 ## Never ~~say never~~
+- Transformations beyond what type mapping forces.
 - YAML/TOML config.
+- Streaming and CDC (but who knows... v2.0?)

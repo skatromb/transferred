@@ -25,7 +25,7 @@ Properties it must have:
 - **Mature on formats.** Parquet read/write covers what Polars currently misses (gaps catalogued as we hit them).
 - **Boring where it matters.** Full-load only. No streaming. No DAG orchestrator. No web UI.
 
-Explicit non-goals for the pre-1.0 line:
+Explicit non-goals:
 
 - No transformations.
 - No streaming / CDC.
@@ -35,9 +35,9 @@ Explicit non-goals for the pre-1.0 line:
 
 ## How
 
-### Versioning (pre-1.0.0)
+### Versioning
 
-Breaking changes allowed, but require a minor bump (`0.x → 0.(x+1)`). Patch bumps stay non-breaking. No deprecation cycles, no compat shims. Full API review before `1.0.0`; strict SemVer after.
+While the project is in its initial development, breaking changes are allowed but require a minor bump; patch bumps stay non-breaking. No deprecation cycles, no compat shims. Full API review precedes the stable release; strict SemVer after.
 
 ### API surface (Python, code-first)
 
@@ -47,14 +47,14 @@ from transferred.sources import Postgres
 from transferred.destinations import LocalFilesystem, BigQuery
 from transferred.formats import Parquet
 
-# Local file destination — primary 0.0.1 path, no cloud creds needed.
+# Local file destination — no cloud creds needed.
 # Format inferred from path extension; pass `format=Parquet(...)` to override.
 Transfer(
     source=Postgres(dsn="postgres://...", table="public.orders"),
     destination=LocalFilesystem(path="./out/orders.parquet"),
 ).run()
 
-# BigQuery destination — 0.1.0.
+# BigQuery destination.
 Transfer(
     source=Postgres(dsn="postgres://...", table="public.orders"),
     destination=BigQuery(project="my-proj", dataset="raw", table="orders"),
@@ -64,7 +64,7 @@ Transfer(
 **Source auto-coercion.** `source=` accepts anything iterable, not only `Source` instances. Python-side dispatcher normalises:
 
 ```python
-# Generator of dicts — primary 0.0.2 path
+# Generator of dicts
 def fetch_orders():
     for page in api.paginate("/orders"):
         yield from page["results"]
@@ -78,7 +78,7 @@ Transfer(source=[{"id": 1}, {"id": 2}], destination=LocalFilesystem("out.parquet
 Transfer(source=order_iter, destination=LocalFilesystem("out.parquet")).run()
 ```
 
-Module layout (0.0.2):
+Module layout for the iterable + Arrow path:
 
 - `transferred.arrow.ArrowSource` — accepts a `pa.RecordBatchReader` only. The Arrow seam into Rust. Future overloads (`pa.Table`, `pa.RecordBatch`) drop in here.
 - `transferred.iterable._iterable_to_arrow` — converts an iterable of `dict` / `@dataclass` / `pydantic.BaseModel` into an `ArrowSource` via `pa.RecordBatch.from_pylist`. Depends on `arrow` (one-way), not the other way.
@@ -110,12 +110,12 @@ source=Postgres(
 )
 ```
 
-No source-side typing API. Source schema is either inferred from the source itself, or bridged in reverse from the destination schema (Destination → Arrow → coerce source rows to match). All typing knobs live on the destination.
+**Schema direction — source-owned, destination-validated.** Source schema is ground truth: connectors infer it natively (PG `information_schema`, Parquet file metadata, Arrow batch schema, …) and preserve it end-to-end. User overrides per column via `schema=` short-circuit source inference. Destination validates the resolved schema against its accepted type set and fails loudly on incompatibility. Vocabulary stays destination-native (BQ types in `BigQuery`, PG types in `Postgres`, …); Arrow is internal, never spelled in Python. Source-side filtering via `columns=` / `skip_columns=` (mutually exclusive) is the only source-side typing knob.
 
-**Destination schema.** User-facing schema is destination-native; Arrow is implementation, never spelled in Python.
+**User schema API.** Single `schema=` knob. Strict by default; partial when an ellipsis key (`...: ...`) is present.
 
 ```python
-# Full schema — destination-native types as strings
+# Strict full schema — every source column must be listed.
 BigQuery(
     project="p", dataset="d", table="orders",
     schema={
@@ -126,7 +126,16 @@ BigQuery(
     },
 )
 
-# Or native lib objects, where the library ships them
+# Partial schema — `...: ...` sentinel means "infer the rest from source".
+BigQuery(
+    project="p", dataset="d", table="orders",
+    schema={
+        "total": "NUMERIC(18, 4)",
+        ...:     ...,
+    },
+)
+
+# Or native lib objects, where the library ships them.
 BigQuery(
     project="p", dataset="d", table="orders",
     schema=[
@@ -134,21 +143,15 @@ BigQuery(
         bigquery.SchemaField("total", "NUMERIC", precision=18, scale=4),
     ],
 )
-
-# Inferred + partial overrides
-BigQuery(
-    project="p", dataset="d", table="orders",
-    schema_overrides={"total": "NUMERIC(18, 4)"},
-)
 ```
 
 Rules:
 
-- `schema=` is **full**: every column listed. Engine enforces strictly.
-- `schema_overrides=` is **partial**: only listed columns are pinned; rest inferred.
-- `schema=` and `schema_overrides=` mutually exclusive.
-- Vocabulary is owned by each destination (BQ types for BigQuery, PG types for Postgres, polars/arrow-shorthand for Parquet, etc). No cross-destination DSL.
-- Coercion follows the tier model in §Type mapping. Lossy-semantic conversions still fail by default.
+- `schema=` is **strict** by default: every source column must have an entry. Missing → `SchemaError: column 'X' inferred from source has no entry in schema=`.
+- Ellipsis key (`...: ...`) flips it to **partial**: unlisted source columns are inferred.
+- Schema column not present in source → `SchemaError: schema column 'X' not found in source`.
+- Vocabulary is owned by each destination. No cross-destination DSL.
+- Coercion follows the tier model in §Type mapping. Tier-3 lossy-semantic conversions fail by default.
 
 `.run()` returns a `RunReport`:
 
@@ -215,12 +218,14 @@ Transfer(source=pg_src, destination=S3(bucket="dwh", key="orders/", format=Avro(
 |  Source  |  ===================>  | Destination |
 |  reader  |  Arrow RecordBatch     |   writer    |
 +----------+                        +-------------+
-     ^                                   |
-     |                                   v
-     +- coerce-to -- Arrow schema --- user schema (destination-native)
-                          ^
-                          |
-                  inferred (when user schema absent)
+     |                                   ^
+     v                                   |
+  source schema -- user override --> validate against destination
+   (inferred)      (schema=, per col)    (destination-native vocab)
+                                              |
+                                              v
+                                         coerce per column
+                                         (Tier 1/2/3)
 ```
 
 - Single Rust process. `transferred` Python module is a PyO3 extension.
@@ -230,24 +235,25 @@ Transfer(source=pg_src, destination=S3(bucket="dwh", key="orders/", format=Avro(
 - Backpressure happens naturally — `.next().await` on the source stream blocks until the writer is ready.
 - Schema resolution happens once, before partitions are produced.
 
-**Schema resolution flow.** Destination owns the user-facing vocabulary; Arrow is internal.
+**Schema resolution flow.** Source-owned; destination validates. Arrow is internal.
 
-1. If `destination.schema=` is set: destination parses native types → Arrow schema. This is the canonical schema.
-2. Else if `destination.schema_overrides=` is set: source produces its inferred Arrow schema, destination overrides parsed → applied per-column.
-3. Else: source produces inferred Arrow schema, used as-is.
-4. Source emits batches; engine coerces each batch to the canonical schema (Tier 1 auto, Tier 2 warn, Tier 3 fail).
-5. Destination receives canonical Arrow batches, maps to destination-native representation on write.
+1. Source produces its inferred Arrow schema natively.
+2. If `destination.schema=` is set, destination parses it (with ellipsis sentinel handling) into a per-column override map. Strict mode (no `...: ...`) requires every source column to appear; missing → fail.
+3. Engine resolves canonical schema column-by-column: declared user type if present, else inferred type from source.
+4. Destination validates each resolved column against its accepted type set. Plan-time fail (`SchemaError`) only when no Arrow cast kernel exists at all (type fundamentally incompatible, e.g. `geography → INT64`). Width/precision mismatches that *might* fit at the row level are deferred to step 6.
+5. If an existing destination is present (file, table), compare resolved schema vs existing. Incompatibility → `SchemaError: source column 'X' (type Y) incompatible with existing destination column 'X' (type Z). Likely source schema drift. Override with columns=.`
+6. Source emits batches; engine coerces each batch per-column to the canonical schema (Tier 1 auto, Tier 2 warn, Tier 3 fail). Arrow `cast` uses `safe=true`; first overflow row aborts the run. Atomic destinations guarantee no half-written state on failure.
+7. Destination writes canonical batches, mapping to its native representation.
 
-Destination trait surface (Rust):
+Destination trait surface (Rust, indicative shape):
 
 ```rust
 trait Destination {
-    /// Parse user-provided schema (full) into Arrow.
-    fn parse_user_schema(&self, schema: UserSchema) -> Result<ArrowSchema>;
-    /// Apply partial overrides to an inferred Arrow schema.
-    fn apply_overrides(&self, inferred: ArrowSchema, ovr: UserOverrides) -> Result<ArrowSchema>;
-    /// Map Arrow → destination schema for write.
-    fn to_destination_schema(&self, arrow: ArrowSchema) -> Result<DestinationSchema>;
+    /// Parse user-provided schema (with ellipsis sentinel) into a per-column override map.
+    fn parse_user_schema(&self, schema: UserSchema) -> Result<UserOverrides>;
+    /// Validate resolved Arrow schema against destination's accepted types.
+    /// Returns canonical schema (after Tier 1 widening) or fails (Tier 3 / missing kernel).
+    fn validate_schema(&self, source_arrow: ArrowSchema, overrides: UserOverrides) -> Result<ArrowSchema>;
     /// Existing write path.
     async fn write(self: Box<Self>, schema: SchemaRef, partitions: Vec<BatchStream>) -> Result<RunReport>;
 }
@@ -306,7 +312,7 @@ Fast path for callers who already have Arrow: `ArrowSource(pa_record_batch_reade
 - **Atomic loads.** Each backend uses its own native atomic primitive.
     - BQ: Storage Write API in `pending` mode against a transient staging table in the destination dataset, then a server-side copy job with `WRITE_TRUNCATE` from staging into the final table, then `DROP TABLE staging`. Atomicity comes from the copy job; the Storage Write commit makes the staging table whole, the copy-replace makes the final table whole. Partitioning, clustering, description, labels, IAM on the final table are preserved (data replaced, table object not recreated). Schema enforcement is server-side: AppendRows rejects mismatched rows, the copy job rejects mismatched schemas. No client-side staging in GCS, no Parquet encoding, no `staging_bucket` knob on the public API. Errors surfaced as `ElError` subclasses.
     - Postgres: `BEGIN; DROP target; RENAME staging; COMMIT;`. Client-side schema compare needed here since there's no equivalent server-side enforcement.
-  Transfers never leave the destination half-written. `mode="append"` and `mode="upsert"` are out of scope for the pre-1.0 line. `on_schema_change="replace"` to opt into destructive schema replacement is a deferred kwarg.
+  Transfers never leave the destination half-written. `mode="append"` and `mode="upsert"` are out of scope while the project is in initial development. `on_schema_change="replace"` to opt into destructive schema replacement is a deferred kwarg.
 - **Source filter surface.** `table=` and `query=` are the two ways to bound the extract. No partial filter DSL on top — keeps the API one knob wide.
 - **Credentials.** All GCP auth delegates to `gcp_auth`: Application Default Credentials, `GOOGLE_APPLICATION_CREDENTIALS` service-account JSON, gcloud user creds, workload identity. Postgres uses standard DSN-embedded creds or libpq env vars.
 - **Run report.** `RunReport` returned by `.run()` is the canonical post-run record. Logs are for trace; `RunReport` is for programs.
