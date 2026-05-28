@@ -121,8 +121,39 @@ sizes aren't comparable.
 - [x] Workloads: iterable-generator → Parquet, iterable-list → Parquet.
 - [x] Baseline: Parquet → Parquet + iterable-generator → Parquet via raw `pyarrow.parquet`, no `transferred`.
 - [x] Land the harness on `main`.
-- [ ] Wildcard `Path` support — `ParquetSource` accepts `path/to/partitions/*.parquet`.
+- [x] Wildcard `Path` support — `ParquetSource` accepts `path/to/partitions/*.parquet`.
 - [ ] Workload: Parquet → Parquet multi-file.
+- [ ] `FileFormat` trait. Implementations: `Parquet(compression, row_group_size)`, `Avro`, `Json`, `Csv`.
+- [ ] File-shaped destinations carry an optional `format`: `LocalFilesystem(path, format=None)`, `S3(bucket, key, format=None)`, `GCS(...)`.
+- [ ] Row-protocol destinations have no `format` knob: `BigQuery(...)`, `Postgres(...)`.
+- [ ] `format` resolution:
+  - [ ] File source + no `format` arg: inherit source's format (path-extension first, sniff bytes on ambiguity).
+  - [ ] File source + explicit `format`: convert.
+  - [ ] Non-file source + no `format`: default to `Parquet()`.
+  - [ ] Non-file source + explicit `format`: convert.
+
+## Interlude
+
+Update DESIGN.md after all Interlude decisions are made.
+
+### Schema inference
+
+I think I made it wrong deciding that schema should be inferred `Destination -> Arrow -> Source`.
+It's actually should (or also could?) be the opposite: we need to preserve `Source`'s schema.
+What should we do with schema resilience then? Just fail when `Source` schema is not compatible
+anymore with existing `Destination` — that means breaking change happened at the `Source`,
+so we need to raise in that case.
+
+### `Source` and `Destination` abilities design
+
+If we'll make each `Source` and `Destination` development lean, so that you may implement just basics and they'll be ready to use, how could full functionality be pluggable? If we use traits and implementations as a marker, is it possible to check:
+if trait is implemented:
+    do incremental_load
+else:
+    do full_load
+?
+
+Or should we do this in other way?
 
 ## 0.1.0 — Postgres source → BigQuery destination
 
