@@ -7,4 +7,4 @@ mod source;
 
 pub use compression::Compression;
 pub use destination::ParquetDestination;
-pub use source::ParquetSource;
+pub use source::{GlobOrPaths, ParquetSource};

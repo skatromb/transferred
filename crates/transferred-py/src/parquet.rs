@@ -4,8 +4,9 @@ use std::path::PathBuf;
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyList;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-use transferred_parquet::{Compression, ParquetDestination, ParquetSource};
+use transferred_parquet::{Compression, GlobOrPaths, ParquetDestination, ParquetSource};
 
 /// Internal `PyO3` wrapper around `transferred_parquet::ParquetSource`.
 /// Constructed by the user-facing Python `ParquetSource`; not used directly.
@@ -23,10 +24,23 @@ impl PyParquetSource {
         imports = ("typing")
     ))]
     #[new]
-    fn new(path: PathBuf) -> Self {
-        Self {
-            inner: Some(ParquetSource::new(path)),
-        }
+    fn new(
+        #[gen_stub(override_type(
+            type_repr = "str | os.PathLike | list[str | os.PathLike]",
+            imports = ("os",)
+        ))]
+        path: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let source = if path.cast::<PyList>().is_ok() {
+            let paths: Vec<PathBuf> = path.extract()?;
+            GlobOrPaths::Paths(paths)
+        } else {
+            let single: PathBuf = path.extract()?;
+            GlobOrPaths::Glob(single.to_string_lossy().into_owned())
+        };
+        Ok(Self {
+            inner: Some(ParquetSource::new(source)),
+        })
     }
 }
 
