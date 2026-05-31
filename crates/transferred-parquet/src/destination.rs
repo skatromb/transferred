@@ -14,7 +14,9 @@ use crate::compression::Compression;
 /// Local single-file Parquet destination. Writes via tmp + atomic rename.
 #[derive(Debug, Clone)]
 pub struct ParquetDestination {
+    /// Output file path.
     pub path: PathBuf,
+    /// Compression codec applied to column chunks.
     pub compression: Compression,
 }
 

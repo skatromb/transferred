@@ -1,5 +1,5 @@
 //! In-memory `Source` and `Destination` for tests in this and downstream crates.
-#![allow(clippy::expect_used, clippy::unwrap_used)]
+#![allow(clippy::expect_used, clippy::unwrap_used, missing_docs)]
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
