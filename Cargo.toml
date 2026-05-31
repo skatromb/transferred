@@ -31,10 +31,14 @@ bytes = "1"
 tempfile = "3"
 
 [workspace.lints.clippy]
-pedantic = { level = "warn", priority = -1 }
-unwrap_used = "warn"
-expect_used = "warn"
-panic = "warn"
-todo = "warn"
-unimplemented = "warn"
-indexing_slicing = "warn"
+pedantic = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+indexing_slicing = "deny"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"

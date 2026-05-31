@@ -5,12 +5,18 @@
 use async_trait::async_trait;
 use transferred_core::{BatchStream, ElError, Source};
 
+/// Connection and extraction settings for a Postgres source.
 #[derive(Debug, Clone)]
 pub struct PostgresConfig {
+    /// Postgres connection string.
     pub dsn: String,
+    /// Table to read. Mutually exclusive with `query`.
     pub table: Option<String>,
+    /// Query to read. Mutually exclusive with `table`.
     pub query: Option<String>,
+    /// Columns to include. `None` reads all.
     pub columns: Option<Vec<String>>,
+    /// Columns to exclude from the read.
     pub skip_columns: Option<Vec<String>>,
 }
 
@@ -32,6 +38,7 @@ impl PostgresConfig {
     }
 }
 
+/// A `Source` that reads rows from a Postgres table or query.
 pub struct PostgresSource {
     cfg: PostgresConfig,
 }
