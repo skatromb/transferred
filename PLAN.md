@@ -123,29 +123,14 @@ sizes aren't comparable.
 - [x] Land the harness on `main`.
 - [x] Wildcard `Path` support — `ParquetSource` accepts `path/to/partitions/*.parquet`.
 - [ ] Workload: Parquet → Parquet multi-file.
-- [ ] `FileFormat` trait. Implementations: `Parquet(compression, row_group_size)`, `Avro`, `Json`, `Csv`.
+- [ ] `FileFormat` trait. Implementations: `Parquet(compression, row_group_size)`. `Avro`, `Json`, `Csv` — later.
 - [ ] File-shaped destinations carry an optional `format`: `LocalFilesystem(path, format=None)`, `S3(bucket, key, format=None)`, `GCS(...)`.
 - [ ] Row-protocol destinations have no `format` knob: `BigQuery(...)`, `Postgres(...)`.
 - [ ] `format` resolution:
-  - [ ] File source + no `format` arg: inherit source's format (path-extension first, sniff bytes on ambiguity).
+  - [ ] File source + no `format` arg: inherit source's format.
   - [ ] File source + explicit `format`: convert.
   - [ ] Non-file source + no `format`: default to `Parquet()`.
   - [ ] Non-file source + explicit `format`: convert.
-
-## Interlude
-
-Update DESIGN.md after all Interlude decisions are made.
-
-### `Source` and `Destination` abilities design
-
-If we'll make each `Source` and `Destination` development lean, so that you may implement just basics and they'll be ready to use, how could full functionality be pluggable? If we use traits and implementations as a marker, is it possible to check:
-if trait is implemented:
-    do incremental_load
-else:
-    do full_load
-?
-
-Or should we do this in other way?
 
 ## 0.1.0 — Postgres source → BigQuery destination
 
