@@ -322,27 +322,7 @@ Fast path for callers who already have Arrow: `ArrowSource(pa_record_batch_reade
 
 ### Incremental loads
 
-Incremental loads should be default when they're available. If incremental load is not supported by Source and Destination, `full_refresh` is used.
-
-Requirements from `Source`:
-- impl `TrackingField`: `tracking_column()` (like `updated_at` — to get new batch of rows for INSERT + UPDATE at `Destination`)
-- might impl `IdField`: `id_field()` (should have unique identifying column for UPDATE and DELETE at `Destination`)
-
-Abilities of `Source` based on requirements:
-- impl `InsertAndUpdate(TrackingField)`:
-    - `stream_inserts_and_updates` query rows that were updated >= current `Destination`'s `...?(get_current_track()? — bad name)` 
-- impl `PropagateDeletes(IdField)`:
-    - `stream_deletes(id)` stream ids from `Destination` that are deleted at `Source`. Should be able to be streamed, not all values at once to support 1 billion rows tables.
-
-Requirements from `Destination`:
-- impl `IdField` — for UPDATE and DELETE
-
-Abilities of `Destination` based on requirements:
-- impl `IncrementalMerge(IdField? — maybe getting this from `Source`?)`: `merge_rows()` to apply INSERTs and UPDATEs. If row exists (by `IdFIeld`), we UPDATE it, if not — INSERT.
-    - if not `IdField`, streams inserts and producing possible duplicates, since it doesn't know if row is updated or it's a newly created row.
-- might impl `IncrementalDeletes` to sync deleted rows:
-    - `stream_existing_ids(IdField)`, so that source may check then, if they still exist
-    - `apply_deleted_rows(IdField)`, so that it deletes those rows, that are reported as absent by source.
+See [INCREMENTAL.md](INCREMENTAL.md)
 
 ### Type mapping
 

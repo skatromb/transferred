@@ -48,7 +48,6 @@ Postgres + BigQuery land later. See [PLAN.md](./PLAN.md).
 
 - ✅ Make data transfers as simple as it could be
 - 🚧 Enforce best practices by default
-- 🚧 Incremental yet consistent by default
 - 🚧 Blazing fast
 - ✅ No OOMs!
 

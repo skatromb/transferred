@@ -11,6 +11,31 @@ the end.
 
 ---
 
+## Original design
+
+Incremental loads should be default when they're available. If incremental load is not supported by Source and Destination, `full_refresh` is used.
+
+Requirements from `Source`:
+- impl `TrackingField`: `tracking_column()` (like `updated_at` — to get new batch of rows for INSERT + UPDATE at `Destination`)
+- might impl `IdField`: `id_field()` (should have unique identifying column for UPDATE and DELETE at `Destination`)
+
+Abilities of `Source` based on requirements:
+- impl `InsertAndUpdate(TrackingField)`:
+    - `stream_inserts_and_updates` query rows that were updated >= current `Destination`'s `...?(get_current_track()? — bad name)` 
+- impl `PropagateDeletes(IdField)`:
+    - `stream_deletes(id)` stream ids from `Destination` that are deleted at `Source`. Should be able to be streamed, not all values at once to support 1 billion rows tables.
+
+Requirements from `Destination`:
+- impl `IdField` — for UPDATE and DELETE
+
+Abilities of `Destination` based on requirements:
+- impl `IncrementalMerge(IdField? — maybe getting this from `Source`?)`: `merge_rows()` to apply INSERTs and UPDATEs. If row exists (by `IdFIeld`), we UPDATE it, if not — INSERT.
+    - if not `IdField`, streams inserts and producing possible duplicates, since it doesn't know if row is updated or it's a newly created row.
+- might impl `IncrementalDeletes` to sync deleted rows:
+    - `stream_existing_ids(IdField)`, so that source may check then, if they still exist
+    - `apply_deleted_rows(IdField)`, so that it deletes those rows, that are reported as absent by source.
+
+
 ## The core problem we hit
 
 The shelved design propagated deletes by enumerating **every ID in the
@@ -173,6 +198,31 @@ Trait mapping: `cluster_key()` = "B-tree index on PK" (PG) / "clustering" (BQ);
 (<15) lacks `MERGE` → fall back to `INSERT ... ON CONFLICT` (which *forces* the
 unique index).
 
+### D10. Single `primary_key`; drop `merge_key`.
+
+dlt's two-key model exists *because* its default strategy is delete-insert:
+`merge_key` scopes the **DELETE** (`DELETE target WHERE merge_key IN (staging)`,
+then INSERT), letting you replace at a coarser grain than identity. `primary_key`
+is row identity for dedup + upsert match.
+
+D4 removed deletes. With no DELETE phase, `merge_key` has nothing to scope — a
+merge_key broader than identity in a pure upsert would update rows we never
+fetched (nonsensical). So expose **only `primary_key`**, and let its presence
+switch the shape:
+
+- **`Some(pk)` → upsert.** Dedup staging (latest wins), then key-scoped MERGE:
+  ```sql
+  MERGE target T USING staging S ON T.<pk> = S.<pk>
+  WHEN MATCHED THEN UPDATE SET <all non-key cols>
+  WHEN NOT MATCHED THEN INSERT (<cols>) VALUES (<cols>)
+  ```
+  Staging dedup: `QUALIFY row_number() OVER (PARTITION BY <pk> ORDER BY <tracking_column> DESC) = 1`.
+- **`None` → append-log + dedup-on-read (D5).** Same QUALIFY, at read time.
+
+This hides the delete-insert-vs-upsert distinction entirely: those are dlt's
+*delete* strategies, and we have no deletes. User picks `Full` (default) vs
+`Incremental`; if incremental, optionally a `primary_key`. Nothing else.
+
 ---
 
 ## 1. Cursor / watermark state
@@ -288,8 +338,8 @@ the merge join is bounded by a B-tree index on PK (analog of BQ clustering).
 
 **Borrow (dlt-leaning):**
 - Stage-the-batch + **key-scoped MERGE**; destination never rescans itself.
-- **Two-key model**: `primary_key` (upsert identity / dedup) vs `merge_key`
-  (merge scope).
+- **Single `primary_key`** (upsert identity / dedup). Dropped dlt's `merge_key` —
+  it scopes a DELETE we don't do (D10).
 - BigQuery **static-range partition pruning** from staging MIN/MAX.
 - Real `MERGE`/`UPDATE` (dlt `upsert`) over delete+insert temp-table churn where
   the destination supports it.
@@ -311,8 +361,7 @@ Load (user choice, default = Full):
 
 Source (only consulted when Load::Incremental):
   stream_inserts_updates(since) -> batches   // inserts + updates only (no deletes, D4)
-  primary_key() -> &str                      // upsert identity / dedup
-  merge_key()   -> Option<&str>              // merge scope; defaults to primary_key
+  primary_key() -> Option<&str>              // Some → upsert; None → append-log + dedup-on-read (D10)
   tracking_column() -> &str                  // for the watermark cut
 
 Destination:
@@ -335,14 +384,13 @@ drop the deletes-specific traits.
 
 ## Open questions (resolve before committing the redesign)
 
-1. **Key interaction**: exact `primary_key` + `merge_key` semantics in the MERGE
-   `WHEN MATCHED` clause, and how to expose them without forcing users to learn
-   the delete-insert vs upsert distinction.
+None — all resolved this session.
 
 Resolved this session: deletes scope (D4 — out of scope); default mode (D1 —
 full refresh); state (destination-derived `MAX(cursor)`, stays stateless);
 naming (D6 — `streams`); partition key (D7 — `created_at` else cluster-only);
-watermark boundary (D8 — inclusive `>=`); PG scan-bounding (D9 — symmetric with BQ).
+watermark boundary (D8 — inclusive `>=`); PG scan-bounding (D9 — symmetric with BQ);
+key model (D10 — single `primary_key`, drop `merge_key`).
 
 ---
 
