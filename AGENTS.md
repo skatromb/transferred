@@ -19,7 +19,7 @@ User-facing docstrings describe role + usage. Show an example. Do **not** mentio
 
 Internal pyclass docstrings (e.g. `_ParquetSource`): one mechanical line. "Internal PyO3 wrapper around `transferred_X::Y`." Do not duplicate the public wrapper's API.
 
-## Design docs (DESIGN.md, PLAN.md, etc.)
+## Design docs (docs/design/DESIGN.md, PLAN.md, etc.)
 
 - Terse. Assume reader is a working engineer.
 - Don't explain SemVer, git workflow, REST basics, common patterns — link external standards instead.

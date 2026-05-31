@@ -1,6 +1,6 @@
 # `transferred` — Plan
 
-Versioned roadmap and progress. Architecture and contracts in [DESIGN.md](./DESIGN.md).
+Versioned roadmap and progress. Architecture and contracts in [DESIGN.md](./docs/design/DESIGN.md).
 
 Legend: `[x]` done · `[~]` in progress · `[ ]` pending.
 
