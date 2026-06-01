@@ -1,6 +1,6 @@
 [package]
-name = "transferred-parquet"
-description = "Parquet source and destination for the transferred data transfer engine."
+name = "transferred-files"
+description = "Local filesystem source and destination (Parquet and other file formats) for the transferred data transfer engine."
 readme = "../../README.md"
 keywords = ["transferred", "parquet", "arrow", "etl", "data-transfer"]
 categories = ["database", "filesystem"]

@@ -25,7 +25,7 @@ use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use tempfile::tempdir;
 use transferred_core::Transfer;
 use transferred_core::test_utils::{TestDestination, TestSource};
-use transferred_parquet::{Compression, GlobOrPaths, ParquetDestination, ParquetSource};
+use transferred_files::{Compression, GlobOrPaths, ParquetDestination, ParquetSource};
 
 fn schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![
