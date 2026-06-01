@@ -123,14 +123,20 @@ sizes aren't comparable.
 - [x] Land the harness on `main`.
 - [x] Wildcard `Path` support — `ParquetSource` accepts `path/to/partitions/*.parquet`.
 - [ ] Workload: Parquet → Parquet multi-file.
-- [ ] `FileFormat` trait. Implementations: `Parquet(compression, row_group_size)`. `Avro`, `Json`, `Csv` — later.
-- [ ] File-shaped destinations carry an optional `format`: `LocalFilesystem(path, format=None)`, `S3(bucket, key, format=None)`, `GCS(...)`.
-- [ ] Row-protocol destinations have no `format` knob: `BigQuery(...)`, `Postgres(...)`.
-- [ ] `format` resolution:
-  - [ ] File source + no `format` arg: inherit source's format.
+- [ ] **New crate `transferred-files`** — absorbs `transferred-parquet` (which ceases to exist). Owns the `FileFormat` trait, format codecs, and the `Files` source + destination. Update workspace `Cargo.toml`, all imports, `transferred-py` dep. Pre-1.0 crate removal — allowed (DESIGN.md versioning).
+  - [ ] Reserve `transferred-files` on crates.io.
+  - [ ] `release.yml` publish order → core → files → py (drop parquet).
+- [ ] `FileFormat` trait (in `transferred-files`) — symmetric `read` (decode → Arrow) + `write` (encode ← Arrow). Promote to `transferred-core` only if formats ever split into their own crates.
+- [ ] `Parquet(compression="zstd", row_group_size=None)` codec — implements `FileFormat` (both read + write). `row_group_size=None` → skip `set_max_row_group_row_count` (keep parquet-rs default 1,048,576); `Some(n)` → set it. Never forward `None` to the setter (= unlimited). `Avro`/`Csv` — later, in-crate.
+- [ ] `FilesSource`/`FilesDestination` (local), format-agnostic, delegate codec to the resolved `FileFormat`. Replace `ParquetSource`/`ParquetDestination` — hard removal, no shim. **Suffix convention everywhere** (`{Name}Source`/`{Name}Destination`) — avoids the common Files→Files import clash; applies to `PostgresSource`/`PostgresDestination`, `BigQueryDestination`, `S3Destination` too. Internal `_FilesSource`/`_FilesDestination`.
+  - [ ] `path` with extension → single combined file (tmp + rename).
+  - [ ] `path` as directory → one `part-NNNN.parquet` per source partition; tmp dir + atomic dir rename.
+- [ ] `format` resolution (only `Parquet` impl exists in 0.0.3, so all rows resolve to Parquet — build the dispatch, not the other formats):
+  - [ ] File source + no `format`: inherit source's format (path extension first, byte-sniff on ambiguity).
   - [ ] File source + explicit `format`: convert.
   - [ ] Non-file source + no `format`: default to `Parquet()`.
   - [ ] Non-file source + explicit `format`: convert.
+- [ ] Python: `Files` source + destination wrappers + `Parquet` format wrapper in `transferred.sources` / `transferred.destinations` / `transferred.formats`; remove the Parquet wrappers; stub-gen regen; docstrings (Args + Example) per AGENTS.md; update tests (dogfood, pytest round-trip + multi-file).
 
 ## 0.1.0 — Postgres source → BigQuery destination
 
@@ -204,7 +210,8 @@ Implements the source-owned schema direction decided during the Interlude. Super
 
 ## Backlog
 
-- Incremental loads. Deferred; model TBD.
+- Incremental loads. Model decided (see [INCREMENTAL.md](./docs/design/INCREMENTAL.md), D1–D10); scheduling into a version TBD.
+- Cross-connector `batch_size` / byte-based memory budget (`set_max_row_group_bytes` + reader batch). Design against ≥2 connectors (PG + BQ) in 0.1.0; don't pin to one connector's shape.
 - Airflow / Dagster / whatever is popular operators
 - CRS reprojection (`proj` FFI), `ST_MakeValid`, Z/M handling.
 - Hstore / ltree / composite promotion from `arrow.opaque` to structured Arrow forms.

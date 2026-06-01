@@ -1,6 +1,6 @@
 # `transferred` — Design
 
-Package name `transferred` on both crates.io and PyPI. Workspace is split into per-connector crates (`transferred-core`, `transferred-parquet`, `transferred-postgres`, `transferred-bigquery`) plus a Python binding crate. Workspace version is shared across all crates; untie only if release cadence diverges.
+Package name `transferred` on both crates.io and PyPI. Workspace is split into per-connector crates (`transferred-core`, `transferred-files`, `transferred-postgres`, `transferred-bigquery`) plus a Python binding crate. `transferred-files` is the local-filesystem connector — it owns the `Files` source + destination *and* the file-format codecs (Parquet now; Csv/Avro later, in-crate). Formats split into their own crates only if that earns its keep. Workspace version is shared across all crates; untie only if release cadence diverges.
 
 ## Why
 
@@ -43,21 +43,21 @@ While the project is in its initial development, breaking changes are allowed bu
 
 ```python
 from transferred import Transfer
-from transferred.sources import Postgres
-from transferred.destinations import LocalFilesystem, BigQuery
+from transferred.sources import PostgresSource
+from transferred.destinations import FilesDestination, BigQueryDestination
 from transferred.formats import Parquet
 
 # Local file destination — no cloud creds needed.
 # Format inferred from path extension; pass `format=Parquet(...)` to override.
 Transfer(
-    source=Postgres(dsn="postgres://...", table="public.orders"),
-    destination=LocalFilesystem(path="./out/orders.parquet"),
+    source=PostgresSource(dsn="postgres://...", table="public.orders"),
+    destination=FilesDestination(path="./out/orders.parquet"),
 ).run()
 
 # BigQuery destination.
 Transfer(
-    source=Postgres(dsn="postgres://...", table="public.orders"),
-    destination=BigQuery(project="my-proj", dataset="raw", table="orders"),
+    source=PostgresSource(dsn="postgres://...", table="public.orders"),
+    destination=BigQueryDestination(project="my-proj", dataset="raw", table="orders"),
 ).run()
 ```
 
@@ -69,13 +69,13 @@ def fetch_orders():
     for page in api.paginate("/orders"):
         yield from page["results"]
 
-Transfer(source=fetch_orders(), destination=LocalFilesystem("out.parquet")).run()
+Transfer(source=fetch_orders(), destination=FilesDestination("out.parquet")).run()
 
 # List of dicts
-Transfer(source=[{"id": 1}, {"id": 2}], destination=LocalFilesystem("out.parquet")).run()
+Transfer(source=[{"id": 1}, {"id": 2}], destination=FilesDestination("out.parquet")).run()
 
 # Dataclasses — converted via dataclasses.asdict per chunk
-Transfer(source=order_iter, destination=LocalFilesystem("out.parquet")).run()
+Transfer(source=order_iter, destination=FilesDestination("out.parquet")).run()
 ```
 
 Module layout for the iterable + Arrow path:
@@ -86,7 +86,7 @@ Module layout for the iterable + Arrow path:
 
 Dispatcher rules in `Transfer.__init__`:
 
-- `Source` instance (e.g. `ParquetSource`, `ArrowSource`) → used directly.
+- `Source` instance (e.g. `FilesSource`, `ArrowSource`) → used directly.
 - Any other `Iterable` (excluding `str`/`bytes`/`bytearray`/`dict`) → wrapped via `_iterable_to_arrow`. Rows are batched into `pa.RecordBatch` of `_BATCH_SIZE` (4096), one FFI crossing per batch, schema inferred from first batch.
 - Anything else → `TypeError`.
 
@@ -95,7 +95,7 @@ Row shapes accepted by the iterable path: `dict`, `dataclass`, `pydantic.BaseMod
 Source accepts `table=` OR `query=` (mutually exclusive):
 
 ```python
-Postgres(dsn="...", query="SELECT id, total FROM orders WHERE region = 'EU'")
+PostgresSource(dsn="...", query="SELECT id, total FROM orders WHERE region = 'EU'")
 ```
 
 Internally both compile to `COPY (SELECT ...) TO STDOUT`. `table=` is sugar.
@@ -103,20 +103,20 @@ Internally both compile to `COPY (SELECT ...) TO STDOUT`. `table=` is sugar.
 Source-side column filtering — `columns=` or `skip_columns=` (mutually exclusive):
 
 ```python
-source=Postgres(
+source=PostgresSource(
     dsn="...",
     table="public.orders",
     skip_columns=["legacy_blob"],
 )
 ```
 
-**Schema direction — source-owned, destination-validated.** Source schema is ground truth: connectors infer it natively (PG `information_schema`, Parquet file metadata, Arrow batch schema, …) and preserve it end-to-end. User overrides per column via `schema=` short-circuit source inference. Destination validates the resolved schema against its accepted type set and fails loudly on incompatibility. Vocabulary stays destination-native (BQ types in `BigQuery`, PG types in `Postgres`, …); Arrow is internal, never spelled in Python. Source-side filtering via `columns=` / `skip_columns=` (mutually exclusive) is the only source-side typing knob.
+**Schema direction — source-owned, destination-validated.** Source schema is ground truth: connectors infer it natively (PG `information_schema`, Parquet file metadata, Arrow batch schema, …) and preserve it end-to-end. User overrides per column via `schema=` short-circuit source inference. Destination validates the resolved schema against its accepted type set and fails loudly on incompatibility. Vocabulary stays destination-native (BQ types in `BigQueryDestination`, PG types in `PostgresDestination`, …); Arrow is internal, never spelled in Python. Source-side filtering via `columns=` / `skip_columns=` (mutually exclusive) is the only source-side typing knob.
 
 **User schema API.** Single `schema=` knob. Strict by default; partial when an ellipsis key (`...: ...`) is present.
 
 ```python
 # Strict full schema — every source column must be listed.
-BigQuery(
+BigQueryDestination(
     project="p", dataset="d", table="orders",
     schema={
         "id":         "INT64",
@@ -127,7 +127,7 @@ BigQuery(
 )
 
 # Partial schema — `...: ...` sentinel means "infer the rest from source".
-BigQuery(
+BigQueryDestination(
     project="p", dataset="d", table="orders",
     schema={
         "total": "NUMERIC(18, 4)",
@@ -136,7 +136,7 @@ BigQuery(
 )
 
 # Or native lib objects, where the library ships them.
-BigQuery(
+BigQueryDestination(
     project="p", dataset="d", table="orders",
     schema=[
         bigquery.SchemaField("id", "INT64"),
@@ -171,17 +171,25 @@ No row-level Python callbacks. The FFI boundary is crossed once per transfer (pe
 File-shaped destinations are decoupled from file formats. A destination describes **where** bytes land; a `FileFormat` describes **how** they are encoded.
 
 - `FileFormat` trait. Implementations carry encoder knobs:
-  - `Parquet(compression, row_group_size, ...)`
+  - `Parquet(compression="zstd", row_group_size=None)` — `row_group_size=None` inherits the parquet-rs default (1,048,576 rows; `DEFAULT_MAX_ROW_GROUP_ROW_COUNT`). The writer buffers one row group in memory before flushing, so this knob *is* the write-side memory lever. The `FileFormat` trait is symmetric — `read` (decode → Arrow) for the source, `write` (encode ← Arrow) for the destination. Both trait and the `Parquet` codec live in `transferred-files`.
   - `Avro(...)`
   - `Json(...)`
   - `Csv(...)`
 - File-shaped destinations carry an optional `format`:
-  - `LocalFilesystem(path, format=None)`
-  - `S3(bucket, key, format=None)`
-  - `GCS(bucket, key, format=None)`
+  - `FilesDestination(path, format=None)` — local filesystem. `path` decides shape (see below).
+  - `S3Destination(bucket, key, format=None)`, `GCSDestination(bucket, key, format=None)` — cloud, `object_store`-backed, each carrying its own typed auth params. Separate classes, not a `FilesDestination(backend=)` enum: per-backend auth surfaces (S3 region/keys/endpoint vs GCS service-account) differ, and `object_store`'s own unified surface is either Rust builders or a stringly-typed options bag — neither a clean typed Python API.
 - Row-protocol destinations have no `format` knob — the wire protocol is the encoding:
-  - `BigQuery(project, dataset, table)` — Storage Write API.
-  - `Postgres(dsn, table)` — `COPY ... FROM STDIN`.
+  - `BigQueryDestination(project, dataset, table)` — Storage Write API.
+  - `PostgresDestination(dsn, table)` — `COPY ... FROM STDIN`.
+
+**`FilesDestination` output shape — path decides single-file vs directory:**
+
+| `path` | meaning | output |
+| ------ | ------- | ------ |
+| has a file extension (`out.parquet`) | single file | all source partitions combined into one file (tmp + atomic rename) |
+| directory (`out/`, no extension) | directory | one `part-NNNN.parquet` per source partition; atomicity via tmp dir + rename |
+
+A directory path has no extension, so format can't be inferred from it — it inherits the source format or needs an explicit `format=`.
 
 **Format resolution** when the user does not pass `format=` explicitly:
 
@@ -195,20 +203,23 @@ File-shaped destinations are decoupled from file formats. A destination describe
 Byte-copy short-circuit (won't do): even when source and destination resolve to the same `FileFormat`, the engine always decodes through Arrow. Skipping the decode would bypass schema validation and coercion reporting, and the perf win does not justify a second code path.
 
 ```python
-from transferred.destinations import LocalFilesystem, S3
+from transferred.destinations import FilesDestination, S3Destination
 from transferred.formats import Csv, Avro
 
 # Inherit format from source extension.
-Transfer(source=parquet_src, destination=LocalFilesystem("out.parquet")).run()
+Transfer(source=parquet_src, destination=FilesDestination("out.parquet")).run()
+
+# Directory output — one part-NNNN.parquet per source partition.
+Transfer(source=parquet_src, destination=FilesDestination("out/")).run()
 
 # Override format.
-Transfer(source=parquet_src, destination=LocalFilesystem("out.csv", format=Csv())).run()
+Transfer(source=parquet_src, destination=FilesDestination("out.csv", format=Csv())).run()
 
 # Non-file source → default Parquet.
-Transfer(source=pg_src, destination=S3(bucket="dwh", key="orders/")).run()
+Transfer(source=pg_src, destination=S3Destination(bucket="dwh", key="orders/")).run()
 
 # Non-file source + explicit format.
-Transfer(source=pg_src, destination=S3(bucket="dwh", key="orders/", format=Avro())).run()
+Transfer(source=pg_src, destination=S3Destination(bucket="dwh", key="orders/", format=Avro())).run()
 ```
 
 ### Architecture
@@ -269,7 +280,7 @@ Current model (serial, single partition):
 
 - One batch in flight at any time. `source.next().await` yields one `RecordBatch`; `writer.write(&batch).await` consumes it; loop.
 - No buffering between source and destination.
-- Async readers don't prefetch; async writers buffer one row group internally (configure `WriterProperties::set_max_row_group_size` to keep this bounded — default is large).
+- Async readers don't prefetch; async writers buffer one row group internally (configure `WriterProperties::set_max_row_group_row_count` to keep this bounded — default 1,048,576 rows). `set_max_row_group_bytes` offers a byte-based cap, the natural cross-connector memory lever once ≥2 connectors exist.
 - Peak per-pipeline memory ≈ `1 × batch_bytes + writer_row_group_buffer`.
 
 Parallel partitions (deferred to partition feature):
