@@ -17,7 +17,7 @@ User-facing docstrings describe role + usage. Show an example. Do **not** mentio
 - "Subclasses expose X" plumbing.
 - Concrete subclasses by name in ABC docstrings. Use generic phrasing ("Subclasses are passed to `Transfer(source=…)`").
 
-Internal pyclass docstrings (e.g. `_ParquetSource`): one mechanical line. "Internal PyO3 wrapper around `transferred_X::Y`." Do not duplicate the public wrapper's API.
+Internal pyclass docstrings (e.g. `_FilesSource`): one mechanical line. "Internal PyO3 wrapper around `transferred_X::Y`." Do not duplicate the public wrapper's API.
 
 ## Design docs (docs/design/DESIGN.md, PLAN.md, etc.)
 
