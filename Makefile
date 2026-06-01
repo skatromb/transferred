@@ -98,7 +98,7 @@ VERSION := $(shell cargo metadata --no-deps --format-version 1 \
 # Refresh Cargo.lock after manually editing `version = ...` in Cargo.toml.
 .PHONY: bump-lock
 bump-lock:
-	@cargo update -p transferred-core -p transferred-parquet -p transferred-py
+	@cargo update -p transferred-core -p transferred-files -p transferred-py
 
 # Full pre-release validation: lint, tests, types, examples.
 # Run before bumping the version.

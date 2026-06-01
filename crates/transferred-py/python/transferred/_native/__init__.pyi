@@ -58,7 +58,7 @@ class _ArrowSource:
 @typing.final
 class _ParquetDestination:
     r"""
-    Internal `PyO3` wrapper around `transferred_parquet::ParquetDestination`.
+    Internal `PyO3` wrapper around `transferred_files::ParquetDestination`.
     Constructed by the user-facing Python `ParquetDestination`; not used directly.
     """
     def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path, compression: builtins.str = 'zstd') -> typing.Self: ...
@@ -66,7 +66,7 @@ class _ParquetDestination:
 @typing.final
 class _ParquetSource:
     r"""
-    Internal `PyO3` wrapper around `transferred_parquet::ParquetSource`.
+    Internal `PyO3` wrapper around `transferred_files::ParquetSource`.
     Constructed by the user-facing Python `ParquetSource`; not used directly.
     """
     def __new__(cls, path: str | os.PathLike | list[str | os.PathLike]) -> typing.Self: ...

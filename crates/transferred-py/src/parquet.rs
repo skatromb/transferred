@@ -6,9 +6,9 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-use transferred_parquet::{Compression, GlobOrPaths, ParquetDestination, ParquetSource};
+use transferred_files::{Compression, GlobOrPaths, ParquetDestination, ParquetSource};
 
-/// Internal `PyO3` wrapper around `transferred_parquet::ParquetSource`.
+/// Internal `PyO3` wrapper around `transferred_files::ParquetSource`.
 /// Constructed by the user-facing Python `ParquetSource`; not used directly.
 #[gen_stub_pyclass]
 #[pyclass(name = "_ParquetSource", module = "transferred._native", unsendable)]
@@ -44,7 +44,7 @@ impl PyParquetSource {
     }
 }
 
-/// Internal `PyO3` wrapper around `transferred_parquet::ParquetDestination`.
+/// Internal `PyO3` wrapper around `transferred_files::ParquetDestination`.
 /// Constructed by the user-facing Python `ParquetDestination`; not used directly.
 #[gen_stub_pyclass]
 #[pyclass(
