@@ -1,6 +1,6 @@
-# Full gate: Rust + Python.
+# Full gate: Rust + Python + stub drift.
 .PHONY: check
-check: rust-check python-check
+check: rust-check python-check stubs-check
 
 
 # ============================================================================
@@ -35,7 +35,7 @@ cargo-test:
 
 # Full Python gate: lint, types, tests.
 .PHONY: python-check
-python-check: ruff ty stubs-check pytest
+python-check: ruff ty pytest
 
 # Provision venv + build extension. Other Python targets depend on this.
 .PHONY: python-setup
@@ -59,10 +59,10 @@ ty: python-setup
 	@cd crates/transferred-py && \
 	uv run --no-sync ty check
 
-# Regen stubs; CI fails if regen produced changes.
+# Regen stubs; fail if regen produced changes (drift). Surfaces locally + CI.
 .PHONY: stubs-check
 stubs-check: stubs
-	@if [ -n "$$CI" ]; then git diff --exit-code crates/transferred-py/python/transferred/_native/__init__.pyi; fi
+	@git diff --exit-code crates/transferred-py/python/transferred/_native/__init__.pyi
 
 # Regenerate `_native.pyi` stubs from `#[gen_stub_*]` annotations.
 .PHONY: stubs
