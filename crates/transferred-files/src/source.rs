@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 
 use async_trait::async_trait;
-use futures::{StreamExt, TryStreamExt, stream};
-use parquet::arrow::async_reader::ParquetRecordBatchStreamBuilder;
+use futures::{TryStreamExt, stream};
 use tokio::fs::File;
 use transferred_core::{BatchStream, Source, TransferredError};
+
+use crate::format::FormatRead;
+use crate::parquet_codec::Parquet;
 
 /// Local Parquet source. One or many files, via glob pattern or explicit paths.
 #[derive(Debug, Clone)]
@@ -66,17 +68,5 @@ fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, TransferredError> {
 
 async fn open_file_stream(path: PathBuf) -> Result<BatchStream, TransferredError> {
     let file = File::open(&path).await?;
-    let display = path.display().to_string();
-    let stream = ParquetRecordBatchStreamBuilder::new(file)
-        .await
-        .map_err(|err| TransferredError::source(format!("parquet reader init ({display}): {err}")))?
-        .build()
-        .map_err(|err| {
-            TransferredError::source(format!("parquet reader build ({display}): {err}"))
-        })?
-        .map(move |result| {
-            result.map_err(|e| TransferredError::source(format!("parquet read ({display}): {e}")))
-        });
-
-    Ok(Box::pin(stream))
+    Parquet::default().read(Box::new(file)).await
 }

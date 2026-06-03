@@ -2,14 +2,14 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use async_trait::async_trait;
-use futures::{StreamExt, TryStreamExt};
-use parquet::arrow::AsyncArrowWriter;
-use parquet::file::properties::WriterProperties;
+use futures::StreamExt;
 use tokio::fs::File;
 use tracing::warn;
 use transferred_core::{BatchStream, Destination, RunReport, TransferredError};
 
 use crate::compression::Compression;
+use crate::format::FormatWrite;
+use crate::parquet_codec::Parquet;
 
 /// Local single-file Parquet destination. Writes via tmp + atomic rename.
 #[derive(Debug, Clone)]
@@ -37,8 +37,8 @@ impl Destination for ParquetDestination {
         let start = Instant::now();
         let tmp = tmp_path(&self.path);
 
-        let (rows, bytes_written) = match write_all(&tmp, self.compression, batches).await {
-            Ok(stats) => stats,
+        let rows = match write_via_codec(&tmp, self.compression, batches).await {
+            Ok(rows) => rows,
             Err(err) => {
                 cleanup_tmp(&tmp).await;
                 return Err(err);
@@ -50,6 +50,8 @@ impl Destination for ParquetDestination {
             return Err(TransferredError::from(err));
         }
 
+        let bytes_written = tokio::fs::metadata(&self.path).await?.len();
+
         Ok(RunReport {
             rows,
             bytes_written,
@@ -59,48 +61,18 @@ impl Destination for ParquetDestination {
     }
 }
 
-/// Currently supports only sequential partitions. Writer schema is taken from
-/// the first batch; an empty source errors.
-async fn write_all(
+/// Flatten the partitions into one stream and hand them to the Parquet codec.
+/// Schema is taken from the first batch; an empty source errors.
+async fn write_via_codec(
     tmp: &Path,
     compression: Compression,
     batches: Vec<BatchStream>,
-) -> Result<(u64, u64), TransferredError> {
-    let mut stream = futures::stream::iter(batches).flatten();
-
-    let first = stream
-        .try_next()
-        .await?
-        .ok_or_else(|| TransferredError::source("source produced no batches"))?;
-
+) -> Result<u64, TransferredError> {
+    let stream: BatchStream = Box::pin(futures::stream::iter(batches).flatten());
     let file = File::create(tmp).await?;
-    let props = WriterProperties::builder()
-        .set_compression(compression.into())
-        .build();
-    let mut writer = AsyncArrowWriter::try_new(file, first.schema(), Some(props))
-        .map_err(|e| TransferredError::destination(format!("AsyncArrowWriter init: {e}")))?;
-
-    let mut rows = first.num_rows() as u64;
-    writer
-        .write(&first)
+    Parquet::new(compression, None)
+        .write(Box::new(file), stream)
         .await
-        .map_err(|e| TransferredError::destination(format!("AsyncArrowWriter::write: {e}")))?;
-
-    while let Some(batch) = stream.try_next().await? {
-        rows += batch.num_rows() as u64;
-        writer
-            .write(&batch)
-            .await
-            .map_err(|e| TransferredError::destination(format!("AsyncArrowWriter::write: {e}")))?;
-    }
-
-    writer
-        .close()
-        .await
-        .map_err(|e| TransferredError::destination(format!("AsyncArrowWriter::close: {e}")))?;
-    let bytes = tokio::fs::metadata(tmp).await?.len();
-
-    Ok((rows, bytes))
 }
 
 async fn cleanup_tmp(tmp: &Path) {
