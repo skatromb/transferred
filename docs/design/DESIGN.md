@@ -1,6 +1,6 @@
 # `transferred` — Design
 
-Package name `transferred` on both crates.io and PyPI. `el` was taken on both. Workspace is split into per-connector crates (`transferred-core`, `transferred-parquet`, `transferred-postgres`, `transferred-bigquery`) plus a Python binding crate. Workspace version is shared across all crates; untie only if release cadence diverges.
+Package name `transferred` on both crates.io and PyPI. Workspace is split into per-connector crates (`transferred-core`, `transferred-parquet`, `transferred-postgres`, `transferred-bigquery`) plus a Python binding crate. Workspace version is shared across all crates; untie only if release cadence diverges.
 
 ## Why
 
@@ -310,7 +310,7 @@ Fast path for callers who already have Arrow: `ArrowSource(pa_record_batch_reade
 ### Runtime contract
 
 - **Atomic loads.** Each backend uses its own native atomic primitive.
-    - BQ: Storage Write API in `pending` mode against a transient staging table in the destination dataset, then a server-side copy job with `WRITE_TRUNCATE` from staging into the final table, then `DROP TABLE staging`. Atomicity comes from the copy job; the Storage Write commit makes the staging table whole, the copy-replace makes the final table whole. Partitioning, clustering, description, labels, IAM on the final table are preserved (data replaced, table object not recreated). Schema enforcement is server-side: AppendRows rejects mismatched rows, the copy job rejects mismatched schemas. No client-side staging in GCS, no Parquet encoding, no `staging_bucket` knob on the public API. Errors surfaced as `ElError` subclasses.
+    - BQ: Storage Write API in `pending` mode against a transient staging table in the destination dataset, then a server-side copy job with `WRITE_TRUNCATE` from staging into the final table, then `DROP TABLE staging`. Atomicity comes from the copy job; the Storage Write commit makes the staging table whole, the copy-replace makes the final table whole. Partitioning, clustering, description, labels, IAM on the final table are preserved (data replaced, table object not recreated). Schema enforcement is server-side: AppendRows rejects mismatched rows, the copy job rejects mismatched schemas. No client-side staging in GCS, no Parquet encoding, no `staging_bucket` knob on the public API. Errors surfaced as `TransferredError` subclasses.
     - Postgres: `BEGIN; DROP target; RENAME staging; COMMIT;`. Client-side schema compare needed here since there's no equivalent server-side enforcement.
   Transfers never leave the destination half-written. `mode="append"` and `mode="upsert"` are out of scope while the project is in initial development. `on_schema_change="replace"` to opt into destructive schema replacement is a deferred kwarg.
 - **Source filter surface.** `table=` and `query=` are the two ways to bound the extract. No partial filter DSL on top — keeps the API one knob wide.
@@ -415,7 +415,7 @@ Never silently coerce to `TEXT` or `BYTES` without a summary entry — that is t
 | GCP auth         | `gcp_auth`                                          | ADC, service-account JSON, gcloud, workload identity.          |
 | Object storage   | `object_store` crate                                | Unified S3/GCS/Azure API.                                      |
 | Parquet          | `parquet` (arrow-rs)                                | Same family as Arrow. Audit gaps vs Polars.                    |
-| Errors           | `thiserror`, surfaced as `transferred.ElError`      | One root exception, typed subclasses.                          |
+| Errors           | `thiserror`, surfaced as `transferred.TransferredError`      | One root exception, typed subclasses.                          |
 | Logging          | `tracing` bridged into Python `logging`             | One config story for users.                                    |
 | License          | MIT                                                 | Liberal. Matches the rest of the analytical Python/Rust stack. |
 

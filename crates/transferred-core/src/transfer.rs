@@ -2,17 +2,17 @@ use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 
-use crate::{ElError, RunReport};
+use crate::{RunReport, TransferredError};
 
 /// Boxed `Stream` of Arrow batches — one partition's data.
-pub type BatchStream = BoxStream<'static, Result<RecordBatch, ElError>>;
+pub type BatchStream = BoxStream<'static, Result<RecordBatch, TransferredError>>;
 
 /// A data source. Yields one or more partitions of Arrow batches.
 #[async_trait]
 pub trait Source: Send {
     /// Consume the source and produce its partitions. Single-shot.
     /// Non-partitionable sources return a single-element `Vec`.
-    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>, ElError>;
+    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>, TransferredError>;
 }
 
 /// A destination. Writes batch partitions atomically and reports stats.
@@ -23,7 +23,7 @@ pub trait Destination: Send {
     async fn write_partitions(
         self: Box<Self>,
         partitions: Vec<BatchStream>,
-    ) -> Result<RunReport, ElError>;
+    ) -> Result<RunReport, TransferredError>;
 }
 
 /// Orchestrates a single end-to-end run from a `Source` to a `Destination`.
@@ -46,7 +46,7 @@ impl Transfer {
     ///
     /// # Errors
     /// Propagates any error from partition setup or write.
-    pub async fn run(self) -> Result<RunReport, ElError> {
+    pub async fn run(self) -> Result<RunReport, TransferredError> {
         let partitions = self.source.stream_partitions().await?;
         self.destination.write_partitions(partitions).await
     }

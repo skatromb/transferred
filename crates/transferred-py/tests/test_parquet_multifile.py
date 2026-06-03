@@ -7,7 +7,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from transferred import (
-    ElError,
+    TransferredError,
     ParquetDestination,
     ParquetSource,
     SourceError,
@@ -71,7 +71,7 @@ def test_literal_string_with_no_wildcards_still_works(tmp_path: Path) -> None:
 
 
 def test_missing_literal_path_raises(tmp_path: Path) -> None:
-    with pytest.raises(ElError):
+    with pytest.raises(TransferredError):
         Transfer(
             source=ParquetSource(str(tmp_path / "does-not-exist.parquet")),
             destination=ParquetDestination(tmp_path / "out.parquet"),

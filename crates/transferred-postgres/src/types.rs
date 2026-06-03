@@ -1,10 +1,10 @@
 //! Postgres `Type` → Arrow `DataType` mapping (v0 primitives).
 
 use arrow_schema::DataType;
-use transferred_core::ElError;
+use transferred_core::TransferredError;
 use tokio_postgres::types::Type;
 
-pub fn pg_to_arrow(pg: &Type) -> Result<DataType, ElError> {
+pub fn pg_to_arrow(pg: &Type) -> Result<DataType, TransferredError> {
     Ok(match *pg {
         Type::BOOL => DataType::Boolean,
         Type::INT2 => DataType::Int16,
@@ -15,7 +15,7 @@ pub fn pg_to_arrow(pg: &Type) -> Result<DataType, ElError> {
         Type::TEXT | Type::VARCHAR | Type::BPCHAR | Type::NAME => DataType::Utf8,
         Type::BYTEA => DataType::Binary,
         ref other => {
-            return Err(ElError::Coercion(format!(
+            return Err(TransferredError::Coercion(format!(
                 "Postgres type `{}` (oid {}) not supported in 0.1",
                 other.name(),
                 other.oid()

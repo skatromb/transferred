@@ -13,14 +13,14 @@ Goal: end-to-end Python wheel with Parquet round-trip published to PyPI + corres
 - Parquet source + destination only. No Postgres, no BigQuery.
 - Python API: `Transfer(source=..., destination=...).run() -> RunReport`. Accepts `Parquet` source + destination only.
 - Use source-inferred Arrow schemas, no `schema=` / `schema_overrides=` kwargs yet.
-- `RunReport`, `ElError` hierarchy surfaced into Python.
+- `RunReport`, `TransferredError` hierarchy surfaced into Python.
 - License: MIT, `LICENSE` file at repo root.
 - Workspace version shared across crates. Untie later if cadence diverges.
 
 **Tasks:**
 
 - [x] Workspace skeleton (`Cargo.toml`, `rust-toolchain.toml`, per-crate dirs).
-- [x] `transferred-core` traits (`Source`, `Destination`, `Transfer`, `ElError`, `RunReport`, `BatchStream`).
+- [x] `transferred-core` traits (`Source`, `Destination`, `Transfer`, `TransferredError`, `RunReport`, `BatchStream`).
 - [x] `transferred-parquet` source (async).
 - [x] `transferred-parquet` destination (async, atomic tmp+rename, zstd).
 - [x] Parquet round-trip dogfood test (wide schema, AAA structure).
@@ -32,7 +32,7 @@ Goal: end-to-end Python wheel with Parquet round-trip published to PyPI + corres
   - [x] `Transfer` Python class wrapping Rust `Transfer`.
   - [x] `Parquet` source + destination Python wrappers.
   - [x] `RunReport` Python class (attribute access, `__repr__`).
-  - [x] `ElError` Python exception hierarchy (`transferred.ElError` root + subclasses for source/destination/schema failures).
+  - [x] `TransferredError` Python exception hierarchy (`transferred.TransferredError` root + subclasses for source/destination/schema failures).
   - [x] Auto-generated `_native.pyi` via `pyo3-stub-gen` + `cargo run --bin stub_gen -p transferred-py`; `py.typed` marker.
 - [x] **`pyproject.toml`** — maturin config, wheel targets cp314 + cp314t. No cp313.
 - [x] **Python test harness (reproducible, CI-portable).**
@@ -74,7 +74,7 @@ Goal: load API responses and Python-native data without forcing the user through
 - [x] Source coercion dispatcher in Python `Transfer` wrapper: `Iterable` → `_iterable_to_arrow`, source → passthrough.
 - [x] Per-chunk pyarrow conversion (chunks freed as Rust consumes them; users steered toward generators over lists via docstring).
 - [x] Tests: list-of-dicts, generator, dataclass, pydantic, mixed-null columns, auto-coercion, dict rejection.
-- [x] **Docstrings with usage examples** on every public Python class (`Transfer`, `ParquetSource`, `ParquetDestination`, `RunReport`, `ElError`, `SourceError`, `DestinationError`, `ArrowError`, `IoError`). Surface in IDE hover.
+- [x] **Docstrings with usage examples** on every public Python class (`Transfer`, `ParquetSource`, `ParquetDestination`, `RunReport`, `TransferredError`, `SourceError`, `DestinationError`, `ArrowError`, `IoError`). Surface in IDE hover.
 - [x] Tighten Python `Transfer` type annotations: replace `source: Any, destination: Any` on `__new__` with `Source | Iterable[dict | dataclass | BaseModel]` for source + concrete destination type. May need a `Source` Protocol or native pyclass union.
 - [x] Ergonomics test
 - [x] Deploy 0.0.2
