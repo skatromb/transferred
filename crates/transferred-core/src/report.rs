@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 /// Severity of a recorded coercion. `Info` = Tier 1 lossless. `Warn` = Tier 2 lossy-structural.
-/// Tier 3 (lossy-semantic) coercions are not recorded — they fail the run via `ElError::Coercion`.
+/// Tier 3 (lossy-semantic) coercions are not recorded — they fail the run via `TransferredError::Coercion`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoercionLevel {
     /// Tier 1 lossless coercion.

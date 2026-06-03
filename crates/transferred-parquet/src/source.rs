@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt, stream};
 use parquet::arrow::async_reader::ParquetRecordBatchStreamBuilder;
 use tokio::fs::File;
-use transferred_core::{BatchStream, ElError, Source};
+use transferred_core::{BatchStream, Source, TransferredError};
 
 /// Local Parquet source. One or many files, via glob pattern or explicit paths.
 #[derive(Debug, Clone)]
@@ -33,7 +33,7 @@ impl ParquetSource {
 #[async_trait]
 impl Source for ParquetSource {
     /// One stream per file. Glob patterns expanded here; empty matches error.
-    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>, ElError> {
+    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>, TransferredError> {
         let paths = match self.source {
             GlobOrPaths::Paths(paths) => paths,
             GlobOrPaths::Glob(pattern) => expand_glob(&pattern)?,
@@ -48,30 +48,34 @@ fn lazy_open_file(path: PathBuf) -> BatchStream {
     Box::pin(stream::once(open_file_stream(path)).try_flatten())
 }
 
-fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, ElError> {
+fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, TransferredError> {
     let paths: Vec<PathBuf> = glob::glob(pattern)
-        .map_err(|err| ElError::source(format!("invalid glob pattern '{pattern}': {err}")))?
+        .map_err(|err| {
+            TransferredError::source(format!("invalid glob pattern '{pattern}': {err}"))
+        })?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| ElError::source(format!("glob walk error: {err}")))?;
+        .map_err(|err| TransferredError::source(format!("glob walk error: {err}")))?;
 
     if paths.is_empty() {
-        return Err(ElError::source(format!(
+        return Err(TransferredError::source(format!(
             "glob '{pattern}' matched no files"
         )));
     }
     Ok(paths)
 }
 
-async fn open_file_stream(path: PathBuf) -> Result<BatchStream, ElError> {
+async fn open_file_stream(path: PathBuf) -> Result<BatchStream, TransferredError> {
     let file = File::open(&path).await?;
     let display = path.display().to_string();
     let stream = ParquetRecordBatchStreamBuilder::new(file)
         .await
-        .map_err(|err| ElError::source(format!("parquet reader init ({display}): {err}")))?
+        .map_err(|err| TransferredError::source(format!("parquet reader init ({display}): {err}")))?
         .build()
-        .map_err(|err| ElError::source(format!("parquet reader build ({display}): {err}")))?
+        .map_err(|err| {
+            TransferredError::source(format!("parquet reader build ({display}): {err}"))
+        })?
         .map(move |result| {
-            result.map_err(|e| ElError::source(format!("parquet read ({display}): {e}")))
+            result.map_err(|e| TransferredError::source(format!("parquet read ({display}): {e}")))
         });
 
     Ok(Box::pin(stream))

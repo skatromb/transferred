@@ -7,7 +7,7 @@ use parquet::arrow::AsyncArrowWriter;
 use parquet::file::properties::WriterProperties;
 use tokio::fs::File;
 use tracing::warn;
-use transferred_core::{BatchStream, Destination, ElError, RunReport};
+use transferred_core::{BatchStream, Destination, RunReport, TransferredError};
 
 use crate::compression::Compression;
 
@@ -33,7 +33,7 @@ impl Destination for ParquetDestination {
     async fn write_partitions(
         self: Box<Self>,
         batches: Vec<BatchStream>,
-    ) -> Result<RunReport, ElError> {
+    ) -> Result<RunReport, TransferredError> {
         let start = Instant::now();
         let tmp = tmp_path(&self.path);
 
@@ -47,7 +47,7 @@ impl Destination for ParquetDestination {
 
         if let Err(err) = tokio::fs::rename(&tmp, &self.path).await {
             cleanup_tmp(&tmp).await;
-            return Err(ElError::from(err));
+            return Err(TransferredError::from(err));
         }
 
         Ok(RunReport {
@@ -65,39 +65,39 @@ async fn write_all(
     tmp: &Path,
     compression: Compression,
     batches: Vec<BatchStream>,
-) -> Result<(u64, u64), ElError> {
+) -> Result<(u64, u64), TransferredError> {
     let mut stream = futures::stream::iter(batches).flatten();
 
     let first = stream
         .try_next()
         .await?
-        .ok_or_else(|| ElError::source("source produced no batches"))?;
+        .ok_or_else(|| TransferredError::source("source produced no batches"))?;
 
     let file = File::create(tmp).await?;
     let props = WriterProperties::builder()
         .set_compression(compression.into())
         .build();
     let mut writer = AsyncArrowWriter::try_new(file, first.schema(), Some(props))
-        .map_err(|e| ElError::destination(format!("AsyncArrowWriter init: {e}")))?;
+        .map_err(|e| TransferredError::destination(format!("AsyncArrowWriter init: {e}")))?;
 
     let mut rows = first.num_rows() as u64;
     writer
         .write(&first)
         .await
-        .map_err(|e| ElError::destination(format!("AsyncArrowWriter::write: {e}")))?;
+        .map_err(|e| TransferredError::destination(format!("AsyncArrowWriter::write: {e}")))?;
 
     while let Some(batch) = stream.try_next().await? {
         rows += batch.num_rows() as u64;
         writer
             .write(&batch)
             .await
-            .map_err(|e| ElError::destination(format!("AsyncArrowWriter::write: {e}")))?;
+            .map_err(|e| TransferredError::destination(format!("AsyncArrowWriter::write: {e}")))?;
     }
 
     writer
         .close()
         .await
-        .map_err(|e| ElError::destination(format!("AsyncArrowWriter::close: {e}")))?;
+        .map_err(|e| TransferredError::destination(format!("AsyncArrowWriter::close: {e}")))?;
     let bytes = tokio::fs::metadata(tmp).await?.len();
 
     Ok((rows, bytes))

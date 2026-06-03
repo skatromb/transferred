@@ -3,7 +3,7 @@
 //! 0.1 scaffold: API skeleton only. Real binary COPY parsing TBD.
 
 use async_trait::async_trait;
-use transferred_core::{BatchStream, ElError, Source};
+use transferred_core::{BatchStream, Source, TransferredError};
 
 /// Connection and extraction settings for a Postgres source.
 #[derive(Debug, Clone)]
@@ -24,13 +24,13 @@ impl PostgresConfig {
     /// Check `table`/`query` mutual exclusion.
     ///
     /// # Errors
-    /// Returns `ElError::Source` if both or neither are set.
-    pub fn validate(&self) -> Result<(), ElError> {
+    /// Returns `TransferredError::Source` if both or neither are set.
+    pub fn validate(&self) -> Result<(), TransferredError> {
         match (&self.table, &self.query) {
-            (Some(_), Some(_)) => Err(ElError::source(
+            (Some(_), Some(_)) => Err(TransferredError::source(
                 "Postgres source: `table` and `query` are mutually exclusive",
             )),
-            (None, None) => Err(ElError::source(
+            (None, None) => Err(TransferredError::source(
                 "Postgres source: one of `table` or `query` is required",
             )),
             _ => Ok(()),
@@ -48,7 +48,7 @@ impl PostgresSource {
     ///
     /// # Errors
     /// Propagates `PostgresConfig::validate` errors.
-    pub fn new(cfg: PostgresConfig) -> Result<Self, ElError> {
+    pub fn new(cfg: PostgresConfig) -> Result<Self, TransferredError> {
         cfg.validate()?;
         Ok(Self { cfg })
     }
@@ -56,9 +56,9 @@ impl PostgresSource {
 
 #[async_trait]
 impl Source for PostgresSource {
-    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>, ElError> {
+    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>, TransferredError> {
         let _ = &self.cfg;
-        Err(ElError::source(
+        Err(TransferredError::source(
             "PostgresSource::partitions not yet implemented",
         ))
     }

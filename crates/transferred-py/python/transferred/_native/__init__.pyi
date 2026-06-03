@@ -80,29 +80,29 @@ class _Transfer:
     def run(self) -> RunReport: ...
 
 
-class ElError(Exception):
+class TransferredError(Exception):
     """Base exception for all `transferred` failures.
 
     Subclasses: `SourceError`, `DestinationError`, `ArrowError`, `IoError`.
 
     Example:
         ```py
-        >>> from transferred import Transfer, ElError
+        >>> from transferred import Transfer, TransferredError
         >>> try:
         ...     Transfer(source=..., destination=...).run()
-        ... except ElError as e:
+        ... except TransferredError as e:
         ...     print(f"transfer failed: {e}")
         ```
     """
 
-class SourceError(ElError):
+class SourceError(TransferredError):
     """Source read failed (file missing, malformed Parquet, etc.)."""
 
-class DestinationError(ElError):
+class DestinationError(TransferredError):
     """Destination write failed (permission denied, disk full, schema mismatch)."""
 
-class ArrowError(ElError):
+class ArrowError(TransferredError):
     """Arrow schema or array conversion failed."""
 
-class IoError(ElError):
+class IoError(TransferredError):
     """Filesystem I/O error not attributable to source or destination logic."""
