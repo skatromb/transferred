@@ -24,7 +24,7 @@ class ArrowSource(Source):
 
     Example:
         >>> import pyarrow as pa
-        >>> from transferred import ArrowSource, ParquetDestination, Transfer
+        >>> from transferred import ArrowSource, FilesDestination, Transfer
         >>>
         >>> schema = pa.schema([("id", pa.int64())])
         >>> batch = pa.record_batch([pa.array([1, 2, 3])], schema=schema)
@@ -32,7 +32,7 @@ class ArrowSource(Source):
         >>>
         >>> report = Transfer(
         ...     source=ArrowSource(reader),
-        ...     destination=ParquetDestination("out.parquet"),
+        ...     destination=FilesDestination("out.parquet"),
         ... ).run()
         >>>
         >>> print(report)

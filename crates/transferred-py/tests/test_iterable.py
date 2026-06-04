@@ -14,12 +14,12 @@ import pyarrow.parquet as pq
 import pytest
 from pydantic import BaseModel
 
-from transferred import ArrowSource, ParquetDestination, Transfer
+from transferred import ArrowSource, FilesDestination, Transfer
 from transferred.iterable import _iterable_to_arrow
 
 
 def _transfer_run(source: Any, out: Path) -> int:
-    report = Transfer(source=source, destination=ParquetDestination(out)).run()
+    report = Transfer(source=source, destination=FilesDestination(out)).run()
     return report.rows
 
 
@@ -116,7 +116,7 @@ def test_transfer_rejects_dict_as_source(tmp_path: Path) -> None:
     with pytest.raises(TypeError, match="unsupported row type"):
         Transfer(
             source={"id": 1, "name": "x"},  # ty: ignore[invalid-argument-type]
-            destination=ParquetDestination(tmp_path / "out.parquet"),
+            destination=FilesDestination(tmp_path / "out.parquet"),
         )
 
 
@@ -125,7 +125,7 @@ def test_transfer_passes_through_explicit_arrow_source(tmp_path: Path) -> None:
     out = tmp_path / "out.parquet"
 
     src = _iterable_to_arrow(rows)
-    report = Transfer(source=src, destination=ParquetDestination(out)).run()
+    report = Transfer(source=src, destination=FilesDestination(out)).run()
     assert report.rows == 4
 
 
@@ -133,7 +133,7 @@ def test_transfer_rejects_non_source_non_iterable(tmp_path: Path) -> None:
     with pytest.raises(TypeError, match="source must be a transferred source"):
         Transfer(
             source=42,  # ty: ignore[invalid-argument-type]
-            destination=ParquetDestination(tmp_path / "out.parquet"),
+            destination=FilesDestination(tmp_path / "out.parquet"),
         )
 
 
@@ -158,5 +158,5 @@ def test_arrow_source_accepts_record_batch_reader(tmp_path: Path) -> None:
     out = tmp_path / "out.parquet"
 
     src = ArrowSource(reader)
-    report = Transfer(source=src, destination=ParquetDestination(out)).run()
+    report = Transfer(source=src, destination=FilesDestination(out)).run()
     assert report.rows == 3

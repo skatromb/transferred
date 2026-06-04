@@ -1,4 +1,4 @@
-//! Dogfood: in-memory batches → `ParquetDestination` → `ParquetSource` → in-memory collector,
+//! Dogfood: in-memory batches → `FilesDestination` → `FilesSource` → in-memory collector,
 //! both legs orchestrated by `Transfer`. Wide schema of round-trip-safe Arrow types.
 
 #![allow(
@@ -25,7 +25,7 @@ use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use tempfile::tempdir;
 use transferred_core::Transfer;
 use transferred_core::test_utils::{TestDestination, TestSource};
-use transferred_files::{Compression, GlobOrPaths, ParquetDestination, ParquetSource};
+use transferred_files::{Compression, FilesDestination, FilesSource, GlobOrPaths, Parquet};
 
 fn schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![
@@ -170,7 +170,10 @@ async fn parquet_dogfood() {
     // Dump to file
     let write_report = Transfer::new(
         Box::new(TestSource::new(input.clone())),
-        Box::new(ParquetDestination::new(path.clone(), Compression::Zstd)),
+        Box::new(FilesDestination::new(
+            path.clone(),
+            Arc::new(Parquet::new(Compression::Zstd, None)),
+        )),
     )
     .run()
     .await
@@ -178,7 +181,10 @@ async fn parquet_dogfood() {
 
     // Read from file back to memory
     let read_report = Transfer::new(
-        Box::new(ParquetSource::new(GlobOrPaths::Paths(vec![path.clone()]))),
+        Box::new(FilesSource::new(
+            GlobOrPaths::Paths(vec![path.clone()]),
+            Arc::new(Parquet::default()),
+        )),
         Box::new(memory_destination),
     )
     .run()

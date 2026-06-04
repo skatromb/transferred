@@ -1,5 +1,5 @@
 """All `transferred` destinations. Pass any to `Transfer(destination=...)`."""
 
-from transferred.parquet import ParquetDestination
+from transferred.files import FilesDestination
 
-__all__ = ["ParquetDestination"]
+__all__ = ["FilesDestination"]

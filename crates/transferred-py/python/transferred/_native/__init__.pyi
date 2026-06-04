@@ -56,20 +56,28 @@ class _ArrowSource:
     def __new__(cls, reader: typing.Any) -> typing.Self: ...
 
 @typing.final
-class _ParquetDestination:
+class _FilesDestination:
     r"""
-    Internal `PyO3` wrapper around `transferred_files::ParquetDestination`.
-    Constructed by the user-facing Python `ParquetDestination`; not used directly.
+    Internal `PyO3` wrapper around `transferred_files::FilesDestination`.
+    Constructed by the user-facing Python `Files`; not used directly.
     """
-    def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path, compression: builtins.str = 'zstd') -> typing.Self: ...
+    def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path, format: typing.Optional[typing.Any] = None) -> typing.Self: ...
 
 @typing.final
-class _ParquetSource:
+class _FilesSource:
     r"""
-    Internal `PyO3` wrapper around `transferred_files::ParquetSource`.
-    Constructed by the user-facing Python `ParquetSource`; not used directly.
+    Internal `PyO3` wrapper around `transferred_files::FilesSource`.
+    Constructed by the user-facing Python `Files`; not used directly.
     """
-    def __new__(cls, path: str | os.PathLike | list[str | os.PathLike]) -> typing.Self: ...
+    def __new__(cls, path: str | os.PathLike | list[str | os.PathLike], format: typing.Optional[typing.Any] = None) -> typing.Self: ...
+
+@typing.final
+class _Parquet:
+    r"""
+    Internal `PyO3` wrapper around `transferred_files::Parquet`.
+    Constructed by the user-facing Python `Parquet`; not used directly.
+    """
+    def __new__(cls, compression: builtins.str = 'zstd', row_group_size: typing.Optional[builtins.int] = None) -> _Parquet: ...
 
 class _Transfer:
     r"""

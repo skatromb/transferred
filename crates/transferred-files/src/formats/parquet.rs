@@ -2,13 +2,14 @@
 
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
-use parquet::arrow::AsyncArrowWriter;
-use parquet::arrow::async_reader::ParquetRecordBatchStreamBuilder;
-use parquet::file::properties::WriterProperties;
 use transferred_core::{BatchStream, TransferredError};
+// Leading `::` selects the extern `parquet` crate, not this `formats::parquet` module.
+use ::parquet::arrow::AsyncArrowWriter;
+use ::parquet::arrow::async_reader::ParquetRecordBatchStreamBuilder;
+use ::parquet::file::properties::WriterProperties;
 
+use super::{FileReader, FileWriter, FormatRead, FormatWrite};
 use crate::compression::Compression;
-use crate::format::{FileReader, FileWriter, FormatRead, FormatWrite};
 
 /// Parquet file format. Carries encoder knobs; decoding needs none.
 #[derive(Debug, Clone, Default)]

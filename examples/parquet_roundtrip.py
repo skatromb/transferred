@@ -14,7 +14,7 @@ Run:
 from pathlib import Path
 
 import pyarrow.parquet as pq
-from transferred import ParquetDestination, ParquetSource, Transfer
+from transferred import FilesDestination, FilesSource, Parquet, Transfer
 
 # source:
 # pa.table({
@@ -26,8 +26,8 @@ source = Path("small.parquet")
 destination = Path("compressed.parquet")
 
 report = Transfer(
-    source=ParquetSource(source),
-    destination=ParquetDestination(destination, compression="zstd"),
+    source=FilesSource(source),
+    destination=FilesDestination(destination, format=Parquet(compression="zstd")),
 ).run()
 
 print(report)

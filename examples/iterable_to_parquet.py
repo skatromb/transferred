@@ -16,12 +16,12 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 from pydantic import BaseModel
-from transferred import ParquetDestination, Transfer
+from transferred import FilesDestination, Transfer
 
 # dicts
 Transfer(
     source=({"id": i, "name": f"row-{i}"} for i in range(1_000)),
-    destination=ParquetDestination(Path("from_dicts.parquet")),
+    destination=FilesDestination(Path("from_dicts.parquet")),
 ).run()
 
 
@@ -34,7 +34,7 @@ class User:
 
 Transfer(
     source=(User(id=i, name=f"row-{i}") for i in range(1_000)),
-    destination=ParquetDestination(Path("from_dataclasses.parquet")),
+    destination=FilesDestination(Path("from_dataclasses.parquet")),
 ).run()
 
 
@@ -46,7 +46,7 @@ class UserModel(BaseModel):
 
 report = Transfer(
     source=(UserModel(id=i, name=f"row-{i}") for i in range(1_000)),
-    destination=ParquetDestination(Path("from_pydantic.parquet")),
+    destination=FilesDestination(Path("from_pydantic.parquet")),
 ).run()
 
 print(report)

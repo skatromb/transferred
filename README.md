@@ -18,11 +18,11 @@ Requires Python 3.14.
 ## Usage
 
 ```python
-from transferred import ParquetDestination, ParquetSource, Transfer
+from transferred import FilesDestination, FilesSource, Parquet, Transfer
 
 report = Transfer(
-    source=ParquetSource("in.parquet"),
-    destination=ParquetDestination("out.parquet", compression="zstd"),
+    source=FilesSource("in.parquet"),
+    destination=FilesDestination("out.parquet", format=Parquet(compression="zstd")),
 ).run()
 
 print(report)
@@ -35,12 +35,12 @@ print(report)
 ## Supported
 
 Sources:
-- Parquet file — `ParquetSource`
+- Parquet file — `FilesSource`
 - Arrow `RecordBatchReader` — `ArrowSource` (requires `pip install transferred[arrow]`)
 - Python iterables of `dict` / `@dataclass` / `pydantic.BaseModel` (requires `pip install transferred[iterable]`)
 
 Destinations:
-- Parquet file — `ParquetDestination` (zstd / snappy / uncompressed)
+- Parquet file — `FilesDestination` (zstd / snappy / uncompressed)
 
 Postgres + BigQuery land later. See [PLAN.md](./PLAN.md).
 

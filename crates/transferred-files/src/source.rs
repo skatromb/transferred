@@ -1,17 +1,19 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::{TryStreamExt, stream};
 use tokio::fs::File;
 use transferred_core::{BatchStream, Source, TransferredError};
 
-use crate::format::FormatRead;
-use crate::parquet_codec::Parquet;
+use crate::formats::FormatRead;
 
-/// Local Parquet source. One or many files, via glob pattern or explicit paths.
-#[derive(Debug, Clone)]
-pub struct ParquetSource {
+/// Local file source. One or many files, via glob pattern or explicit paths.
+/// Bytes are decoded by the supplied [`FormatRead`] codec.
+#[derive(Clone)]
+pub struct FilesSource {
     source: GlobOrPaths,
+    format: Arc<dyn FormatRead>,
 }
 
 /// How the source enumerates files: glob or single path, or list of paths.
@@ -24,16 +26,16 @@ pub enum GlobOrPaths {
     Paths(Vec<PathBuf>),
 }
 
-impl ParquetSource {
+impl FilesSource {
     /// Build a source. No I/O performed.
     #[must_use]
-    pub fn new(source: GlobOrPaths) -> Self {
-        Self { source }
+    pub fn new(source: GlobOrPaths, format: Arc<dyn FormatRead>) -> Self {
+        Self { source, format }
     }
 }
 
 #[async_trait]
-impl Source for ParquetSource {
+impl Source for FilesSource {
     /// One stream per file. Glob patterns expanded here; empty matches error.
     async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>, TransferredError> {
         let paths = match self.source {
@@ -41,13 +43,17 @@ impl Source for ParquetSource {
             GlobOrPaths::Glob(pattern) => expand_glob(&pattern)?,
         };
 
-        Ok(paths.into_iter().map(lazy_open_file).collect())
+        let format = self.format;
+        Ok(paths
+            .into_iter()
+            .map(|path| lazy_open_file(path, format.clone()))
+            .collect())
     }
 }
 
 /// Keep files opening lazy so that only opened files has file descriptors.
-fn lazy_open_file(path: PathBuf) -> BatchStream {
-    Box::pin(stream::once(open_file_stream(path)).try_flatten())
+fn lazy_open_file(path: PathBuf, format: Arc<dyn FormatRead>) -> BatchStream {
+    Box::pin(stream::once(open_file_stream(path, format)).try_flatten())
 }
 
 fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, TransferredError> {
@@ -66,7 +72,10 @@ fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, TransferredError> {
     Ok(paths)
 }
 
-async fn open_file_stream(path: PathBuf) -> Result<BatchStream, TransferredError> {
+async fn open_file_stream(
+    path: PathBuf,
+    format: Arc<dyn FormatRead>,
+) -> Result<BatchStream, TransferredError> {
     let file = File::open(&path).await?;
-    Parquet::default().read(Box::new(file)).await
+    format.read(Box::new(file)).await
 }
