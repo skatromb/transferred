@@ -1,4 +1,4 @@
-"""Multi-file `ParquetSource` — glob pattern and explicit path list."""
+"""Multi-file `FilesSource` — glob pattern and explicit path list."""
 
 from pathlib import Path
 
@@ -8,8 +8,8 @@ import pytest
 
 from transferred import (
     TransferredError,
-    ParquetDestination,
-    ParquetSource,
+    FilesDestination,
+    FilesSource,
     SourceError,
     Transfer,
 )
@@ -26,8 +26,8 @@ def test_glob_matches_multiple_files(tmp_path: Path) -> None:
     out = tmp_path / "out.parquet"
 
     report = Transfer(
-        source=ParquetSource(str(tmp_path / "*.parquet")),
-        destination=ParquetDestination(out),
+        source=FilesSource(str(tmp_path / "*.parquet")),
+        destination=FilesDestination(out),
     ).run()
 
     assert report.rows == 5
@@ -37,8 +37,8 @@ def test_glob_matches_multiple_files(tmp_path: Path) -> None:
 def test_glob_no_match_raises(tmp_path: Path) -> None:
     with pytest.raises(SourceError, match="matched no files"):
         Transfer(
-            source=ParquetSource(str(tmp_path / "missing-*.parquet")),
-            destination=ParquetDestination(tmp_path / "out.parquet"),
+            source=FilesSource(str(tmp_path / "missing-*.parquet")),
+            destination=FilesDestination(tmp_path / "out.parquet"),
         ).run()
 
 
@@ -50,8 +50,8 @@ def test_explicit_list_of_paths(tmp_path: Path) -> None:
     out = tmp_path / "out.parquet"
 
     report = Transfer(
-        source=ParquetSource([a, b]),
-        destination=ParquetDestination(out),
+        source=FilesSource([a, b]),
+        destination=FilesDestination(out),
     ).run()
 
     assert report.rows == 5
@@ -63,8 +63,8 @@ def test_literal_string_with_no_wildcards_still_works(tmp_path: Path) -> None:
     out = tmp_path / "out.parquet"
 
     report = Transfer(
-        source=ParquetSource(str(seed)),
-        destination=ParquetDestination(out),
+        source=FilesSource(str(seed)),
+        destination=FilesDestination(out),
     ).run()
 
     assert report.rows == 3
@@ -73,6 +73,6 @@ def test_literal_string_with_no_wildcards_still_works(tmp_path: Path) -> None:
 def test_missing_literal_path_raises(tmp_path: Path) -> None:
     with pytest.raises(TransferredError):
         Transfer(
-            source=ParquetSource(str(tmp_path / "does-not-exist.parquet")),
-            destination=ParquetDestination(tmp_path / "out.parquet"),
+            source=FilesSource(str(tmp_path / "does-not-exist.parquet")),
+            destination=FilesDestination(tmp_path / "out.parquet"),
         ).run()

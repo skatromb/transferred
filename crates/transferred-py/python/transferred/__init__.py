@@ -10,7 +10,8 @@ from transferred._native import (
     SourceError,
 )
 from transferred.arrow import ArrowSource
-from transferred.parquet import ParquetDestination, ParquetSource
+from transferred.files import FilesDestination, FilesSource
+from transferred.formats import Parquet
 from transferred.transfer import Transfer
 
 __all__ = [
@@ -27,7 +28,9 @@ __all__ = [
     "SourceError",
     # Arrow
     "ArrowSource",
-    # Parquet
-    "ParquetDestination",
-    "ParquetSource",
+    # Files
+    "FilesDestination",
+    "FilesSource",
+    # Formats
+    "Parquet",
 ]

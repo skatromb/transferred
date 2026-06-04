@@ -4,12 +4,10 @@
 
 mod compression;
 mod destination;
-mod format;
-mod parquet_codec;
+mod formats;
 mod source;
 
 pub use compression::Compression;
-pub use destination::ParquetDestination;
-pub use format::{FileReader, FileWriter, FormatRead, FormatWrite};
-pub use parquet_codec::Parquet;
-pub use source::{GlobOrPaths, ParquetSource};
+pub use destination::FilesDestination;
+pub use formats::{FileReader, FileWriter, FormatRead, FormatWrite, Parquet};
+pub use source::{FilesSource, GlobOrPaths};

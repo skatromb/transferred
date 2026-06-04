@@ -1,7 +1,7 @@
 """Parquet round-trip via the Python API.
 
-Writes a few batches to a Parquet file via `Transfer + ParquetDestination`, then
-reads them back via `Transfer + ParquetSource` and verifies the row count.
+Writes a few batches to a Parquet file via `Transfer + FilesDestination`, then
+reads them back via `Transfer + FilesSource` and verifies the row count.
 """
 
 from pathlib import Path
@@ -9,7 +9,7 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from transferred import ParquetDestination, ParquetSource, RunReport, Transfer
+from transferred import FilesDestination, FilesSource, Parquet, RunReport, Transfer
 
 
 def _build_input_table() -> pa.Table:
@@ -23,7 +23,7 @@ def _build_input_table() -> pa.Table:
 
 
 def test_parquet_write_then_read(tmp_path: Path) -> None:
-    # Arrange — write a seed Parquet via pyarrow so a ParquetSource has something to read.
+    # Arrange — write a seed Parquet via pyarrow so a FilesSource has something to read.
     seed = tmp_path / "seed.parquet"
     pq.write_table(_build_input_table(), seed)
 
@@ -31,8 +31,8 @@ def test_parquet_write_then_read(tmp_path: Path) -> None:
 
     # Act — drive the round-trip through the Rust engine.
     report = Transfer(
-        source=ParquetSource(seed),
-        destination=ParquetDestination(out, compression="zstd"),
+        source=FilesSource(seed),
+        destination=FilesDestination(out, format=Parquet(compression="zstd")),
     ).run()
 
     # Assert.

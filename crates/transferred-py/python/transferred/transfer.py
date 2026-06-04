@@ -22,10 +22,10 @@ class Transfer(_Transfer):
         destination: A `transferred.Destination`.
 
     Example:
-        >>> from transferred import ParquetDestination, Transfer
+        >>> from transferred import FilesDestination, Transfer
         >>>
         >>> rows = ({"id": i, "name": f"row-{i}"} for i in range(1000))
-        >>> destination = ParquetDestination("out.parquet")
+        >>> destination = FilesDestination("out.parquet")
         >>>
         >>> report = Transfer(
         ...     source=rows,

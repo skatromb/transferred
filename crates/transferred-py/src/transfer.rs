@@ -8,7 +8,7 @@ use transferred_core::{Destination, Source, Transfer};
 
 use crate::arrow::PyArrowSource;
 use crate::error::to_pyerr;
-use crate::parquet::{PyParquetDestination, PyParquetSource};
+use crate::files::{PyFilesDestination, PyFilesSource};
 use crate::report::PyRunReport;
 
 /// Internal `PyO3` wrapper around `transferred_core::Transfer`. Subclassed by the
@@ -66,7 +66,7 @@ impl PyTransfer {
 }
 
 fn extract_source(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Source + Send>> {
-    if let Ok(cell) = obj.cast::<PyParquetSource>() {
+    if let Ok(cell) = obj.cast::<PyFilesSource>() {
         let inner = cell
             .try_borrow_mut()?
             .inner
@@ -92,7 +92,7 @@ fn extract_source(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Source + Send>> {
 }
 
 fn extract_destination(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Destination + Send>> {
-    if let Ok(cell) = obj.cast::<PyParquetDestination>() {
+    if let Ok(cell) = obj.cast::<PyFilesDestination>() {
         let inner = cell
             .try_borrow_mut()?
             .inner

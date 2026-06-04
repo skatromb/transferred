@@ -1,9 +1,14 @@
 //! File-format codec seam. A format converts between a file's byte stream and
 //! Arrow batches; `Files` owns opening the file and hands over the byte handle.
+//! One module per codec (`parquet`, `csv`/`avro` later).
 
 use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite};
 use transferred_core::{BatchStream, TransferredError};
+
+pub mod parquet;
+
+pub use parquet::Parquet;
 
 /// A readable file handle — random-access bytes. `Files` opens it; a format decodes it.
 /// Seekability is part of what a file *is* (footers, metadata); sequential formats simply

@@ -59,7 +59,7 @@ ty: python-setup
 	@cd crates/transferred-py && \
 	uv run --no-sync ty check
 
-# Regen stubs; fail if regen produced changes (drift). Surfaces locally + CI.
+# Regen stubs; fail if regen produced changes (drift).
 .PHONY: stubs-check
 stubs-check: stubs
 	@git diff --exit-code crates/transferred-py/python/transferred/_native/__init__.pyi
