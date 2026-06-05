@@ -22,8 +22,8 @@ pub struct PyParquet {
 #[pymethods]
 impl PyParquet {
     #[new]
-    #[pyo3(signature = (compression = "zstd"))]
-    fn new(compression: &str) -> PyResult<Self> {
+    #[pyo3(signature = (compression))]
+    fn new(compression: Option<&str>) -> PyResult<Self> {
         let compression = parse_compression(compression)?;
         Ok(Self {
             inner: Parquet::new(compression),
@@ -46,14 +46,14 @@ impl PyFilesSource {
         imports = ("typing")
     ))]
     #[new]
-    #[pyo3(signature = (path, format = None))]
+    #[pyo3(signature = (path, format))]
     fn new(
         #[gen_stub(override_type(
             type_repr = "str | os.PathLike | list[str | os.PathLike]",
             imports = ("os",)
         ))]
         path: &Bound<'_, PyAny>,
-        format: Option<&Bound<'_, PyAny>>,
+        format: &Bound<'_, PyAny>,
     ) -> PyResult<Self> {
         let source = if path.cast::<PyList>().is_ok() {
             let paths: Vec<PathBuf> = path.extract()?;
@@ -62,7 +62,7 @@ impl PyFilesSource {
             let single: PathBuf = path.extract()?;
             GlobOrPaths::Glob(single.to_string_lossy().into_owned())
         };
-        let format: Arc<dyn FormatRead> = read_format(format)?;
+        let format: Arc<dyn FormatRead> = Arc::new(parquet_arg(format)?);
         Ok(Self {
             inner: Some(FilesSource::new(source, format)),
         })
@@ -84,41 +84,28 @@ impl PyFilesDestination {
         imports = ("typing")
     ))]
     #[new]
-    #[pyo3(signature = (path, format = None, single_file = false))]
-    fn new(path: PathBuf, format: Option<&Bound<'_, PyAny>>, single_file: bool) -> PyResult<Self> {
-        let format: Arc<dyn FormatWrite> = write_format(format)?;
+    #[pyo3(signature = (path, format, single_file = false))]
+    fn new(path: PathBuf, format: &Bound<'_, PyAny>, single_file: bool) -> PyResult<Self> {
+        let format: Arc<dyn FormatWrite> = Arc::new(parquet_arg(format)?);
         Ok(Self {
             inner: Some(FilesDestination::new(path, format, single_file)),
         })
     }
 }
 
-/// Resolve the `format=` argument to a format reader; `None` defaults to Parquet.
-fn read_format(format: Option<&Bound<'_, PyAny>>) -> PyResult<Arc<dyn FormatRead>> {
-    Ok(Arc::new(parquet_arg(format)?))
-}
-
-/// Resolve the `format=` argument to a write codec; `None` defaults to Parquet.
-fn write_format(format: Option<&Bound<'_, PyAny>>) -> PyResult<Arc<dyn FormatWrite>> {
-    Ok(Arc::new(parquet_arg(format)?))
-}
-
 /// Extract a `Parquet` codec from the `format=` argument. Parquet is the only
-/// format today, so `None` and any `Parquet` instance both resolve here.
-fn parquet_arg(format: Option<&Bound<'_, PyAny>>) -> PyResult<Parquet> {
-    match format {
-        None => Ok(Parquet::default()),
-        Some(obj) => Ok(obj.extract::<PyRef<'_, PyParquet>>()?.inner.clone()),
-    }
+/// format today, so any `Parquet` instance resolves here.
+fn parquet_arg(format: &Bound<'_, PyAny>) -> PyResult<Parquet> {
+    Ok(format.extract::<PyRef<'_, PyParquet>>()?.inner.clone())
 }
 
-fn parse_compression(s: &str) -> PyResult<Compression> {
-    match s.to_ascii_lowercase().as_str() {
-        "zstd" => Ok(Compression::Zstd),
-        "snappy" => Ok(Compression::Snappy),
-        "uncompressed" | "none" => Ok(Compression::None),
-        other => Err(PyValueError::new_err(format!(
-            "unknown compression: {other}. expected one of: zstd, snappy, uncompressed"
+fn parse_compression(s: Option<&str>) -> PyResult<Compression> {
+    match s {
+        None => Ok(Compression::None),
+        Some("zstd") => Ok(Compression::Zstd),
+        Some("snappy") => Ok(Compression::Snappy),
+        Some(other) => Err(PyValueError::new_err(format!(
+            "unknown compression: {other}. expected one of: zstd, snappy, None"
         ))),
     }
 }

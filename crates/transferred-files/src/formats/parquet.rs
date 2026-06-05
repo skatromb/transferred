@@ -46,12 +46,6 @@ impl Parquet {
     pub fn new(compression: Compression) -> Self {
         Self { compression }
     }
-
-    fn writer_properties(&self) -> WriterProperties {
-        WriterProperties::builder()
-            .set_compression(self.compression.into())
-            .build()
-    }
 }
 
 #[async_trait]
@@ -83,13 +77,14 @@ impl FormatWrite for Parquet {
         let first = batches
             .try_next()
             .await?
-            .ok_or_else(|| TransferredError::source("source produced no batches"))?;
+            .ok_or_else(|| TransferredError::EmptySource)?;
 
-        let mut arrow_writer =
-            AsyncArrowWriter::try_new(writer, first.schema(), Some(self.writer_properties()))
-                .map_err(|e| {
-                    TransferredError::destination(format!("AsyncArrowWriter init: {e}"))
-                })?;
+        let properties = WriterProperties::builder()
+            .set_compression(self.compression.into())
+            .build();
+
+        let mut arrow_writer = AsyncArrowWriter::try_new(writer, first.schema(), Some(properties))
+            .map_err(|e| TransferredError::destination(format!("AsyncArrowWriter init: {e}")))?;
 
         let mut rows = first.num_rows() as u64;
         arrow_writer

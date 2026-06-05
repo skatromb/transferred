@@ -65,21 +65,21 @@ class _FilesDestination:
     r"""
     Internal `PyO3` wrapper around `transferred_files::FilesDestination`.
     """
-    def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path, format: typing.Optional[typing.Any] = None, single_file: builtins.bool = False) -> typing.Self: ...
+    def __new__(cls, path: builtins.str | os.PathLike | pathlib.Path, format: typing.Any, single_file: builtins.bool = False) -> typing.Self: ...
 
 @typing.final
 class _FilesSource:
     r"""
     Internal `PyO3` wrapper around `transferred_files::FilesSource`.
     """
-    def __new__(cls, path: str | os.PathLike | list[str | os.PathLike], format: typing.Optional[typing.Any] = None) -> typing.Self: ...
+    def __new__(cls, path: str | os.PathLike | list[str | os.PathLike], format: typing.Any) -> typing.Self: ...
 
 @typing.final
 class _Parquet:
     r"""
     Internal `PyO3` wrapper around `transferred_files::Parquet`.
     """
-    def __new__(cls, compression: builtins.str = 'zstd') -> _Parquet: ...
+    def __new__(cls, compression: typing.Optional[builtins.str]) -> _Parquet: ...
 
 class _Transfer:
     r"""
