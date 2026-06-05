@@ -8,6 +8,10 @@ pub enum TransferredError {
     #[error("source error: {0}")]
     Source(String),
 
+    /// Source produced zero batches (Python `EmptySourceError`).
+    #[error("empty source: produced no batches")]
+    EmptySource,
+
     /// A destination connector failed to write or finalize output.
     #[error("destination error: {0}")]
     Destination(String),

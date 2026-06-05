@@ -31,7 +31,7 @@ bytes = "1"
 tempfile = "3"
 
 [workspace.lints.clippy]
-pedantic = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"

@@ -13,7 +13,7 @@ const EXCEPTIONS_TRAILER: &str = r#"
 class TransferredError(Exception):
     """Base exception for all `transferred` failures.
 
-    Subclasses: `SourceError`, `DestinationError`, `ArrowError`, `IoError`.
+    Subclasses: `SourceError` (and `EmptySourceError`), `DestinationError`, `ArrowError`, `IoError`.
 
     Example:
         ```py
@@ -27,6 +27,9 @@ class TransferredError(Exception):
 
 class SourceError(TransferredError):
     """Source read failed (file missing, malformed Parquet, etc.)."""
+
+class EmptySourceError(SourceError):
+    """Source produced no batches — nothing to transfer."""
 
 class DestinationError(TransferredError):
     """Destination write failed (permission denied, disk full, schema mismatch)."""

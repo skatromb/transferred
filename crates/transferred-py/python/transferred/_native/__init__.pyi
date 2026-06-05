@@ -40,6 +40,11 @@ class RunReport:
         Total bytes written to the destination.
         """
     @property
+    def written_objects(self) -> builtins.list[builtins.str]:
+        r"""
+        Identifiers of what the destination wrote (file paths, URIs, tables).
+        """
+    @property
     def duration_seconds(self) -> builtins.float:
         r"""
         Wall-clock duration of the transfer, in seconds.
@@ -91,7 +96,7 @@ class _Transfer:
 class TransferredError(Exception):
     """Base exception for all `transferred` failures.
 
-    Subclasses: `SourceError`, `DestinationError`, `ArrowError`, `IoError`.
+    Subclasses: `SourceError` (and `EmptySourceError`), `DestinationError`, `ArrowError`, `IoError`.
 
     Example:
         ```py
@@ -105,6 +110,9 @@ class TransferredError(Exception):
 
 class SourceError(TransferredError):
     """Source read failed (file missing, malformed Parquet, etc.)."""
+
+class EmptySourceError(SourceError):
+    """Source produced no batches — nothing to transfer."""
 
 class DestinationError(TransferredError):
     """Destination write failed (permission denied, disk full, schema mismatch)."""

@@ -36,7 +36,7 @@ impl Destination for FilesDestination {
         let start = Instant::now();
         let tmp = tmp_path(&self.path);
 
-        let rows = match write_via_codec(&tmp, &*self.format, batches).await {
+        let rows = match write_files_with_format(&tmp, &*self.format, batches).await {
             Ok(rows) => rows,
             Err(err) => {
                 cleanup_tmp(&tmp).await;
@@ -54,6 +54,7 @@ impl Destination for FilesDestination {
         Ok(RunReport {
             rows,
             bytes_written,
+            written_objects: vec![self.path.display().to_string()],
             duration: start.elapsed(),
             coercions: vec![],
         })
@@ -62,7 +63,7 @@ impl Destination for FilesDestination {
 
 /// Flatten the partitions into one stream and hand them to the format codec.
 /// Schema is taken from the first batch; an empty source errors.
-async fn write_via_codec(
+async fn write_files_with_format(
     tmp: &Path,
     format: &dyn FormatWrite,
     batches: Vec<BatchStream>,

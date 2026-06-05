@@ -1,6 +1,6 @@
-//! File-format codec seam. A format converts between a file's byte stream and
-//! Arrow batches; `Files` owns opening the file and hands over the byte handle.
-//! One module per codec (`parquet`, `csv`/`avro` later).
+//! File-format. A format converts between a file's byte stream and Arrow batches.
+//! `Files` owns opening the file and hands over the byte handle.
+//! One module per codec (`parquet`, `csv`, `avro`, etc.).
 
 use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite};
@@ -10,13 +10,11 @@ pub mod parquet;
 
 pub use parquet::Parquet;
 
-/// A readable file handle — random-access bytes. `Files` opens it; a format decodes it.
-/// Seekability is part of what a file *is* (footers, metadata); sequential formats simply
-/// don't exercise it.
+/// A readable file handle trait marker for random-access bytes.
 pub trait FileReader: AsyncRead + AsyncSeek + Send + Unpin {}
 impl<T: AsyncRead + AsyncSeek + Send + Unpin> FileReader for T {}
 
-/// A writable file sink — forward-only bytes. `Files` opens it; a format encodes into it.
+/// A writable file handle trait.
 pub trait FileWriter: AsyncWrite + Send + Unpin {}
 impl<T: AsyncWrite + Send + Unpin> FileWriter for T {}
 
@@ -30,6 +28,9 @@ pub trait FormatRead: Send + Sync {
 /// Encodes Arrow batches into a file's bytes.
 #[async_trait]
 pub trait FormatWrite: Send + Sync {
+    /// File extension for written parts, no dot (e.g. `"parquet"`).
+    fn file_extension(&self) -> &'static str;
+
     /// Write all batches into one open sink. Returns the row count written.
     async fn write(
         &self,

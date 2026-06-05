@@ -30,6 +30,12 @@ create_exception!(
 );
 create_exception!(
     transferred._native,
+    EmptySourceError,
+    SourceError,
+    "Source produced no batches — nothing to transfer."
+);
+create_exception!(
+    transferred._native,
     DestinationError,
     TransferredError,
     "Destination write failed (permission denied, disk full, schema mismatch)."
@@ -50,6 +56,7 @@ create_exception!(
 pub fn to_pyerr(err: CoreError) -> PyErr {
     match err {
         CoreError::Source(msg) => SourceError::new_err(msg),
+        CoreError::EmptySource => EmptySourceError::new_err(err.to_string()),
         CoreError::Destination(msg) => DestinationError::new_err(msg),
         CoreError::Arrow(e) => ArrowError::new_err(e.to_string()),
         CoreError::Io(e) => IoError::new_err(e.to_string()),
@@ -60,6 +67,7 @@ pub fn to_pyerr(err: CoreError) -> PyErr {
 pub fn register(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("TransferredError", py.get_type::<TransferredError>())?;
     m.add("SourceError", py.get_type::<SourceError>())?;
+    m.add("EmptySourceError", py.get_type::<EmptySourceError>())?;
     m.add("DestinationError", py.get_type::<DestinationError>())?;
     m.add("ArrowError", py.get_type::<ArrowError>())?;
     m.add("IoError", py.get_type::<IoError>())?;
