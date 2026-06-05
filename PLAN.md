@@ -122,11 +122,9 @@ sizes aren't comparable.
 - [x] Baseline: Parquet → Parquet + iterable-generator → Parquet via raw `pyarrow.parquet`, no `transferred`.
 - [x] Land the harness on `main`.
 - [x] Wildcard `Path` support — `ParquetSource` accepts `path/to/partitions/*.parquet`.
-- [ ] Workload: Parquet → Parquet multi-file.
-- [ ] **New crate `transferred-files`** — absorbs `transferred-parquet` (which ceases to exist). Owns the `FileFormat` trait, format codecs, and the `Files` source + destination. Update workspace `Cargo.toml`, all imports, `transferred-py` dep. Pre-1.0 crate removal — allowed (DESIGN.md versioning).
-  - [ ] Reserve `transferred-files` on crates.io.
-  - [ ] `release.yml` publish order → core → files → py (drop parquet).
-- [ ] `FileFormat` trait (in `transferred-files`) — symmetric `read` (decode → Arrow) + `write` (encode ← Arrow). Promote to `transferred-core` only if formats ever split into their own crates.
+- [x] **New crate `transferred-files`** — absorbs `transferred-parquet` (which ceases to exist). Owns the `FileFormat` trait, format codecs, and the `Files` source + destination. Update workspace `Cargo.toml`, all imports, `transferred-py` dep. Pre-1.0 crate removal — allowed (DESIGN.md versioning).
+  - [x] `release.yml` publish order → core → files → py (drop parquet).
+- [x] `FileFormat` trait (in `transferred-files`) — symmetric `read` (decode → Arrow) + `write` (encode ← Arrow). Promote to `transferred-core` only if formats ever split into their own crates.
 - [x] `Parquet(compression="zstd")` codec — implements `FileFormat` (both read + write). Keeps the parquet-rs default row-group size (1,048,576); `row_group_size` knob dropped from the surface for now. `Avro`/`Csv` — later, in-crate.
 - [x] `FilesSource`/`FilesDestination` (local), format-agnostic, delegate codec to the resolved `FileFormat`. Replace `ParquetSource`/`ParquetDestination` — hard removal, no shim. **Suffix convention everywhere** (`{Name}Source`/`{Name}Destination`) — avoids the common Files→Files import clash; applies to `PostgresSource`/`PostgresDestination`, `BigQueryDestination`, `S3Destination` too. Internal `_FilesSource`/`_FilesDestination`.
   - [x] Directory output (default) — `path` is a directory (overwritten if present), one `part-NNNNN.<ext>` per source partition; tmp dir + atomic dir rename.
@@ -134,13 +132,26 @@ sizes aren't comparable.
   - [x] `FormatWrite::file_extension()` → part-file extension (Parquet → `parquet`).
   - [x] `RunReport.written_objects: Vec<String>` — generic identifiers of what each destination wrote (file paths, S3 URIs, `project.dataset.table`, `schema.table`). Files store `path.display()`. Empty when nothing written. Keeps the report flat — no per-destination report structs.
   - [x] `EmptySource` error variant + Python `EmptySourceError` (subclass of `SourceError`), raised when the source yields zero batches across all partitions.
-- [ ] `format` resolution (only `Parquet` impl exists in 0.0.3, so all rows resolve to Parquet — build the dispatch, not the other formats):
+- [x] Python: `Files` source + destination wrappers + `Parquet` format wrapper; remove the Parquet wrappers; stub-gen regen; docstrings (Args + Example) per AGENTS.md; update tests (dogfood, pytest round-trip + multi-file + single-file + empty-source).
+- [x] Perf harness refactor to Files API + multi-file workload:
+  - [x] Migrate `transferred` workloads off removed `ParquetSource`/`ParquetDestination` to `FilesSource`/`FilesDestination(format=Parquet(...))`; single-file ones use `single_file=True` to stay comparable to pyarrow baselines.
+  - [x] New workload: Parquet → Parquet multi-file (`FilesSource(glob)` → directory output, one part per partition).
+  - [x] `emit_result` output_bytes sums files when output is a directory.
+- [x] Reserve `transferred-files` on crates.io — name free; `release.yml` claims it in dep order (core → files → py).
+- [x] Let's make CI checks to run only on related Rust and Python changes.
+- [ ] Deploy 0.0.3
+
+## 0.0.4 — deferred from 0.0.3
+
+Goal: format dispatch — moot while Parquet is the only format, so deferred until a second format exists.
+
+**Tasks:**
+
+- [ ] `format` resolution (only `Parquet` impl exists, so all rows resolve to Parquet — build the dispatch, not the other formats):
   - [ ] File source + no `format`: inherit source's format (path extension first, byte-sniff on ambiguity).
   - [ ] File source + explicit `format`: convert.
   - [ ] Non-file source + no `format`: default to `Parquet()`.
   - [ ] Non-file source + explicit `format`: convert.
-- [x] Python: `Files` source + destination wrappers + `Parquet` format wrapper; remove the Parquet wrappers; stub-gen regen; docstrings (Args + Example) per AGENTS.md; update tests (dogfood, pytest round-trip + multi-file + single-file + empty-source).
-- [ ] Let's make CI checks to run only on related Rust and Python changes.
 
 ## 0.1.0 — Postgres source → BigQuery destination
 

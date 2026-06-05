@@ -7,7 +7,7 @@ from pathlib import Path
 
 from perf.data import write_seed_parquet
 from perf.workload import cli, emit_result, measure
-from transferred import ParquetDestination, ParquetSource, Transfer
+from transferred import FilesDestination, FilesSource, Parquet, Transfer
 
 NAME = "parquet→parquet (single)"
 
@@ -19,8 +19,10 @@ def setup(seed: Path) -> None:
 def run(seed: Path, out: Path) -> None:
     report, wall_seconds, peak_arrow_bytes = measure(
         lambda: Transfer(
-            source=ParquetSource(seed),
-            destination=ParquetDestination(out, compression="zstd"),
+            source=FilesSource(seed),
+            destination=FilesDestination(
+                out, format=Parquet(compression="zstd"), single_file=True
+            ),
         ).run()
     )
     emit_result(

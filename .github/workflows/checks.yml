@@ -2,8 +2,15 @@ name: Checks
 
 on:
   pull_request:
+    paths: &code_paths
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/checks.yml'
   push:
     branches: [main]
+    paths: *code_paths
 
 concurrency:
   group: checks-${{ github.ref }}
@@ -15,7 +22,7 @@ env:
 
 jobs:
   rust:
-    name: Rust (fmt, clippy, test)
+    name: Rust (fmt, clippy, test, stubs)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -29,23 +36,11 @@ jobs:
       - name: make rust-check
         run: make rust-check
 
-  stubs:
-    name: Stub-gen drift
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        run: rustup show active-toolchain || rustup toolchain install
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
       - name: make stubs-check
         run: make stubs-check
 
   python:
-    name: Python (ruff + ty + pytest)
+    name: Python (ruff, ty, pytest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

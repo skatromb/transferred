@@ -11,7 +11,7 @@ from pathlib import Path
 
 from perf.data import iter_dict_rows
 from perf.workload import cli, emit_result, measure
-from transferred import ParquetDestination, Transfer
+from transferred import FilesDestination, Parquet, Transfer
 
 NAME = "iterable-list→parquet"
 
@@ -25,7 +25,9 @@ def run(seed: Path, out: Path) -> None:
     report, wall_seconds, peak_arrow_bytes = measure(
         lambda: Transfer(
             source=rows,
-            destination=ParquetDestination(out, compression="zstd"),
+            destination=FilesDestination(
+                out, format=Parquet(compression="zstd"), single_file=True
+            ),
         ).run()
     )
     emit_result(

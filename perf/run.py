@@ -17,11 +17,13 @@ from perf.workloads import (
     baseline_pyarrow_parquet_to_parquet,
     iterable_generator_to_parquet,
     iterable_list_to_parquet,
+    parquet_to_parquet_multi,
     parquet_to_parquet_single,
 )
 
 WORKLOADS: tuple[ModuleType, ...] = (
     parquet_to_parquet_single,
+    parquet_to_parquet_multi,
     baseline_pyarrow_parquet_to_parquet,
     iterable_generator_to_parquet,
     baseline_pyarrow_iterable_to_parquet,
