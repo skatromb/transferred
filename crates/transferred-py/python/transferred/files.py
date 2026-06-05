@@ -20,7 +20,7 @@ class FilesSource(Source):
             - List of paths.
             - Glob pattern containing `*`, `?`, or `[...]` (e.g. `'data/*.parquet'`).
               Expanded at run time; matching zero files raises `SourceError`.
-        format: File format codec.
+        format: File format codec. Defaults to `Parquet()`.
 
     Example:
         >>> from transferred import FilesSource, FilesDestination, Transfer
@@ -55,7 +55,7 @@ class FilesDestination(Destination):
 
     Args:
         path: Output directory, replacing any existing one.
-        format: Output format. Defaults to `Parquet()` when omitted.
+        format: Output format. Defaults to `Parquet()`.
         single_file: When `false`, outputs to many files,
             improving throughput from parallelization.
             When `true`, writes all partitions to one file.
