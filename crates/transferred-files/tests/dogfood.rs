@@ -13,6 +13,7 @@
     clippy::panic
 )]
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use arrow::array::{
@@ -159,7 +160,7 @@ fn batch(schema: &Arc<Schema>, rows: usize, offset: i64) -> RecordBatch {
 async fn parquet_dogfood() {
     // Arrange
     let dir = tempdir().unwrap();
-    let path = dir.path().join("out.parquet");
+    let path = dir.path().join("out");
     let schema = schema();
     let input = vec![batch(&schema, 5, 0), batch(&schema, 3, 100)];
     let total_rows: usize = input.iter().map(RecordBatch::num_rows).sum();
@@ -167,22 +168,28 @@ async fn parquet_dogfood() {
     let collected = memory_destination.batches.clone();
 
     // Act
-    // Dump to file
+    // Dump to directory
     let write_report = Transfer::new(
         Box::new(TestSource::new(input.clone())),
         Box::new(FilesDestination::new(
             path.clone(),
-            Arc::new(Parquet::new(Compression::Zstd, None)),
+            Arc::new(Parquet::new(Compression::Zstd)),
+            false,
         )),
     )
     .run()
     .await
     .unwrap();
 
-    // Read from file back to memory
+    // Read the written parts back to memory
+    let parts: Vec<PathBuf> = write_report
+        .written_objects
+        .iter()
+        .map(PathBuf::from)
+        .collect();
     let read_report = Transfer::new(
         Box::new(FilesSource::new(
-            GlobOrPaths::Paths(vec![path.clone()]),
+            GlobOrPaths::Paths(parts),
             Arc::new(Parquet::default()),
         )),
         Box::new(memory_destination),
@@ -192,7 +199,8 @@ async fn parquet_dogfood() {
     .unwrap();
 
     // Assert
-    assert!(path.exists());
+    assert!(path.is_dir());
+    assert_eq!(write_report.written_objects.len(), 1);
     assert_eq!(write_report.rows as usize, total_rows);
     assert!(write_report.bytes_written > 0);
     assert_eq!(read_report.rows as usize, total_rows);

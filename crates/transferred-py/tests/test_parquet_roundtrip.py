@@ -27,7 +27,7 @@ def test_parquet_write_then_read(tmp_path: Path) -> None:
     seed = tmp_path / "seed.parquet"
     pq.write_table(_build_input_table(), seed)
 
-    out = tmp_path / "out.parquet"
+    out = tmp_path / "out"
 
     # Act — drive the round-trip through the Rust engine.
     report = Transfer(
@@ -39,8 +39,9 @@ def test_parquet_write_then_read(tmp_path: Path) -> None:
     assert isinstance(report, RunReport)
     assert report.rows == 5
     assert report.bytes_written > 0
-    assert out.exists()
+    assert out.is_dir()
+    assert report.written_objects == [str(out / "part-00000.parquet")]
 
-    read_back = pq.read_table(out)
+    read_back = pq.read_table(report.written_objects[0])
     assert read_back.num_rows == 5
     assert read_back.column_names == ["i32", "utf8", "f64"]

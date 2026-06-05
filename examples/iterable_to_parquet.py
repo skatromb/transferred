@@ -21,7 +21,7 @@ from transferred import FilesDestination, Transfer
 # dicts
 Transfer(
     source=({"id": i, "name": f"row-{i}"} for i in range(1_000)),
-    destination=FilesDestination(Path("from_dicts.parquet")),
+    destination=FilesDestination(Path("from_dicts")),
 ).run()
 
 
@@ -34,7 +34,7 @@ class User:
 
 Transfer(
     source=(User(id=i, name=f"row-{i}") for i in range(1_000)),
-    destination=FilesDestination(Path("from_dataclasses.parquet")),
+    destination=FilesDestination(Path("from_dataclasses")),
 ).run()
 
 
@@ -46,13 +46,13 @@ class UserModel(BaseModel):
 
 report = Transfer(
     source=(UserModel(id=i, name=f"row-{i}") for i in range(1_000)),
-    destination=FilesDestination(Path("from_pydantic.parquet")),
+    destination=FilesDestination(Path("from_pydantic")),
 ).run()
 
 print(report)
 # RunReport(rows=1000, bytes_written=..., duration_seconds=...)
 
-print(pq.read_table("from_pydantic.parquet").slice(0, 3))
+print(pq.read_table("from_pydantic").slice(0, 3))
 # pyarrow.Table
 # id: int64
 # name: string

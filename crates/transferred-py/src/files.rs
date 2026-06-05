@@ -12,7 +12,6 @@ use transferred_files::{
 };
 
 /// Internal `PyO3` wrapper around `transferred_files::Parquet`.
-/// Constructed by the user-facing Python `Parquet`; not used directly.
 #[gen_stub_pyclass]
 #[pyclass(name = "_Parquet", module = "transferred._native", unsendable)]
 pub struct PyParquet {
@@ -23,17 +22,16 @@ pub struct PyParquet {
 #[pymethods]
 impl PyParquet {
     #[new]
-    #[pyo3(signature = (compression = "zstd", row_group_size = None))]
-    fn new(compression: &str, row_group_size: Option<usize>) -> PyResult<Self> {
+    #[pyo3(signature = (compression = "zstd"))]
+    fn new(compression: &str) -> PyResult<Self> {
         let compression = parse_compression(compression)?;
         Ok(Self {
-            inner: Parquet::new(compression, row_group_size),
+            inner: Parquet::new(compression),
         })
     }
 }
 
 /// Internal `PyO3` wrapper around `transferred_files::FilesSource`.
-/// Constructed by the user-facing Python `Files`; not used directly.
 #[gen_stub_pyclass]
 #[pyclass(name = "_FilesSource", module = "transferred._native", unsendable)]
 pub struct PyFilesSource {
@@ -72,7 +70,6 @@ impl PyFilesSource {
 }
 
 /// Internal `PyO3` wrapper around `transferred_files::FilesDestination`.
-/// Constructed by the user-facing Python `Files`; not used directly.
 #[gen_stub_pyclass]
 #[pyclass(name = "_FilesDestination", module = "transferred._native", unsendable)]
 pub struct PyFilesDestination {
@@ -87,16 +84,16 @@ impl PyFilesDestination {
         imports = ("typing")
     ))]
     #[new]
-    #[pyo3(signature = (path, format = None))]
-    fn new(path: PathBuf, format: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+    #[pyo3(signature = (path, format = None, single_file = false))]
+    fn new(path: PathBuf, format: Option<&Bound<'_, PyAny>>, single_file: bool) -> PyResult<Self> {
         let format: Arc<dyn FormatWrite> = write_format(format)?;
         Ok(Self {
-            inner: Some(FilesDestination::new(path, format)),
+            inner: Some(FilesDestination::new(path, format, single_file)),
         })
     }
 }
 
-/// Resolve the `format=` argument to a read codec; `None` defaults to Parquet.
+/// Resolve the `format=` argument to a format reader; `None` defaults to Parquet.
 fn read_format(format: Option<&Bound<'_, PyAny>>) -> PyResult<Arc<dyn FormatRead>> {
     Ok(Arc::new(parquet_arg(format)?))
 }

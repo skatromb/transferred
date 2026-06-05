@@ -36,7 +36,7 @@ class FilesSource(Source):
         >>>
         >>> report = Transfer(
         ...     source=source,
-        ...     destination=FilesDestination("out.parquet"),
+        ...     destination=FilesDestination("out"),
         ... ).run()
     """
 
@@ -50,20 +50,30 @@ class FilesSource(Source):
 
 
 class FilesDestination(Destination):
-    """Local single-file destination. Writes via tmp file + atomic rename.
+    """Local directory destination. Writes atomically via tmp dir + rename.
+
+    Written file paths are returned after `.run()` in `RunReport.written_objects`.
 
     Args:
-        path: Filesystem path to the output file.
-        format: File format codec. Defaults to `Parquet()` when omitted.
+        path: Output directory, replacing any existing one.
+        format: Output format. Defaults to `Parquet()` when omitted.
+        single_file: When `false`, outputs to many files,
+            improving throughput from parallelization.
+            When `true`, writes all partitions to one file.
 
     Example:
         >>> from transferred import FilesDestination
         >>> from transferred.formats import Parquet
-        >>> destination = FilesDestination("out.parquet", format=Parquet(compression="zstd"))
+        >>> destination = FilesDestination("out", format=Parquet(compression="zstd"))
     """
 
     _native_destination: _FilesDestination
 
-    def __init__(self, path: StrPath, format: Format | None = None) -> None:
+    def __init__(
+        self,
+        path: StrPath,
+        format: Format | None = None,
+        single_file: bool = False,
+    ) -> None:
         native_format = None if format is None else format._native_format
-        self._native_destination = _FilesDestination(path, native_format)
+        self._native_destination = _FilesDestination(path, native_format, single_file)

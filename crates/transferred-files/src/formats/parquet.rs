@@ -38,28 +38,19 @@ impl From<Compression> for ParquetCompression {
 pub struct Parquet {
     /// Compression codec for column chunks.
     pub compression: Compression,
-    /// Max rows per row group. `None` keeps the parquet-rs default (1,048,576).
-    pub row_group_size: Option<usize>,
 }
 
 impl Parquet {
     /// Build a Parquet codec.
     #[must_use]
-    pub fn new(compression: Compression, row_group_size: Option<usize>) -> Self {
-        Self {
-            compression,
-            row_group_size,
-        }
+    pub fn new(compression: Compression) -> Self {
+        Self { compression }
     }
 
-    /// Writer properties. `row_group_size = None` leaves the parquet-rs default
-    /// (never forwards `None` to `set_max_row_group_row_count`, which means *unlimited*).
     fn writer_properties(&self) -> WriterProperties {
-        let mut builder = WriterProperties::builder().set_compression(self.compression.into());
-        if let Some(rows) = self.row_group_size {
-            builder = builder.set_max_row_group_row_count(Some(rows));
-        }
-        builder.build()
+        WriterProperties::builder()
+            .set_compression(self.compression.into())
+            .build()
     }
 }
 
