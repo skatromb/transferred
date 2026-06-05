@@ -51,6 +51,12 @@ impl PyRunReport {
         self.inner.bytes_written
     }
 
+    /// Identifiers of what the destination wrote (file paths, URIs, tables).
+    #[getter]
+    fn written_objects(&self) -> Vec<String> {
+        self.inner.written_objects.clone()
+    }
+
     /// Wall-clock duration of the transfer, in seconds.
     #[getter]
     fn duration_seconds(&self) -> f64 {

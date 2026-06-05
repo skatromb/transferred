@@ -73,6 +73,7 @@ impl Destination for TestDestination {
         Ok(RunReport {
             rows,
             bytes_written: 0,
+            written_objects: vec![],
             duration: Duration::ZERO,
             coercions: vec![],
         })

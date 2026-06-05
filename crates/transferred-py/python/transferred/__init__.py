@@ -4,6 +4,7 @@ from transferred._base import Destination, Source
 from transferred._native import (
     ArrowError,
     DestinationError,
+    EmptySourceError,
     TransferredError,
     IoError,
     RunReport,
@@ -23,6 +24,7 @@ __all__ = [
     # Errors
     "ArrowError",
     "DestinationError",
+    "EmptySourceError",
     "TransferredError",
     "IoError",
     "SourceError",

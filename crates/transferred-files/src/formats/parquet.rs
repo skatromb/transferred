@@ -9,7 +9,29 @@ use ::parquet::arrow::async_reader::ParquetRecordBatchStreamBuilder;
 use ::parquet::file::properties::WriterProperties;
 
 use super::{FileReader, FileWriter, FormatRead, FormatWrite};
-use crate::compression::Compression;
+use parquet::basic::{Compression as ParquetCompression, ZstdLevel};
+
+/// Compression codec for Parquet column chunks. Default = `Zstd`.
+#[derive(Debug, Clone, Copy, Default)]
+pub enum Compression {
+    /// Zstandard, default level.
+    #[default]
+    Zstd,
+    /// Snappy.
+    Snappy,
+    /// No compression.
+    None,
+}
+
+impl From<Compression> for ParquetCompression {
+    fn from(compression: Compression) -> Self {
+        match compression {
+            Compression::Zstd => ParquetCompression::ZSTD(ZstdLevel::default()),
+            Compression::Snappy => ParquetCompression::SNAPPY,
+            Compression::None => ParquetCompression::UNCOMPRESSED,
+        }
+    }
+}
 
 /// Parquet file format. Carries encoder knobs; decoding needs none.
 #[derive(Debug, Clone, Default)]
@@ -58,6 +80,10 @@ impl FormatRead for Parquet {
 
 #[async_trait]
 impl FormatWrite for Parquet {
+    fn file_extension(&self) -> &'static str {
+        "parquet"
+    }
+
     async fn write(
         &self,
         writer: Box<dyn FileWriter>,

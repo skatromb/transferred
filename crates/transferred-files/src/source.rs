@@ -8,41 +8,26 @@ use transferred_core::{BatchStream, Source, TransferredError};
 
 use crate::formats::FormatRead;
 
-/// Local file source. One or many files, via glob pattern or explicit paths.
-/// Bytes are decoded by the supplied [`FormatRead`] codec.
+/// Local file source. One or many files, decoded by the supplied `FormatRead`.
 #[derive(Clone)]
 pub struct FilesSource {
-    source: GlobOrPaths,
+    paths: GlobOrPaths,
     format: Arc<dyn FormatRead>,
-}
-
-/// How the source enumerates files: glob or single path, or list of paths.
-#[derive(Debug, Clone)]
-pub enum GlobOrPaths {
-    /// Pattern (e.g. `data/*.parquet`). Expanded at `stream_partitions` time;
-    /// A pattern with no wildcards matches the literal path.
-    Glob(String),
-    /// Explicit paths: one or multiple. No per-item glob expansion.
-    Paths(Vec<PathBuf>),
 }
 
 impl FilesSource {
     /// Build a source. No I/O performed.
     #[must_use]
-    pub fn new(source: GlobOrPaths, format: Arc<dyn FormatRead>) -> Self {
-        Self { source, format }
+    pub fn new(paths: GlobOrPaths, format: Arc<dyn FormatRead>) -> Self {
+        Self { paths, format }
     }
 }
 
 #[async_trait]
 impl Source for FilesSource {
-    /// One stream per file. Glob patterns expanded here; empty matches error.
+    /// One stream per file. Globs expanded here; empty results error.
     async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>, TransferredError> {
-        let paths = match self.source {
-            GlobOrPaths::Paths(paths) => paths,
-            GlobOrPaths::Glob(pattern) => expand_glob(&pattern)?,
-        };
-
+        let paths = self.paths.resolve()?;
         let format = self.format;
         Ok(paths
             .into_iter()
@@ -51,11 +36,29 @@ impl Source for FilesSource {
     }
 }
 
-/// Keep files opening lazy so that only opened files has file descriptors.
-fn lazy_open_file(path: PathBuf, format: Arc<dyn FormatRead>) -> BatchStream {
-    Box::pin(stream::once(open_file_stream(path, format)).try_flatten())
+/// How the source enumerates files: glob or single path, or list of paths.
+#[derive(Debug, Clone)]
+pub enum GlobOrPaths {
+    /// Pattern (e.g. `data/*.parquet`). Expanded at `stream_partitions` time.
+    Glob(String),
+    /// Explicit paths. No per-item glob expansion.
+    Paths(Vec<PathBuf>),
 }
 
+impl GlobOrPaths {
+    /// Resolve to concrete paths. Glob walks the filesystem; empty results error.
+    fn resolve(self) -> Result<Vec<PathBuf>, TransferredError> {
+        match self {
+            GlobOrPaths::Glob(pattern) => expand_glob(&pattern),
+            GlobOrPaths::Paths(paths) if paths.is_empty() => {
+                Err(TransferredError::source("no input paths provided"))
+            }
+            GlobOrPaths::Paths(paths) => Ok(paths),
+        }
+    }
+}
+
+/// Expand a glob pattern to matching paths. Empty matches error.
 fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, TransferredError> {
     let paths: Vec<PathBuf> = glob::glob(pattern)
         .map_err(|err| {
@@ -69,7 +72,13 @@ fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, TransferredError> {
             "glob '{pattern}' matched no files"
         )));
     }
+
     Ok(paths)
+}
+
+/// Keep files opening lazy so that only opened files has file descriptors.
+fn lazy_open_file(path: PathBuf, format: Arc<dyn FormatRead>) -> BatchStream {
+    Box::pin(stream::once(open_file_stream(path, format)).try_flatten())
 }
 
 async fn open_file_stream(
