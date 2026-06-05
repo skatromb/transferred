@@ -41,6 +41,13 @@ def measure(thunk: Callable[[], T]) -> tuple[T, float, int]:
     return result, wall_seconds, max(arrow_before, arrow_after)
 
 
+def _output_bytes(out: Path) -> int:
+    """Total bytes written: sum part files when `out` is a directory, else its size."""
+    if out.is_dir():
+        return sum(p.stat().st_size for p in out.rglob("*") if p.is_file())
+    return out.stat().st_size
+
+
 def emit_result(
     *,
     rows: int,
@@ -52,7 +59,7 @@ def emit_result(
     json.dump(
         {
             "rows": rows,
-            "output_bytes": out.stat().st_size,
+            "output_bytes": _output_bytes(out),
             "wall_seconds": wall_seconds,
             "peak_arrow_bytes": peak_arrow_bytes,
         },
