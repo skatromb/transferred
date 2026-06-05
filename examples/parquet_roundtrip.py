@@ -23,7 +23,7 @@ from transferred import FilesDestination, FilesSource, Parquet, Transfer
 # })
 
 source = Path("small.parquet")
-destination = Path("compressed.parquet")
+destination = Path("compressed/")
 
 report = Transfer(
     source=FilesSource(source),

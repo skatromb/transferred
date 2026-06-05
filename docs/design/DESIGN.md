@@ -47,11 +47,11 @@ from transferred.sources import PostgresSource
 from transferred.destinations import FilesDestination, BigQueryDestination
 from transferred.formats import Parquet
 
-# Local file destination — no cloud creds needed.
-# Format inferred from path extension; pass `format=Parquet(...)` to override.
+# Local directory destination — no cloud creds needed.
+# Format inherited from source; pass `format=Parquet(...)` to override.
 Transfer(
     source=PostgresSource(dsn="postgres://...", table="public.orders"),
-    destination=FilesDestination(path="./out/orders.parquet"),
+    destination=FilesDestination(path="./out/orders"),
 ).run()
 
 # BigQuery destination.
@@ -69,13 +69,13 @@ def fetch_orders():
     for page in api.paginate("/orders"):
         yield from page["results"]
 
-Transfer(source=fetch_orders(), destination=FilesDestination("out.parquet")).run()
+Transfer(source=fetch_orders(), destination=FilesDestination("out")).run()
 
 # List of dicts
-Transfer(source=[{"id": 1}, {"id": 2}], destination=FilesDestination("out.parquet")).run()
+Transfer(source=[{"id": 1}, {"id": 2}], destination=FilesDestination("out")).run()
 
 # Dataclasses — converted via dataclasses.asdict per chunk
-Transfer(source=order_iter, destination=FilesDestination("out.parquet")).run()
+Transfer(source=order_iter, destination=FilesDestination("out")).run()
 ```
 
 Module layout for the iterable + Arrow path:
@@ -159,6 +159,7 @@ Rules:
 report = transfer.run()
 report.rows            # 12_481_902
 report.bytes_written   # 1_503_948_211
+report.written_objects # ["out/part-00000.parquet", ...] — paths/URIs/tables written
 report.duration        # timedelta
 report.coercions       # list[Coercion] — column, original type, target, level
 report.staging         # transient artifacts (deleted unless keep_staging=True)
@@ -171,25 +172,30 @@ No row-level Python callbacks. The FFI boundary is crossed once per transfer (pe
 File-shaped destinations are decoupled from file formats. A destination describes **where** bytes land; a `FileFormat` describes **how** they are encoded.
 
 - `FileFormat` trait. Implementations carry encoder knobs:
-  - `Parquet(compression="zstd", row_group_size=None)` — `row_group_size=None` inherits the parquet-rs default (1,048,576 rows; `DEFAULT_MAX_ROW_GROUP_ROW_COUNT`). The writer buffers one row group in memory before flushing, so this knob *is* the write-side memory lever. The `FileFormat` trait is symmetric — `read` (decode → Arrow) for the source, `write` (encode ← Arrow) for the destination. Both trait and the `Parquet` codec live in `transferred-files`.
+  - `Parquet(compression="zstd")` — keeps the parquet-rs default row-group size (1,048,576 rows; `DEFAULT_MAX_ROW_GROUP_ROW_COUNT`). Row-group sizing is a write-side memory lever but isn't exposed yet — revisit once a byte-based cap (`set_max_row_group_bytes`) earns its keep. The `FileFormat` trait is symmetric — `read` (decode → Arrow) for the source, `write` (encode ← Arrow) for the destination. Both trait and the `Parquet` codec live in `transferred-files`.
   - `Avro(...)`
   - `Json(...)`
   - `Csv(...)`
 - File-shaped destinations carry an optional `format`:
-  - `FilesDestination(path, format=None)` — local filesystem. `path` decides shape (see below).
+  - `FilesDestination(path, format=None, single_file=False)` — local filesystem. `path` is always a directory (see below).
   - `S3Destination(bucket, key, format=None)`, `GCSDestination(bucket, key, format=None)` — cloud, `object_store`-backed, each carrying its own typed auth params. Separate classes, not a `FilesDestination(backend=)` enum: per-backend auth surfaces (S3 region/keys/endpoint vs GCS service-account) differ, and `object_store`'s own unified surface is either Rust builders or a stringly-typed options bag — neither a clean typed Python API.
 - Row-protocol destinations have no `format` knob — the wire protocol is the encoding:
   - `BigQueryDestination(project, dataset, table)` — Storage Write API.
   - `PostgresDestination(dsn, table)` — `COPY ... FROM STDIN`.
 
-**`FilesDestination` output shape — path decides single-file vs directory:**
+**`FilesDestination` output shape — `path` is always a directory:**
 
-| `path` | meaning | output |
-| ------ | ------- | ------ |
-| has a file extension (`out.parquet`) | single file | all source partitions combined into one file (tmp + atomic rename) |
-| directory (`out/`, no extension) | directory | one `part-NNNN.parquet` per source partition; atomicity via tmp dir + rename |
+`path` is always a directory, overwritten if it exists; written atomically via a
+tmp dir + rename. Written file paths are returned in `RunReport.written_objects`.
 
-A directory path has no extension, so format can't be inferred from it — it inherits the source format or needs an explicit `format=`.
+| `single_file` | output |
+| ------------- | ------ |
+| `False` (default) | one `part-NNNNN.<ext>` per source partition |
+| `True` | all partitions flattened into one `<dir>.<ext>` (named after the directory) |
+
+A flag, not extension inference — no path-shape ambiguity (dotted dirs, type
+conflicts). The directory has no extension, so format can't be inferred from it —
+it inherits the source format or needs an explicit `format=`.
 
 **Format resolution** when the user does not pass `format=` explicitly:
 
@@ -206,14 +212,14 @@ Byte-copy short-circuit (won't do): even when source and destination resolve to 
 from transferred.destinations import FilesDestination, S3Destination
 from transferred.formats import Csv, Avro
 
-# Inherit format from source extension.
-Transfer(source=parquet_src, destination=FilesDestination("out.parquet")).run()
+# Directory output — one part-NNNNN.parquet per source partition.
+Transfer(source=parquet_src, destination=FilesDestination("out")).run()
 
-# Directory output — one part-NNNN.parquet per source partition.
-Transfer(source=parquet_src, destination=FilesDestination("out/")).run()
+# Single file — all partitions flattened into one part.
+Transfer(source=parquet_src, destination=FilesDestination("out", single_file=True)).run()
 
 # Override format.
-Transfer(source=parquet_src, destination=FilesDestination("out.csv", format=Csv())).run()
+Transfer(source=parquet_src, destination=FilesDestination("out", format=Csv())).run()
 
 # Non-file source → default Parquet.
 Transfer(source=pg_src, destination=S3Destination(bucket="dwh", key="orders/")).run()

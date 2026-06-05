@@ -59,10 +59,18 @@ ty: python-setup
 	@cd crates/transferred-py && \
 	uv run --no-sync ty check
 
-# Regen stubs; fail if regen produced changes (drift).
+# Fail if regen changes the current on-disk stub
 .PHONY: stubs-check
-stubs-check: stubs
-	@git diff --exit-code crates/transferred-py/python/transferred/_native/__init__.pyi
+stubs-check: STUB_PYI := crates/transferred-py/python/transferred/_native/__init__.pyi
+stubs-check:
+	@cp $(STUB_PYI) $(STUB_PYI).bak
+	@$(MAKE) -s stubs
+	@if ! diff -q $(STUB_PYI).bak $(STUB_PYI) >/dev/null; then \
+		echo "stub drift — regenerated stub differs, commit the update:"; \
+		diff $(STUB_PYI).bak $(STUB_PYI) || true; \
+		rm -f $(STUB_PYI).bak; exit 1; \
+	fi
+	@rm -f $(STUB_PYI).bak
 
 # Regenerate `_native.pyi` stubs from `#[gen_stub_*]` annotations.
 .PHONY: stubs

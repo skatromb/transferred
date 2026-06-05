@@ -16,16 +16,11 @@ class Parquet(Format):
 
     Args:
         compression: One of `"zstd"` (default), `"snappy"`, `"uncompressed"`.
-        row_group_size: Max rows per row group. `None` (default) keeps the
-            parquet-rs default (1,048,576). The writer buffers one row group in
-            memory before flushing, so this is the write-side memory lever.
 
     Example:
         >>> from transferred.formats import Parquet
-        >>> fmt = Parquet(compression="snappy", row_group_size=100_000)
+        >>> fmt = Parquet(compression="snappy")
     """
 
-    def __init__(
-        self, compression: str = "zstd", row_group_size: int | None = None
-    ) -> None:
-        self._native_format = _Parquet(compression, row_group_size)
+    def __init__(self, compression: str = "zstd") -> None:
+        self._native_format = _Parquet(compression)

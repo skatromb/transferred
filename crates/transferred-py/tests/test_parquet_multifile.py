@@ -23,7 +23,7 @@ def _write_seed(path: Path, ids: list[int]) -> None:
 def test_glob_matches_multiple_files(tmp_path: Path) -> None:
     _write_seed(tmp_path / "a.parquet", [1, 2, 3])
     _write_seed(tmp_path / "b.parquet", [4, 5])
-    out = tmp_path / "out.parquet"
+    out = tmp_path / "out"
 
     report = Transfer(
         source=FilesSource(str(tmp_path / "*.parquet")),
@@ -31,6 +31,7 @@ def test_glob_matches_multiple_files(tmp_path: Path) -> None:
     ).run()
 
     assert report.rows == 5
+    assert len(report.written_objects) == 2  # one part per source file
     assert pq.read_table(out).num_rows == 5
 
 
@@ -38,7 +39,7 @@ def test_glob_no_match_raises(tmp_path: Path) -> None:
     with pytest.raises(SourceError, match="matched no files"):
         Transfer(
             source=FilesSource(str(tmp_path / "missing-*.parquet")),
-            destination=FilesDestination(tmp_path / "out.parquet"),
+            destination=FilesDestination(tmp_path / "out"),
         ).run()
 
 
@@ -47,7 +48,7 @@ def test_explicit_list_of_paths(tmp_path: Path) -> None:
     b = tmp_path / "b.parquet"
     _write_seed(a, [10, 20])
     _write_seed(b, [30, 40, 50])
-    out = tmp_path / "out.parquet"
+    out = tmp_path / "out"
 
     report = Transfer(
         source=FilesSource([a, b]),
@@ -60,7 +61,7 @@ def test_explicit_list_of_paths(tmp_path: Path) -> None:
 def test_literal_string_with_no_wildcards_still_works(tmp_path: Path) -> None:
     seed = tmp_path / "seed.parquet"
     _write_seed(seed, [1, 2, 3])
-    out = tmp_path / "out.parquet"
+    out = tmp_path / "out"
 
     report = Transfer(
         source=FilesSource(str(seed)),
@@ -74,5 +75,5 @@ def test_missing_literal_path_raises(tmp_path: Path) -> None:
     with pytest.raises(TransferredError):
         Transfer(
             source=FilesSource(str(tmp_path / "does-not-exist.parquet")),
-            destination=FilesDestination(tmp_path / "out.parquet"),
+            destination=FilesDestination(tmp_path / "out"),
         ).run()
