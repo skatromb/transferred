@@ -4,7 +4,7 @@ import os
 
 from transferred._base import Destination, Source
 from transferred._native import _FilesDestination, _FilesSource
-from transferred.formats import Format
+from transferred.formats import Format, Parquet
 
 StrPath = str | os.PathLike[str]
 
@@ -17,10 +17,10 @@ class FilesSource(Source):
     Args:
         path: One of:
             - Filesystem path to a single file (`str` or `os.PathLike`).
+            - List of paths.
             - Glob pattern containing `*`, `?`, or `[...]` (e.g. `'data/*.parquet'`).
               Expanded at run time; matching zero files raises `SourceError`.
-            - List of paths. Each item is treated literally (no per-item glob).
-        format: File format codec. Defaults to `Parquet()` when omitted.
+        format: File format codec.
 
     Example:
         >>> from transferred import FilesSource, FilesDestination, Transfer
@@ -43,10 +43,9 @@ class FilesSource(Source):
     _native_source: _FilesSource
 
     def __init__(
-        self, path: StrPath | list[StrPath], format: Format | None = None
+        self, path: StrPath | list[StrPath], format: Format = Parquet()
     ) -> None:
-        native_format = None if format is None else format._native_format
-        self._native_source = _FilesSource(path, native_format)
+        self._native_source = _FilesSource(path, format._native_format)
 
 
 class FilesDestination(Destination):
@@ -72,8 +71,9 @@ class FilesDestination(Destination):
     def __init__(
         self,
         path: StrPath,
-        format: Format | None = None,
+        format: Format = Parquet(),
         single_file: bool = False,
     ) -> None:
-        native_format = None if format is None else format._native_format
-        self._native_destination = _FilesDestination(path, native_format, single_file)
+        self._native_destination = _FilesDestination(
+            path, format._native_format, single_file
+        )

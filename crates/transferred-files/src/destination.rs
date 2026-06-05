@@ -32,27 +32,28 @@ impl Destination for FilesDestination {
         let tmp_dir = make_tmp(&self.path);
         tokio::fs::create_dir_all(&tmp_dir).await?;
 
-        let written = match self.write_files(&tmp_dir, partitions).await {
+        let writtens = match self.write_files(&tmp_dir, partitions).await {
             Ok(written) => written,
             Err(err) => {
                 cleanup(&tmp_dir).await;
                 return Err(err);
             }
         };
-        if let Err(err) = self.replace_with(&tmp_dir).await {
+
+        if let Err(err) = self.atomic_replace(&tmp_dir).await {
             cleanup(&tmp_dir).await;
             return Err(err);
         }
 
         let mut bytes_written = 0;
-        for w in &written {
-            bytes_written += tokio::fs::metadata(&w.path).await?.len();
+        for written in &writtens {
+            bytes_written += tokio::fs::metadata(&written.path).await?.len();
         }
 
         Ok(RunReport {
-            rows: written.iter().map(|w| w.rows).sum(),
+            rows: writtens.iter().map(|w| w.rows).sum(),
             bytes_written,
-            written_objects: written
+            written_objects: writtens
                 .iter()
                 .map(|w| w.path.display().to_string())
                 .collect(),
@@ -73,11 +74,19 @@ impl FilesDestination {
         }
     }
 
-    /// Output directory's basename; names the lone `single_file` output.
-    fn dir_name(&self) -> std::borrow::Cow<'_, str> {
-        self.path
+    /// Pick a filename: `{dir}.{ext}` if `single_file`, else `part-NNNNN.{ext}`.
+    fn output_filename(&self, part: usize) -> String {
+        let ext = self.format.file_extension();
+        let base_name = self
+            .path
             .file_name()
-            .map_or(std::borrow::Cow::Borrowed("data"), |n| n.to_string_lossy())
+            .map_or("data".to_string(), |n| n.to_string_lossy().to_string());
+
+        if self.single_file {
+            format!("{base_name}.{ext}")
+        } else {
+            format!("part-{part:05}.{ext}")
+        }
     }
 
     /// Create and write files into `tmp_dir`; returns the final paths and row counts.
@@ -92,19 +101,16 @@ impl FilesDestination {
             partitions
         };
 
-        let ext = self.format.file_extension();
         let mut written = Vec::new();
         for stream in streams {
             let mut stream = stream.peekable();
             if Pin::new(&mut stream).peek().await.is_none() {
                 continue; // skip empty partitions — no stray part file
             }
-            let name = if self.single_file {
-                format!("{}.{ext}", self.dir_name())
-            } else {
-                format!("part-{:05}.{ext}", written.len())
-            };
+
+            let name = self.output_filename(written.len());
             let file = File::create(tmp_dir.join(&name)).await?;
+
             let rows = self.format.write(Box::new(file), Box::pin(stream)).await?;
             written.push(Written {
                 path: self.path.join(&name),
@@ -115,11 +121,12 @@ impl FilesDestination {
         if written.is_empty() {
             return Err(TransferredError::EmptySource);
         }
+
         Ok(written)
     }
 
     /// Atomically overwrite `path` dir with `tmp_dir`, removing any existing output first.
-    async fn replace_with(&self, tmp_dir: &Path) -> Result<(), TransferredError> {
+    async fn atomic_replace(&self, tmp_dir: &Path) -> Result<(), TransferredError> {
         match tokio::fs::metadata(&self.path).await {
             Ok(meta) if meta.is_dir() => tokio::fs::remove_dir_all(&self.path).await?,
             Ok(_) => tokio::fs::remove_file(&self.path).await?,
@@ -155,5 +162,6 @@ fn make_tmp(final_path: &Path) -> PathBuf {
         .map(std::ffi::OsStr::to_os_string)
         .unwrap_or_default();
     name.push(".tmp");
+
     final_path.with_file_name(name)
 }
