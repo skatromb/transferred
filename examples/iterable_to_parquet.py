@@ -38,7 +38,7 @@ Transfer(
 ).run()
 
 
-# pydantic models
+# pydantic models — single_file writes one `from_pydantic/from_pydantic.parquet`
 class UserModel(BaseModel):
     id: int
     name: str
@@ -46,13 +46,13 @@ class UserModel(BaseModel):
 
 report = Transfer(
     source=(UserModel(id=i, name=f"row-{i}") for i in range(1_000)),
-    destination=FilesDestination(Path("from_pydantic")),
+    destination=FilesDestination(Path("from_pydantic"), single_file=True),
 ).run()
 
 print(report)
 # RunReport(rows=1000, bytes_written=..., duration_seconds=...)
 
-print(pq.read_table("from_pydantic").slice(0, 3))
+print(pq.read_table(report.written_objects[0]).slice(0, 3))
 # pyarrow.Table
 # id: int64
 # name: string
