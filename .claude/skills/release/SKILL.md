@@ -9,15 +9,16 @@ description: |
 
 # release — cut a `transferred` version
 
-Ships Rust crates (`transferred-core`, `transferred-parquet`, `transferred-py`) to crates.io and the `transferred` wheel to PyPI. CI publishes; this skill is the human pre/post work.
+Ships Rust crates (`transferred-core`, `transferred-files`, `transferred-py`) to crates.io and the `transferred` wheel to PyPI. CI publishes; this skill is the human pre/post work.
 
 Use `make` targets where they exist. If a step has no target, do it by hand or extend the Makefile.
 
 ## Preconditions
 
 - All scope items for the version in `PLAN.md` are `[x]` except `Deploy 0.0.x`.
+- Every public source/destination/format added or changed this version has an example in `examples/`.
 - `main` is green.
-- `make pre-release` passes locally.
+- `make pre-release` passes locally (runs `make examples`, so every example must run clean).
 
 ## 1 — Pre-release ergonomics test
 
@@ -28,14 +29,14 @@ make python-dev-build
 cd crates/transferred-py && uv run python
 ```
 
-Exercise every public class added or changed this version. For 0.0.2 example:
+Exercise every public class added or changed this version. Example:
 
 ```python
-from transferred import Transfer, ParquetDestination
+from transferred import Transfer, FilesDestination
 from transferred.arrow import ArrowSource
 
 help(ArrowSource)
-Transfer(source=[{"a": 1}], destination=ParquetDestination("/tmp/x.parquet")).run()
+Transfer(source=[{"a": 1}], destination=FilesDestination("/tmp/out")).run()
 ```
 
 Check:
@@ -43,6 +44,7 @@ Check:
 - Public classes importable from documented module paths
 - Error messages clear when wrong types passed in
 - `RunReport.__repr__` reads well
+- Every new public class has a committed `examples/*.py`; `make examples` passes
 - Ensure README.md stays actual end-to-end
 
 Fix issues before tagging, even if it means another PR.
@@ -80,7 +82,7 @@ Triggers `.github/workflows/release.yml`. CI's `verify` job rejects tags not on 
 ## 5 — Approve environments
 
 In the Actions tab, approve gates for both environments:
-- `crates-io` — publishes core → parquet → py
+- `crates-io` — publishes core → files → py
 - `pypi` — Trusted Publishers / OIDC
 
 ## 6 — Post-release smoke test
