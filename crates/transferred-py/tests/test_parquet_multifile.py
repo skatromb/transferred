@@ -77,3 +77,16 @@ def test_missing_literal_path_raises(tmp_path: Path) -> None:
             source=FilesSource(str(tmp_path / "does-not-exist.parquet")),
             destination=FilesDestination(tmp_path / "out"),
         ).run()
+
+
+def test_directory_among_paths_raises_clearly(tmp_path: Path) -> None:
+    seed = tmp_path / "seed.parquet"
+    _write_seed(seed, [1, 2, 3])
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+
+    with pytest.raises(SourceError, match="is a directory, not a file"):
+        Transfer(
+            source=FilesSource([seed, subdir]),
+            destination=FilesDestination(tmp_path / "out"),
+        ).run()

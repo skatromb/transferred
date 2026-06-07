@@ -48,13 +48,23 @@ pub enum GlobOrPaths {
 impl GlobOrPaths {
     /// Resolve to concrete paths. Glob walks the filesystem; empty results error.
     fn resolve(self) -> Result<Vec<PathBuf>, TransferredError> {
-        match self {
-            GlobOrPaths::Glob(pattern) => expand_glob(&pattern),
+        let paths = match self {
+            GlobOrPaths::Glob(pattern) => expand_glob(&pattern)?,
             GlobOrPaths::Paths(paths) if paths.is_empty() => {
-                Err(TransferredError::source("no input paths provided"))
+                return Err(TransferredError::source("no input paths provided"));
             }
-            GlobOrPaths::Paths(paths) => Ok(paths),
+            GlobOrPaths::Paths(paths) => paths,
+        };
+        if let Some(dir) = paths.iter().find(|path| path.is_dir()) {
+            return Err(TransferredError::source(format!(
+                concat!(
+                    "{} is a directory, not a file. ",
+                    r#"Pass a list of filenames or glob pattern ("directory/*.parquet")"#
+                ),
+                dir.display()
+            )));
         }
+        Ok(paths)
     }
 }
 
@@ -87,4 +97,26 @@ async fn open_file_stream(
 ) -> Result<BatchStream, TransferredError> {
     let file = File::open(&path).await?;
     format.read(Box::new(file)).await
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use crate::Parquet;
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn directory_path_errors_with_clear_message() {
+        let dir = tempdir().unwrap();
+        let glob_dir = GlobOrPaths::Glob(dir.path().to_string_lossy().into_owned());
+        let paths_dir = GlobOrPaths::Paths(vec![dir.path().to_path_buf()]);
+
+        for paths in [glob_dir, paths_dir] {
+            let source = FilesSource::new(paths, Arc::new(Parquet::default()));
+            let err = Box::new(source).stream_partitions().await.err().unwrap();
+            assert!(err.to_string().contains("is a directory, not a file"));
+        }
+    }
 }
