@@ -1,5 +1,7 @@
 # AGENTS.md
 
+Read ./docs/design/DESIGN.md and ./PLAN.md first to get grasp on current state of things.
+Use ./Makefile for common development cycle commands.
 Conventions for AI agents (Claude Code, Cursor, Codex, Aider, …) working in this repo.
 
 ## Rust docs
