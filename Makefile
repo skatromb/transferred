@@ -140,6 +140,15 @@ release-tag: release-check
 	@git push origin "v$(VERSION)"
 	@echo "pushed tag v$(VERSION)"
 
+# Move tag `vX.Y.Z` to current main (delete local+remote, recreate). Use to re-cut a version before publish.
+.PHONY: release-retag
+release-retag: release-check
+	@git push origin ":refs/tags/v$(VERSION)" 2>/dev/null || true
+	@git tag -d "v$(VERSION)" 2>/dev/null || true
+	@git tag -a "v$(VERSION)" -m "v$(VERSION)"
+	@git push origin "v$(VERSION)"
+	@echo "re-tagged v$(VERSION)"
+
 # Check validity of every examples/*.py against the current build.
 .PHONY: examples
 examples: python-setup
