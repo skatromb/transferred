@@ -1,10 +1,10 @@
 //! `RunReport` Python class.
 
-use std::time::Duration;
-
 use humansize::{BINARY, format_size};
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
+use std::fmt::Write;
+use std::time::Duration;
 use thousands::Separable;
 use transferred_core::RunReport;
 
@@ -13,6 +13,7 @@ use transferred_core::RunReport;
 /// Attributes:
 ///     `rows`: Total rows written.
 ///     `bytes_written`: Total bytes written to the destination.
+///     `written_objects`: Identifiers of what was written (paths, URIs, tables).
 ///     `duration_seconds`: Wall-clock duration of the transfer, in seconds.
 ///
 /// Example:
@@ -20,9 +21,12 @@ use transferred_core::RunReport;
 ///     >>> report = Transfer(source=..., destination=...).run()
 ///     >>> print(report)
 ///     RunReport:
-///       rows:     12,481,902
-///       written:  1.40 GiB
+///       rows: 12,481,902
+///       written: 1.40 GiB
 ///       duration: 4s 218ms
+///       written objects:
+///         out/part-00001.parquet
+///         out/part-00002.parquet
 ///     ```
 #[gen_stub_pyclass]
 #[pyclass(name = "RunReport", module = "transferred._native", frozen)]
@@ -65,9 +69,10 @@ impl PyRunReport {
 
     fn __repr__(&self) -> String {
         format!(
-            "RunReport(rows={}, bytes_written={}, duration_seconds={:.6})",
+            "RunReport(rows={}, bytes_written={}, written_objects={:?}, duration_seconds={:.3})",
             self.inner.rows,
             self.inner.bytes_written,
+            self.inner.written_objects,
             self.inner.duration.as_secs_f64()
         )
     }
@@ -75,11 +80,21 @@ impl PyRunReport {
     fn __str__(&self) -> String {
         let ms = u64::try_from(self.inner.duration.as_millis()).unwrap_or(u64::MAX);
         let duration = Duration::from_millis(ms);
+        let written_objects: String =
+            self.inner
+                .written_objects
+                .iter()
+                .fold(String::new(), |mut string, object| {
+                    let _ = write!(string, "\n    {object}");
+                    string
+                });
+
         format!(
-            "RunReport:\n  rows:     {}\n  written:  {}\n  duration: {}",
+            "RunReport:\n  rows: {}\n  written: {}\n  duration: {}\n  written objects:{}",
             self.inner.rows.separate_with_commas(),
             format_size(self.inner.bytes_written, BINARY),
             humantime::format_duration(duration),
+            written_objects,
         )
     }
 }

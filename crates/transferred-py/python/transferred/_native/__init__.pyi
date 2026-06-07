@@ -17,6 +17,7 @@ class RunReport:
     Attributes:
         `rows`: Total rows written.
         `bytes_written`: Total bytes written to the destination.
+        `written_objects`: Identifiers of what was written (paths, URIs, tables).
         `duration_seconds`: Wall-clock duration of the transfer, in seconds.
     
     Example:
@@ -24,9 +25,12 @@ class RunReport:
         >>> report = Transfer(source=..., destination=...).run()
         >>> print(report)
         RunReport:
-          rows:     12,481,902
-          written:  1.40 GiB
+          rows: 12,481,902
+          written: 1.40 GiB
           duration: 4s 218ms
+          written objects:
+            out/part-00001.parquet
+            out/part-00002.parquet
         ```
     """
     @property

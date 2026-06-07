@@ -22,7 +22,8 @@ class Parquet(Format):
 
     Example:
         >>> from transferred.formats import Parquet
-        >>> fmt = Parquet(compression="snappy")
+        >>>
+        >>> parquet_format = Parquet(compression="snappy")
     """
 
     def __init__(self, compression: Literal["zstd", "snappy"] | None = "zstd") -> None:

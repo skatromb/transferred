@@ -45,13 +45,16 @@ Check:
 - Error messages clear when wrong types passed in
 - `RunReport.__repr__` reads well
 - Every new public class has a committed `examples/*.py`; `make examples` passes
-- Ensure README.md stays actual end-to-end
 
 Fix issues before tagging, even if it means another PR.
 
-## 2 — Version bump
+## 2 — Update README
 
-Edit `version = "..."` in workspace root `Cargo.toml` and update whole README.md, then:
+Sync the whole README.md end-to-end with this version's surface, including the code example (it's not covered by test). Output blocks (e.g. `print(report)`) must match actual output verbatim.
+
+## 3 — Version bump
+
+Edit `version = "..."` in workspace root `Cargo.toml`, then:
 
 ```bash
 make bump-lock
@@ -64,13 +67,13 @@ Open PR. Commit message — single-line descriptive imperative, no Conventional 
 bump version to X.Y.Z
 ```
 
-## 3 — Tick PLAN.md, merge
+## 4 — Tick PLAN.md, merge
 
 Tick `Deploy 0.0.x` in `PLAN.md` in the same PR (or a follow-up). No ticking-only commits.
 
 Merge to `main`.
 
-## 4 — Tag and push
+## 5 — Tag and push
 
 ```bash
 git checkout main && git pull
@@ -79,13 +82,13 @@ make release-tag
 
 Triggers `.github/workflows/release.yml`. CI's `verify` job rejects tags not on `main` or with version mismatching `transferred-core`'s `Cargo.toml`.
 
-## 5 — Approve environments
+## 6 — Approve environments
 
 In the Actions tab, approve gates for both environments:
 - `crates-io` — publishes core → files → py
 - `pypi` — Trusted Publishers / OIDC
 
-## 6 — Post-release smoke test
+## 7 — Post-release smoke test
 
 Green CI proves upload, not install. Replace the local maturin install with the published wheel:
 
@@ -107,7 +110,7 @@ Check:
 
 Restore dev install: `make python-setup`.
 
-## 7 — Verify pages
+## 8 — Verify pages
 
 - Check `https://pypi.org/project/transferred/X.Y.Z/` renders
 - Check each crate page on crates.io

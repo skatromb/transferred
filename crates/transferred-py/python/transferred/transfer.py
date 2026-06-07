@@ -25,7 +25,7 @@ class Transfer(_Transfer):
         >>> from transferred import FilesDestination, Transfer
         >>>
         >>> rows = ({"id": i, "name": f"row-{i}"} for i in range(1000))
-        >>> destination = FilesDestination("out.parquet")
+        >>> destination = FilesDestination("output_directory")
         >>>
         >>> report = Transfer(
         ...     source=rows,
@@ -34,9 +34,11 @@ class Transfer(_Transfer):
         >>>
         >>> print(report)
         RunReport:
-          rows:     1,000
-          written:  5.18 KiB
+          rows: 1,000
+          written: 5.18 KiB
           duration: ...
+          written objects:
+            output_directory/part-00001.parquet
     """
 
     def __new__(

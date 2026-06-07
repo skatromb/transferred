@@ -45,7 +45,7 @@ def test_existing_output_is_overwritten(tmp_path: Path) -> None:
         ).run()
 
     assert report.rows == 3
-    assert list(out.glob("*.parquet")) == [out / "part-00000.parquet"]
+    assert list(out.glob("*.parquet")) == [out / "part-00001.parquet"]
 
 
 def test_empty_source_raises(tmp_path: Path) -> None:

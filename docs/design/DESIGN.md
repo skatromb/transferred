@@ -159,7 +159,7 @@ Rules:
 report = transfer.run()
 report.rows            # 12_481_902
 report.bytes_written   # 1_503_948_211
-report.written_objects # ["out/part-00000.parquet", ...] — paths/URIs/tables written
+report.written_objects # ["out/part-00001.parquet", ...] — paths/URIs/tables written
 report.duration        # timedelta
 report.coercions       # list[Coercion] — column, original type, target, level
 report.staging         # transient artifacts (deleted unless keep_staging=True)
