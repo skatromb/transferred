@@ -139,6 +139,7 @@ sizes aren't comparable.
   - [x] `emit_result` output_bytes sums files when output is a directory.
 - [x] Reserve `transferred-files` on crates.io — name free; `release.yml` claims it in dep order (core → files → py).
 - [x] Let's make CI checks to run only on related Rust and Python changes.
+- [x] `FilesSource` directory path — `FilesSource(dir)` leaked `Is a directory (os error 21)` from the parquet reader. `GlobOrPaths::resolve` now rejects directories (both glob + path-list inputs) with a clear "is a directory, not a file" message hinting a glob. No auto-expansion — deferred.
 - [ ] Deploy 0.0.3
 
 ## 0.0.4 — deferred from 0.0.3
