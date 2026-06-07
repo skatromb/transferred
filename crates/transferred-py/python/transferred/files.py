@@ -63,6 +63,7 @@ class FilesDestination(Destination):
     Example:
         >>> from transferred import FilesDestination
         >>> from transferred.formats import Parquet
+        >>>
         >>> destination = FilesDestination("out", format=Parquet(compression="zstd"))
     """
 

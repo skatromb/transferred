@@ -108,7 +108,7 @@ impl FilesDestination {
                 continue; // skip empty partitions — no stray part file
             }
 
-            let name = self.output_filename(written.len());
+            let name = self.output_filename(written.len() + 1);
             let file = File::create(tmp_dir.join(&name)).await?;
 
             let rows = self.format.write(Box::new(file), Box::pin(stream)).await?;

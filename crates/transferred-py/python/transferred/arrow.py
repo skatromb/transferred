@@ -32,14 +32,16 @@ class ArrowSource(Source):
         >>>
         >>> report = Transfer(
         ...     source=ArrowSource(reader),
-        ...     destination=FilesDestination("out.parquet"),
+        ...     destination=FilesDestination("output_directory"),
         ... ).run()
         >>>
         >>> print(report)
         RunReport:
-          rows:     3
-          written:  519 B
+          rows: 3
+          written: 519 B
           duration: ...
+          written objects:
+            output_directory/part-00001.parquet
     """
 
     _native_source: _ArrowSource

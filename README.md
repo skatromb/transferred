@@ -22,14 +22,17 @@ from transferred import FilesDestination, FilesSource, Parquet, Transfer
 
 report = Transfer(
     source=FilesSource("in.parquet"),
-    destination=FilesDestination("out.parquet", format=Parquet(compression="zstd")),
+    destination=FilesDestination("output_directory", format=Parquet(compression="zstd")),
 ).run()
 
 print(report)
 # RunReport:
-#   rows:     12,481,902
-#   written:  1.40 GiB
+#   rows: 12,481,902
+#   written: 1.40 GiB
 #   duration: 4s 218ms
+#   written objects:
+#     output_directory/part-00001.parquet
+#     output_directory/part-00002.parquet
 ```
 
 ## Supported
