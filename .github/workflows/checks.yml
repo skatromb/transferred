@@ -2,15 +2,8 @@ name: Checks
 
 on:
   pull_request:
-    paths: &code_paths
-      - 'crates/**'
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'rust-toolchain.toml'
-      - '.github/workflows/checks.yml'
   push:
     branches: [main]
-    paths: *code_paths
 
 concurrency:
   group: checks-${{ github.ref }}
@@ -21,8 +14,39 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
+  
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'crates/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+              - '.github/workflows/checks.yml'
+
+  check-all:
+    name: Check all
+    needs: [rust, python]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any of required checks failed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+
   rust:
     name: Rust (fmt, clippy, test, stubs)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -41,6 +65,8 @@ jobs:
 
   python:
     name: Python (ruff, ty, pytest)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -52,7 +78,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v8.2.0
         with:
           enable-cache: true
 
