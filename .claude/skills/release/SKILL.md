@@ -108,7 +108,7 @@ Check:
 - `import transferred` works
 - Representative `Transfer(...).run()` succeeds
 
-Restore dev install: `make python-setup`.
+Restore dev install: `make python-dev-build`.
 
 ## 8 — Verify pages
 

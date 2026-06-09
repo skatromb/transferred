@@ -76,7 +76,6 @@ ruff: python-setup
 	@if [ -n "$$CI" ]; then git diff --exit-code -- '*.py'; fi
 
 # Type-check Python sources against the auto-generated `_native` stubs.
-# Catches drift like missing exception classes in the stub.
 .PHONY: ty
 ty: python-setup
 	@cd crates/transferred-py && \
@@ -113,8 +112,7 @@ VERSION := $(shell cargo metadata --no-deps --format-version 1 \
 bump-lock:
 	@cargo update -p transferred-core -p transferred-files -p transferred-py
 
-# Full pre-release validation: lint, tests, types, examples.
-# Run before bumping the version.
+# Pre-release validation before the version bump.
 .PHONY: pre-release
 pre-release: check examples
 

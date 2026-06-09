@@ -140,66 +140,61 @@ sizes aren't comparable.
 - [x] Reserve `transferred-files` on crates.io — name free; `release.yml` claims it in dep order (core → files → py).
 - [x] Let's make CI checks to run only on related Rust and Python changes.
 - [x] `FilesSource` directory path — `FilesSource(dir)` leaked `Is a directory (os error 21)` from the parquet reader. `GlobOrPaths::resolve` now rejects directories (both glob + path-list inputs) with a clear "is a directory, not a file" message hinting a glob. No auto-expansion — deferred.
-- [ ] Deploy 0.0.3
+- [x] Deploy 0.0.3
 
-## 0.0.4 — deferred from 0.0.3
+## 0.1.0 — Postgres source + destination
 
-Goal: format dispatch — moot while Parquet is the only format, so deferred until a second format exists.
-
-**Tasks:**
-
-- [ ] `format` resolution (only `Parquet` impl exists, so all rows resolve to Parquet — build the dispatch, not the other formats):
-  - [ ] File source + no `format`: inherit source's format (path extension first, byte-sniff on ambiguity).
-  - [ ] File source + explicit `format`: convert.
-  - [ ] Non-file source + no `format`: default to `Parquet()`.
-  - [ ] Non-file source + explicit `format`: convert.
-
-## 0.1.0 — Postgres source → BigQuery destination
-
-Goal: original thesis. Atomic full load from PG to BQ.
+Goal: Atomic full load PG → PG and PG → Parquet. Direct type mapping only; formal schema/coercion work deferred to 0.4.
 
 **Scope:**
 
-- `transferred-postgres` source: `COPY (SELECT ...) TO STDOUT (FORMAT BINARY)` → Arrow `RecordBatch`. Both `table=` and `query=` compile to COPY. Docker PG+PostGIS fixture for tests.
-- `transferred-bigquery` destination: Storage Write API in `pending` mode against transient staging table → server-side copy job `WRITE_TRUNCATE` from staging into final → `DROP TABLE staging`. No GCS staging.
-- BQ schema vocabulary in Python (`"INT64"`, `"NUMERIC(18, 4)"`, `"GEOGRAPHY"`, `bigquery.SchemaField`).
-- Schema inference from `information_schema`.
-- Auth via `gcp_auth` (ADC, service-account JSON, gcloud, workload identity).
-- Schema redesign — destination-owned vocab, trait additions (`parse_user_schema`, `apply_overrides`, `to_destination_schema`). Designed against PG + BQ + Parquet concretely.
-- Coercion engine — runtime cast from inferred Arrow schema to canonical schema. Tier 1 auto, Tier 2 warn, Tier 3 fail.
-- Type registry initial coverage: primitives, `arrow.json`, `arrow.uuid`, ranges (expand), `geography(_, 4326)` → BQ `GEOGRAPHY` (Tier 1), `geometry(_, 4326)` no Z/M → BQ `GEOGRAPHY` (Tier 2 warn). Other tier-3 cases refused with `columns=`/`skip_columns=` workaround.
+- `transferred-postgres` source: `COPY (SELECT ...) TO STDOUT (FORMAT BINARY)` → Arrow `RecordBatch`. Both `table=` and `query=` compile to COPY. Docker compose PG+PostGIS fixture for tests.
+- Source schema inference via prepared-statement RowDescription (`prepare()` the inner SELECT → column type OID + typmod); uniform across `table=`/`query=`. The COPY binary stream carries no type/name metadata — only length-prefixed field bytes — so types must come from RowDescription, not the stream. PostGIS SRID from typmod / `geometry_columns`.
+- `transferred-postgres` destination: atomic full replace — staging table built from the source-derived schema, `COPY ... FROM STDIN`, then `BEGIN; DROP target IF EXISTS; RENAME staging; COMMIT;` (transactional DDL). Source schema wins, silent overwrite — consistent with Files/BQ. Target readable during load; brief exclusive lock only at swap. Indexes/grants/ownership not preserved (full replace); index-preserving replace strategy deferred to 0.4 `on_schema_change` (cf. dlt `replace_strategy`).
+- Destination table-creation options bag (additive over source-derived DDL): PG `primary_key=`.
+- Direct PG ↔ Arrow ↔ destination type mapping (no canonical vocab, no coercion engine, no user `schema=` — all deferred to 0.4). Coverage: primitives, `arrow.json`, `arrow.uuid`, ranges (expand), PG `geography`/`geometry`. Unsupported types error.
 - `tracing` → Python `logging` bridge.
 
 **Tasks:**
 
 - [ ] `transferred-postgres` connect + COPY binary parser.
 - [ ] PG → Arrow type mapping (per DESIGN.md coverage table).
-- [ ] Integration test: docker-compose PG+PostGIS fixture.
-- [ ] `transferred-bigquery` Storage Write client (tonic + googleapis).
-- [ ] Atomic staging-table + copy-replace + drop-staging flow.
-- [ ] Auth integration (`gcp_auth`).
-- [ ] BQ env-gated integration test.
+- [ ] `transferred-postgres` destination — `COPY ... FROM STDIN`, atomic swap.
+- [ ] Integration test: docker-compose PG+PostGIS fixture (round-trip PG → PG).
 - [ ] CI: docker PG service for PR gate.
 - [ ] Logging bridge crate.
-- [ ] **Schema redesign** — destination-owned vocab, trait additions (`parse_user_schema`, `apply_overrides`, `to_destination_schema`). Implement for Parquet, PG, BQ in one pass.
-- [ ] **Coercion engine** — runtime cast from inferred Arrow schema to canonical schema. Tier 1 auto, Tier 2 warn, Tier 3 fail.
 
-## 0.1.1 — Postgres destination, BigQuery source
+## 0.2.0 — BigQuery source + destination
+
+Goal: add BigQuery source + destination. Atomic full load PG ↔ BQ. Direct type mapping; formal schema/coercion still deferred to 0.4.
 
 **Scope:**
 
-- `transferred-postgres` destination: `COPY ... FROM STDIN`, atomic swap via `BEGIN; DROP target; RENAME staging; COMMIT;`. Client-side schema compare needed (no server-side enforcement like BQ).
+- `transferred-bigquery` destination: Storage Write API in `pending` mode against transient staging table → server-side copy job `WRITE_TRUNCATE` from staging into final → `DROP TABLE staging`. No GCS staging.
 - `transferred-bigquery` source: Storage Read API.
-- Round-trip integration tests (PG ↔ BQ).
+- BQ schema vocabulary in Python (`"INT64"`, `"NUMERIC(18, 4)"`, `"GEOGRAPHY"`, `bigquery.SchemaField`).
+- Destination table-creation options: BQ `partition_by=`/`cluster_by=` (set-at-create, cost/perf-relevant — higher priority than PG PK). Extends the 0.1.0 options bag.
+- Auth via `gcp_auth` (ADC, service-account JSON, gcloud, workload identity).
+- Direct Arrow ↔ BQ type mapping: `geography(_, 4326)` → BQ `GEOGRAPHY`, `geometry(_, 4326)` no Z/M → BQ `GEOGRAPHY`. Unsupported types error. Tiered coercion (auto/warn/fail) deferred to 0.4.
 
-## 0.2 — S3 + GCS
+**Tasks:**
+
+- [ ] `transferred-bigquery` Storage Write client (tonic + googleapis).
+- [ ] Atomic staging-table + copy-replace + drop-staging flow.
+- [ ] `transferred-bigquery` source — Storage Read API.
+- [ ] Auth integration (`gcp_auth`).
+- [ ] BQ schema vocabulary + direct Arrow ↔ BQ type mapping.
+- [ ] BQ env-gated integration test.
+- [ ] Round-trip integration tests (PG ↔ BQ).
+
+## 0.3 — S3 + GCS
 
 - S3 destination (Parquet) via `object_store`.
 - GCS destination (Parquet) — nearly free once S3 works.
 
-## 0.3 — schema redesign
+## 0.4 — schema redesign
 
-Implements the source-owned schema direction decided during the Interlude. Supersedes the lighter-weight schema work that ships inline in 0.1.0.
+Implements the source-owned schema direction decided during the Interlude. Replaces the direct per-connector type mapping shipped in 0.1.0/0.2.0 with a canonical vocab + coercion engine + user `schema=` API.
 
 **Scope:**
 
@@ -214,20 +209,21 @@ Implements the source-owned schema direction decided during the Interlude. Super
   ```
 - Formal coercion engine — Tier 1 auto, Tier 2 warn, Tier 3 fail. Reporting via `RunReport.coercions`.
 - User schema API in Python: single `schema=` knob. Full by default; partial when an ellipsis key (`...: ...`) is present — remaining columns inferred. Source-side filtering via `columns=` / `skip_columns=` (mutually exclusive). Destination-native vocabulary.
-- Type registry — coverage extended beyond 0.1.0 baseline.
+- Type registry — coverage extended beyond the 0.1.0/0.2.0 direct-mapping baseline.
 
 **Tasks:**
 
 - [ ] Source schema introspection trait surface.
-- [ ] Destination schema validation trait surface (replaces 0.1.0 ad-hoc per-connector mapping).
+- [ ] Destination schema validation trait surface (replaces 0.1.0/0.2.0 ad-hoc per-connector mapping).
 - [ ] Coercion engine: Arrow `cast` with `safe=true`, Tier-aware reporting wired into `RunReport`.
 - [ ] User schema API in Python: `schema=`, `schema_overrides=`, `columns=`, `skip_columns=`.
 - [ ] Migrate Parquet, PG, BQ connectors to new trait surface.
 
 ## Backlog
 
+- Format dispatch — moot while Parquet is the only format, so deferred until a second exists. File source no `format`: inherit source's (path extension, byte-sniff on ambiguity); explicit `format`: convert. Non-file source: default `Parquet()` or convert if explicit.
 - Incremental loads. Model decided (see [INCREMENTAL.md](./docs/design/INCREMENTAL.md), D1–D10); scheduling into a version TBD.
-- Cross-connector `batch_size` / byte-based memory budget (`set_max_row_group_bytes` + reader batch). Design against ≥2 connectors (PG + BQ) in 0.1.0; don't pin to one connector's shape.
+- Cross-connector `batch_size` / byte-based memory budget (`set_max_row_group_bytes` + reader batch). Design against ≥2 connectors (PG in 0.1.0, BQ in 0.2.0); don't pin to one connector's shape.
 - Airflow / Dagster / whatever is popular operators
 - CRS reprojection (`proj` FFI), `ST_MakeValid`, Z/M handling.
 - Hstore / ltree / composite promotion from `arrow.opaque` to structured Arrow forms.
