@@ -14,7 +14,6 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
-  
   changes:
     name: Detect code changes
     runs-on: ubuntu-latest
@@ -44,18 +43,18 @@ jobs:
         run: exit 1
 
   rust:
-    name: Rust (fmt, clippy, test, stubs)
+    name: Rust (fmt, clippy, test, stubs, vet)
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install Rust toolchain
-        run: rustup show active-toolchain || rustup toolchain install
-
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
+
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
 
       - name: make rust-check
         run: make rust-check
