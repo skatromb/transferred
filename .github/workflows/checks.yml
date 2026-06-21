@@ -62,6 +62,9 @@ jobs:
       - name: make stubs-check
         run: make stubs-check
 
+      - name: Install cargo-vet
+        run: cargo install cargo-vet --locked
+
       - name: Supply chain audit
         run: cargo vet check --locked
 
