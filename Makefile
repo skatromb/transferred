@@ -7,9 +7,9 @@ check: rust-check python-check stubs-check
 # Rust
 # ============================================================================
 
-# Full Rust gate: fmt, clippy, tests.
+# Full Rust gate: fmt, clippy, tests, supply chain audit.
 .PHONY: rust-check
-rust-check: fmt clippy cargo-test
+rust-check: fmt clippy cargo-test vet
 
 # Format in place. Auto-fixes locally; CI fails if anything changed.
 .PHONY: fmt
@@ -27,6 +27,16 @@ clippy:
 .PHONY: cargo-test
 cargo-test:
 	@cargo test --workspace --features transferred-core/dev
+
+# Install cargo-vet for supply chain audits.
+.PHONY: vet-install
+vet-install:
+	@cargo install cargo-vet --locked
+
+# Run supply chain audit.
+.PHONY: vet
+vet: vet-install
+	@cargo vet check --locked
 
 
 # ============================================================================
