@@ -14,7 +14,6 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
-  
   changes:
     name: Detect code changes
     runs-on: ubuntu-latest
@@ -62,6 +61,9 @@ jobs:
 
       - name: make stubs-check
         run: make stubs-check
+
+      - name: Supply chain audit
+        run: cargo vet check --locked
 
   python:
     name: Python (ruff, ty, pytest)
