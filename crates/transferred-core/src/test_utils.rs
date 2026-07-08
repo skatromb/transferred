@@ -8,7 +8,7 @@ use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use futures::{StreamExt, stream};
 
-use crate::{BatchStream, Destination, RunReport, Source, TransferredError};
+use crate::{BatchStream, Destination, Result, RunReport, Source};
 
 /// In-memory `Source` that yields a fixed `Vec<RecordBatch>` as a single partition.
 pub struct TestSource {
@@ -25,7 +25,7 @@ impl TestSource {
 
 #[async_trait]
 impl Source for TestSource {
-    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>, TransferredError> {
+    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>> {
         let stream = stream::iter(self.batches.into_iter().map(Ok));
         Ok(vec![Box::pin(stream)])
     }
@@ -55,10 +55,7 @@ impl Default for TestDestination {
 
 #[async_trait]
 impl Destination for TestDestination {
-    async fn write_partitions(
-        self: Box<Self>,
-        partitions: Vec<BatchStream>,
-    ) -> Result<RunReport, TransferredError> {
+    async fn write_partitions(self: Box<Self>, partitions: Vec<BatchStream>) -> Result<RunReport> {
         let mut rows: u64 = 0;
         for mut partition in partitions {
             while let Some(batch) = partition.next().await {

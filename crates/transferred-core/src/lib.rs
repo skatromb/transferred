@@ -7,9 +7,6 @@ mod report;
 pub mod test_utils;
 mod transfer;
 
-pub use error::TransferredError;
+pub use error::{Result, TransferredError};
 pub use report::{Coercion, CoercionLevel, RunReport};
 pub use transfer::{BatchStream, Destination, Source, Transfer};
-
-/// Convenience alias for results returned by `transferred` operations.
-pub type Result<T> = std::result::Result<T, TransferredError>;

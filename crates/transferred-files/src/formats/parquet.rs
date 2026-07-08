@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
-use transferred_core::{BatchStream, TransferredError};
+use transferred_core::{BatchStream, Result, TransferredError};
 // Leading `::` selects the extern `parquet` crate, not this `formats::parquet` module.
 use ::parquet::arrow::AsyncArrowWriter;
 use ::parquet::arrow::async_reader::ParquetRecordBatchStreamBuilder;
@@ -50,7 +50,7 @@ impl Parquet {
 
 #[async_trait]
 impl FormatRead for Parquet {
-    async fn read(&self, reader: Box<dyn FileReader>) -> Result<BatchStream, TransferredError> {
+    async fn read(&self, reader: Box<dyn FileReader>) -> Result<BatchStream> {
         let stream = ParquetRecordBatchStreamBuilder::new(reader)
             .await
             .map_err(|e| TransferredError::source(format!("parquet reader init: {e}")))?
@@ -69,11 +69,7 @@ impl FormatWrite for Parquet {
         "parquet"
     }
 
-    async fn write(
-        &self,
-        writer: Box<dyn FileWriter>,
-        mut batches: BatchStream,
-    ) -> Result<u64, TransferredError> {
+    async fn write(&self, writer: Box<dyn FileWriter>, mut batches: BatchStream) -> Result<u64> {
         let first = batches
             .try_next()
             .await?
@@ -84,25 +80,26 @@ impl FormatWrite for Parquet {
             .build();
 
         let mut arrow_writer = AsyncArrowWriter::try_new(writer, first.schema(), Some(properties))
-            .map_err(|e| TransferredError::destination(format!("AsyncArrowWriter init: {e}")))?;
+            .map_err(TransferredError::destination)?;
 
         let mut rows = first.num_rows() as u64;
         arrow_writer
             .write(&first)
             .await
-            .map_err(|e| TransferredError::destination(format!("AsyncArrowWriter::write: {e}")))?;
+            .map_err(TransferredError::destination)?;
 
         while let Some(batch) = batches.try_next().await? {
             rows += batch.num_rows() as u64;
-            arrow_writer.write(&batch).await.map_err(|e| {
-                TransferredError::destination(format!("AsyncArrowWriter::write: {e}"))
-            })?;
+            arrow_writer
+                .write(&batch)
+                .await
+                .map_err(TransferredError::destination)?;
         }
 
         arrow_writer
             .close()
             .await
-            .map_err(|e| TransferredError::destination(format!("AsyncArrowWriter::close: {e}")))?;
+            .map_err(TransferredError::destination)?;
         Ok(rows)
     }
 }

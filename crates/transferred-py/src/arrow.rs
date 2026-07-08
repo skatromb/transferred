@@ -14,7 +14,7 @@ use async_trait::async_trait;
 use futures::Stream;
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-use transferred_core::{BatchStream, Source, TransferredError};
+use transferred_core::{BatchStream, Result, Source, TransferredError};
 
 /// Internal `PyO3` wrapper around a pyarrow `RecordBatchReader`. Constructed by
 /// the user-facing Python `ArrowSource`; not intended to be used directly.
@@ -47,7 +47,7 @@ pub struct ArrowSource {
 
 #[async_trait]
 impl Source for ArrowSource {
-    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>, TransferredError> {
+    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>> {
         let stream = ArrowReaderStream {
             reader: self.reader,
         };
@@ -61,7 +61,7 @@ struct ArrowReaderStream {
 }
 
 impl Stream for ArrowReaderStream {
-    type Item = Result<RecordBatch, TransferredError>;
+    type Item = Result<RecordBatch>;
 
     fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let next = Python::attach(|_py| self.reader.next());
