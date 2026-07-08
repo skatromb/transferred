@@ -157,12 +157,19 @@ Goal: Atomic full load PG → PG and PG → Parquet. Direct type mapping only; f
 
 **Tasks:**
 
-- [ ] `transferred-postgres` connect + COPY binary parser.
+- [x] `transferred-postgres` connect + COPY binary parser.
 - [ ] PG → Arrow type mapping (per DESIGN.md coverage table).
 - [ ] `transferred-postgres` destination — `COPY ... FROM STDIN`, atomic swap.
+- [ ] Add TLS
 - [ ] Integration test: docker-compose PG+PostGIS fixture (round-trip PG → PG).
 - [ ] CI: docker PG service for PR gate.
 - [ ] Logging bridge crate.
+
+## 0.1.1 — supply-chain tooling
+
+**Tasks:**
+
+- [ ] **Swap `cargo-vet` → `cargo-deny`.** vet runs exemption-only (empty `audits.toml`, ~200 self-set `safe-to-deploy` exemptions = auto-approved, no real audits) — it gates version pins but verifies nothing. Replace with `cargo-deny` (advisories/licenses/bans/sources) for real CVE + license gating. Update `Makefile` (`vet`/`vet-install` targets, `rust-check`), CI `rust` job, add `deny.toml`, remove `supply-chain/`.
 
 ## 0.2.0 — BigQuery source + destination
 
