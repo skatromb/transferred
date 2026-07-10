@@ -2287,6 +2287,7 @@ dependencies = [
  "tokio",
  "transferred-core",
  "transferred-files",
+ "transferred-postgres",
 ]
 
 [[package]]

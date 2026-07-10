@@ -40,25 +40,27 @@ impl Source for PostgresSource {
             }
         });
 
-        let table: String = client
-            .query_one("SELECT $1::regclass::text", &[&self.table])
+        let verified_table: String = client
+            .query_one("SELECT $1::text::regclass::text", &[&self.table])
             .await
             .map_err(TransferredError::source)?
             .get(0);
 
         let query = client
-            .prepare(&format!("select * from {table}"))
+            .prepare(&format!("select * from {verified_table}"))
             .await
             .map_err(TransferredError::source)?;
 
         let columns = query.columns();
+
         let pg_types: Vec<Type> = columns
             .iter()
             .map(|column| column.type_().clone())
             .collect();
+
         let schema = derive_schema(columns)?;
 
-        let sql = format!("copy (select * from {table}) to stdout (format binary)");
+        let sql = format!("copy (select * from {verified_table}) to stdout (format binary)");
         let copy_stream = client
             .copy_out(&sql)
             .await
