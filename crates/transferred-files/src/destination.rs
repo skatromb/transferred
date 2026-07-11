@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use tokio::fs::File;
 use tracing::warn;
-use transferred_core::{BatchStream, Destination, RunReport, TransferredError};
+use transferred_core::{BatchStream, Destination, Result, RunReport, TransferredError};
 
 use crate::formats::FormatWrite;
 
@@ -24,10 +24,7 @@ pub struct FilesDestination {
 
 #[async_trait]
 impl Destination for FilesDestination {
-    async fn write_partitions(
-        self: Box<Self>,
-        partitions: Vec<BatchStream>,
-    ) -> Result<RunReport, TransferredError> {
+    async fn write_partitions(self: Box<Self>, partitions: Vec<BatchStream>) -> Result<RunReport> {
         let start = Instant::now();
         let tmp_dir = make_tmp(&self.path);
         tokio::fs::create_dir_all(&tmp_dir).await?;
@@ -94,7 +91,7 @@ impl FilesDestination {
         &self,
         tmp_dir: &Path,
         partitions: Vec<BatchStream>,
-    ) -> Result<Vec<Written>, TransferredError> {
+    ) -> Result<Vec<Written>> {
         let streams: Vec<BatchStream> = if self.single_file {
             vec![Box::pin(futures::stream::iter(partitions).flatten())]
         } else {
@@ -126,7 +123,7 @@ impl FilesDestination {
     }
 
     /// Atomically overwrite `path` dir with `tmp_dir`, removing any existing output first.
-    async fn atomic_replace(&self, tmp_dir: &Path) -> Result<(), TransferredError> {
+    async fn atomic_replace(&self, tmp_dir: &Path) -> Result<()> {
         match tokio::fs::metadata(&self.path).await {
             Ok(meta) if meta.is_dir() => tokio::fs::remove_dir_all(&self.path).await?,
             Ok(_) => tokio::fs::remove_file(&self.path).await?,

@@ -85,6 +85,13 @@ class _Parquet:
     """
     def __new__(cls, compression: typing.Optional[builtins.str]) -> _Parquet: ...
 
+@typing.final
+class _PostgresSource:
+    r"""
+    Internal `PyO3` wrapper around `transferred_postgres::PostgresSource`.
+    """
+    def __new__(cls, dsn: builtins.str, table: builtins.str) -> typing.Self: ...
+
 class _Transfer:
     r"""
     Internal `PyO3` wrapper around `transferred_core::Transfer`. Subclassed by the

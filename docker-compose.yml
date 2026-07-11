@@ -1,0 +1,15 @@
+# Postgres fixture for integration tests (`make pg-test`).
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: transferred
+      POSTGRES_PASSWORD: transferred
+      POSTGRES_DB: transferred
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U transferred"]
+      interval: 1s
+      timeout: 5s
+      retries: 30

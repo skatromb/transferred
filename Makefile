@@ -2,6 +2,9 @@
 .PHONY: check
 check: rust-check python-check stubs-check
 
+# Connector-specific targets live in a separate files
+include postgres.mk
+
 
 # ============================================================================
 # Rust

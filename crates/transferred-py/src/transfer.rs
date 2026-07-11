@@ -9,6 +9,7 @@ use transferred_core::{Destination, Source, Transfer};
 use crate::arrow::PyArrowSource;
 use crate::error::to_pyerr;
 use crate::files::{PyFilesDestination, PyFilesSource};
+use crate::postgres::PyPostgresSource;
 use crate::report::PyRunReport;
 
 /// Internal `PyO3` wrapper around `transferred_core::Transfer`. Subclassed by the
@@ -75,6 +76,14 @@ fn extract_source(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Source + Send>> {
         return Ok(Box::new(inner));
     }
     if let Ok(cell) = obj.cast::<PyArrowSource>() {
+        let inner = cell
+            .try_borrow_mut()?
+            .inner
+            .take()
+            .ok_or_else(already_consumed)?;
+        return Ok(Box::new(inner));
+    }
+    if let Ok(cell) = obj.cast::<PyPostgresSource>() {
         let inner = cell
             .try_borrow_mut()?
             .inner

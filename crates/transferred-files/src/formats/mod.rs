@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite};
-use transferred_core::{BatchStream, TransferredError};
+use transferred_core::{BatchStream, Result};
 
 pub mod parquet;
 
@@ -22,7 +22,7 @@ impl<T: AsyncWrite + Send + Unpin> FileWriter for T {}
 #[async_trait]
 pub trait FormatRead: Send + Sync {
     /// Read one open file handle into a stream of Arrow batches.
-    async fn read(&self, reader: Box<dyn FileReader>) -> Result<BatchStream, TransferredError>;
+    async fn read(&self, reader: Box<dyn FileReader>) -> Result<BatchStream>;
 }
 
 /// Encodes Arrow batches into a file's bytes.
@@ -32,9 +32,5 @@ pub trait FormatWrite: Send + Sync {
     fn file_extension(&self) -> &'static str;
 
     /// Write all batches into one open sink. Returns the row count written.
-    async fn write(
-        &self,
-        writer: Box<dyn FileWriter>,
-        batches: BatchStream,
-    ) -> Result<u64, TransferredError>;
+    async fn write(&self, writer: Box<dyn FileWriter>, batches: BatchStream) -> Result<u64>;
 }

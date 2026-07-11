@@ -16,6 +16,7 @@ repository = "https://github.com/skatromb/transferred"
 [workspace.dependencies]
 transferred-core = { path = "crates/transferred-core", version = "0.0.3" }
 transferred-files = { path = "crates/transferred-files", version = "0.0.3" }
+transferred-postgres = { path = "crates/transferred-postgres", version = "0.0.3" }
 arrow = { version = "59", features = ["prettyprint"] }
 arrow-schema = "59"
 tokio = { version = "1.52", features = ["rt-multi-thread", "macros", "sync", "io-util", "net", "time", "fs"] }

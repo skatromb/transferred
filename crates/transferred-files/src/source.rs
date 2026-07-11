@@ -4,7 +4,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::{TryStreamExt, stream};
 use tokio::fs::File;
-use transferred_core::{BatchStream, Source, TransferredError};
+use transferred_core::{BatchStream, Result, Source, TransferredError};
 
 use crate::formats::FormatRead;
 
@@ -26,7 +26,7 @@ impl FilesSource {
 #[async_trait]
 impl Source for FilesSource {
     /// One stream per file. Globs expanded here; empty results error.
-    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>, TransferredError> {
+    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>> {
         let paths = self.paths.resolve()?;
         let format = self.format;
         Ok(paths
@@ -47,7 +47,7 @@ pub enum GlobOrPaths {
 
 impl GlobOrPaths {
     /// Resolve to concrete paths. Glob walks the filesystem; empty results error.
-    fn resolve(self) -> Result<Vec<PathBuf>, TransferredError> {
+    fn resolve(self) -> Result<Vec<PathBuf>> {
         let paths = match self {
             GlobOrPaths::Glob(pattern) => expand_glob(&pattern)?,
             GlobOrPaths::Paths(paths) if paths.is_empty() => {
@@ -69,12 +69,12 @@ impl GlobOrPaths {
 }
 
 /// Expand a glob pattern to matching paths. Empty matches error.
-fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>, TransferredError> {
+fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>> {
     let paths: Vec<PathBuf> = glob::glob(pattern)
         .map_err(|err| {
             TransferredError::source(format!("invalid glob pattern '{pattern}': {err}"))
         })?
-        .collect::<Result<Vec<_>, _>>()
+        .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|err| TransferredError::source(format!("glob walk error: {err}")))?;
 
     if paths.is_empty() {
@@ -91,10 +91,7 @@ fn lazy_open_file(path: PathBuf, format: Arc<dyn FormatRead>) -> BatchStream {
     Box::pin(stream::once(open_file_stream(path, format)).try_flatten())
 }
 
-async fn open_file_stream(
-    path: PathBuf,
-    format: Arc<dyn FormatRead>,
-) -> Result<BatchStream, TransferredError> {
+async fn open_file_stream(path: PathBuf, format: Arc<dyn FormatRead>) -> Result<BatchStream> {
     let file = File::open(&path).await?;
     format.read(Box::new(file)).await
 }
@@ -116,7 +113,8 @@ mod tests {
         for paths in [glob_dir, paths_dir] {
             let source = FilesSource::new(paths, Arc::new(Parquet::default()));
             let err = Box::new(source).stream_partitions().await.err().unwrap();
-            assert!(err.to_string().contains("is a directory, not a file"));
+            let cause = std::error::Error::source(&err).unwrap().to_string();
+            assert!(cause.contains("is a directory, not a file"));
         }
     }
 }

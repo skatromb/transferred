@@ -55,12 +55,11 @@ create_exception!(
 
 pub fn to_pyerr(err: CoreError) -> PyErr {
     match err {
-        CoreError::Source(msg) => SourceError::new_err(msg),
+        CoreError::Source(err) => SourceError::new_err(err.to_string()),
         CoreError::EmptySource => EmptySourceError::new_err(err.to_string()),
-        CoreError::Destination(msg) => DestinationError::new_err(msg),
-        CoreError::Arrow(e) => ArrowError::new_err(e.to_string()),
-        CoreError::Io(e) => IoError::new_err(e.to_string()),
-        CoreError::Other(msg) => TransferredError::new_err(msg),
+        CoreError::Destination(err) => DestinationError::new_err(err.to_string()),
+        CoreError::Arrow(err) => ArrowError::new_err(err.to_string()),
+        CoreError::Io(err) => IoError::new_err(err.to_string()),
     }
 }
 

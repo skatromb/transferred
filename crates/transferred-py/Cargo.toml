@@ -23,6 +23,7 @@ extension-module = ["pyo3/extension-module"]
 [dependencies]
 transferred-core = { workspace = true }
 transferred-files = { workspace = true }
+transferred-postgres = { workspace = true }
 arrow = { workspace = true, features = ["pyarrow"] }
 pyo3 = { version = "0.28" }
 pyo3-stub-gen = { version = "0.22", default-features = false, features = ["infer_signature"] }

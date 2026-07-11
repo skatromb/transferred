@@ -1,65 +1,78 @@
 //! Postgres source. tokio-postgres + binary COPY → Arrow `RecordBatch`.
-//!
-//! 0.1 scaffold: API skeleton only. Real binary COPY parsing TBD.
+
+mod types;
 
 use async_trait::async_trait;
-use transferred_core::{BatchStream, Source, TransferredError};
+use futures::{StreamExt, TryStreamExt};
+use tokio_postgres::{self, NoTls, binary_copy::BinaryCopyOutStream, types::Type};
+use transferred_core::{BatchStream, Result, Source, TransferredError};
 
-/// Connection and extraction settings for a Postgres source.
-#[derive(Debug, Clone)]
-pub struct PostgresConfig {
-    /// Postgres connection string.
-    pub dsn: String,
-    /// Table to read. Mutually exclusive with `query`.
-    pub table: Option<String>,
-    /// Query to read. Mutually exclusive with `table`.
-    pub query: Option<String>,
-    /// Columns to include. `None` reads all.
-    pub columns: Option<Vec<String>>,
-    /// Columns to exclude from the read.
-    pub skip_columns: Option<Vec<String>>,
-}
+use crate::types::derive_schema;
 
-impl PostgresConfig {
-    /// Check `table`/`query` mutual exclusion.
-    ///
-    /// # Errors
-    /// Returns `TransferredError::Source` if both or neither are set.
-    pub fn validate(&self) -> Result<(), TransferredError> {
-        match (&self.table, &self.query) {
-            (Some(_), Some(_)) => Err(TransferredError::source(
-                "Postgres source: `table` and `query` are mutually exclusive",
-            )),
-            (None, None) => Err(TransferredError::source(
-                "Postgres source: one of `table` or `query` is required",
-            )),
-            _ => Ok(()),
-        }
-    }
-}
+const BATCH_ROWS: usize = 10_000;
 
 /// A `Source` that reads rows from a Postgres table or query.
 pub struct PostgresSource {
-    cfg: PostgresConfig,
+    /// Postgres connection string.
+    pub dsn: String,
+    /// Table to transfer.
+    pub table: String,
 }
 
 impl PostgresSource {
-    /// Build a source from config. Validates immediately.
-    ///
-    /// # Errors
-    /// Propagates `PostgresConfig::validate` errors.
-    pub fn new(cfg: PostgresConfig) -> Result<Self, TransferredError> {
-        cfg.validate()?;
-        Ok(Self { cfg })
+    /// Construct a `PostgresSource`
+    #[must_use]
+    pub fn new(dsn: String, table: String) -> Self {
+        Self { dsn, table }
     }
 }
 
 #[async_trait]
 impl Source for PostgresSource {
-    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>, TransferredError> {
-        let _ = &self.cfg;
-        Err(TransferredError::source(
-            "PostgresSource::partitions not yet implemented",
-        ))
+    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>> {
+        let (client, connection) = tokio_postgres::connect(&self.dsn, NoTls)
+            .await
+            .map_err(TransferredError::source)?;
+
+        tokio::spawn(async move {
+            if let Err(error) = connection.await {
+                eprintln!("connection error: {error}");
+            }
+        });
+
+        let verified_table: String = client
+            .query_one("SELECT $1::text::regclass::text", &[&self.table])
+            .await
+            .map_err(TransferredError::source)?
+            .get(0);
+
+        let query = client
+            .prepare(&format!("select * from {verified_table}"))
+            .await
+            .map_err(TransferredError::source)?;
+
+        let columns = query.columns();
+
+        let pg_types: Vec<Type> = columns
+            .iter()
+            .map(|column| column.type_().clone())
+            .collect();
+
+        let schema = derive_schema(columns)?;
+
+        let sql = format!("copy (select * from {verified_table}) to stdout (format binary)");
+        let copy_stream = client
+            .copy_out(&sql)
+            .await
+            .map_err(TransferredError::source)?;
+
+        let batches = BinaryCopyOutStream::new(copy_stream, &pg_types)
+            .try_chunks(BATCH_ROWS)
+            .map(move |chunk| {
+                let chunk = chunk.map_err(TransferredError::source)?;
+                types::rows_to_batch(&schema, &chunk)
+            });
+
+        Ok(vec![batches.boxed()])
     }
 }
