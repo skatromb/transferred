@@ -66,31 +66,22 @@ impl PyTransfer {
     }
 }
 
+/// Downcasts `$obj` to each pyclass in turn; on match, takes `inner` and returns it boxed.
+macro_rules! try_take_inner {
+    ($obj:expr, $($py_class:ty),+) => {
+        $(if let Ok(cell) = $obj.cast::<$py_class>() {
+            let inner = cell
+                .try_borrow_mut()?
+                .inner
+                .take()
+                .ok_or_else(already_consumed)?;
+            return Ok(Box::new(inner));
+        })+
+    };
+}
+
 fn extract_source(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Source + Send>> {
-    if let Ok(cell) = obj.cast::<PyFilesSource>() {
-        let inner = cell
-            .try_borrow_mut()?
-            .inner
-            .take()
-            .ok_or_else(already_consumed)?;
-        return Ok(Box::new(inner));
-    }
-    if let Ok(cell) = obj.cast::<PyArrowSource>() {
-        let inner = cell
-            .try_borrow_mut()?
-            .inner
-            .take()
-            .ok_or_else(already_consumed)?;
-        return Ok(Box::new(inner));
-    }
-    if let Ok(cell) = obj.cast::<PyPostgresSource>() {
-        let inner = cell
-            .try_borrow_mut()?
-            .inner
-            .take()
-            .ok_or_else(already_consumed)?;
-        return Ok(Box::new(inner));
-    }
+    try_take_inner!(obj, PyFilesSource, PyArrowSource, PyPostgresSource);
     // PyO3 convention: Python wrappers expose a `_native_source` attr holding a native source.
     if let Ok(inner) = obj.getattr("_native_source") {
         return extract_source(&inner);
@@ -101,14 +92,7 @@ fn extract_source(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Source + Send>> {
 }
 
 fn extract_destination(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Destination + Send>> {
-    if let Ok(cell) = obj.cast::<PyFilesDestination>() {
-        let inner = cell
-            .try_borrow_mut()?
-            .inner
-            .take()
-            .ok_or_else(already_consumed)?;
-        return Ok(Box::new(inner));
-    }
+    try_take_inner!(obj, PyFilesDestination);
     // PyO3 convention: Python wrappers expose a `_native_destination` attr holding a native destination.
     if let Ok(inner) = obj.getattr("_native_destination") {
         return extract_destination(&inner);
