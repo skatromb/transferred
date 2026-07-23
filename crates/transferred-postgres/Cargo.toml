@@ -19,8 +19,8 @@ arrow-schema = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
-tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1", "with-serde_json-1"] }
 futures = { workspace = true }
 tracing = { workspace = true }
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1", "with-serde_json-1"] }
 bytes = "1"
 url = "2.5"
