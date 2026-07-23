@@ -17,12 +17,12 @@ transferred-core = { workspace = true }
 arrow = { workspace = true }
 arrow-schema = { workspace = true }
 async-trait = { workspace = true }
-parquet = { version = "59", features = ["arrow", "async"] }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 futures = { workspace = true }
-glob = "0.3"
 tracing = { workspace = true }
+parquet = { version = "59", features = ["arrow", "async"] }
+glob = "0.3"
 
 [dev-dependencies]
 transferred-core = { workspace = true, features = ["dev"] }
