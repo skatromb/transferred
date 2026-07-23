@@ -4,6 +4,8 @@ Read ./docs/design/DESIGN.md and ./PLAN.md first to get grasp on current state o
 Use ./Makefile for common development cycle commands.
 Conventions for AI agents (Claude Code, Cursor, Codex, Aider, …) working in this repo.
 
+Record durable conventions and learnings here, not in agent-private memory.
+
 ## Rust docs
 
 - `///` one-liner on top-level pub items + free functions + trait/inherent methods. Describe the *what*.
@@ -55,6 +57,8 @@ Don't stack "fix CI" / "fix lint" follow-ups on a feature branch. Reserve new co
 ## PR descriptions
 
 Default to `## Summary` + bullets. Skip `## Test plan` when CI covers the checks or you already ran them locally. Test plan only for manual steps a reviewer must repeat (UI smoke, env-gated integration, prod check).
+
+No AI-attribution trailer (`🤖 Generated with Claude Code`) in PR bodies or commit messages.
 
 ## Merging
 
