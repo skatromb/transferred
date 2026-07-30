@@ -1,4 +1,4 @@
-//! Postgres `Type` → Arrow `DataType` mapping (v0 primitives).
+//! Postgres → Arrow type mapping. One table row per supported type.
 
 use std::sync::Arc;
 
@@ -6,33 +6,81 @@ use arrow::array::{
     ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array,
     Int64Array, RecordBatch, StringArray,
 };
-use arrow_schema::{DataType, Field, Schema};
-use tokio_postgres::Column;
+use arrow_schema::{DataType as ArrowType, Field, Schema};
+use tokio_postgres::Column as PgColumn;
 use tokio_postgres::binary_copy::BinaryCopyOutRow;
-use tokio_postgres::types::{FromSql, Type};
+use tokio_postgres::types::{FromSql, Type as PgType};
 use transferred_core::{Result, TransferredError};
 
-/// Derive an Arrow schema from Postgres column metadata. All fields nullable.
-pub fn derive_schema(columns: &[Column]) -> Result<Arc<Schema>> {
-    let fields = columns
-        .iter()
-        .map(|col| Ok(Field::new(col.name(), pg_to_arrow(col.type_())?, true)))
-        .collect::<Result<Vec<_>>>()?;
+/// Builds one Arrow column from column `i` of a chunk of PG binary rows.
+type PgToArrowFn = fn(&[BinaryCopyOutRow], usize) -> ArrayRef;
 
-    Ok(Arc::new(Schema::new(fields)))
+/// Arrow schema + per-column builders, derived once from PG column metadata.
+pub struct PgToArrow {
+    schema: Arc<Schema>,
+    pg_to_arrows: Vec<PgToArrowFn>,
 }
 
-/// Map a Postgres type to its Arrow equivalent; error on unsupported types.
-fn pg_to_arrow(pg: &Type) -> Result<DataType> {
+impl PgToArrow {
+    /// Derive schema and builders from a prepared statement's columns. All fields nullable.
+    pub fn derive(columns: &[PgColumn]) -> Result<Self> {
+        let (fields, pg_to_arrows) = columns
+            .iter()
+            .map(|column| {
+                let (arrow, pg_to_arrow) = pg_arrow_type_and_builder(column.type_())?;
+                Ok((Field::new(column.name(), arrow, true), pg_to_arrow))
+            })
+            .collect::<Result<(Vec<_>, Vec<_>)>>()?;
+
+        Ok(Self {
+            schema: Arc::new(Schema::new(fields)),
+            pg_to_arrows,
+        })
+    }
+
+    /// Build a `RecordBatch` from a chunk of PG binary rows.
+    pub fn batch(&self, chunk: &[BinaryCopyOutRow]) -> Result<RecordBatch> {
+        let arrays: Vec<ArrayRef> = self
+            .pg_to_arrows
+            .iter()
+            .enumerate()
+            .map(|(i, build)| build(chunk, i))
+            .collect();
+
+        Ok(RecordBatch::try_new(self.schema.clone(), arrays)?)
+    }
+}
+
+/// Defines supported Postgres types: one row per type,
+/// mapping it to an Arrow type and the builder for that column.
+fn pg_arrow_type_and_builder(pg: &PgType) -> Result<(ArrowType, PgToArrowFn)> {
     Ok(match *pg {
-        Type::BOOL => DataType::Boolean,
-        Type::INT2 => DataType::Int16,
-        Type::INT4 => DataType::Int32,
-        Type::INT8 => DataType::Int64,
-        Type::FLOAT4 => DataType::Float32,
-        Type::FLOAT8 => DataType::Float64,
-        Type::TEXT | Type::VARCHAR | Type::BPCHAR | Type::NAME => DataType::Utf8,
-        Type::BYTEA => DataType::Binary,
+        PgType::BOOL => (ArrowType::Boolean, |rows, i| {
+            Arc::new(BooleanArray::from(col::<bool>(rows, i)))
+        }),
+        PgType::INT2 => (ArrowType::Int16, |rows, i| {
+            Arc::new(Int16Array::from(col::<i16>(rows, i)))
+        }),
+        PgType::INT4 => (ArrowType::Int32, |rows, i| {
+            Arc::new(Int32Array::from(col::<i32>(rows, i)))
+        }),
+        PgType::INT8 => (ArrowType::Int64, |rows, i| {
+            Arc::new(Int64Array::from(col::<i64>(rows, i)))
+        }),
+        PgType::FLOAT4 => (ArrowType::Float32, |rows, i| {
+            Arc::new(Float32Array::from(col::<f32>(rows, i)))
+        }),
+        PgType::FLOAT8 => (ArrowType::Float64, |rows, i| {
+            Arc::new(Float64Array::from(col::<f64>(rows, i)))
+        }),
+        PgType::TEXT | PgType::VARCHAR | PgType::BPCHAR | PgType::NAME => {
+            (ArrowType::Utf8, |rows, i| {
+                Arc::new(StringArray::from(col::<&str>(rows, i)))
+            })
+        }
+        PgType::BYTEA => (ArrowType::Binary, |rows, i| {
+            Arc::new(BinaryArray::from(col::<&[u8]>(rows, i)))
+        }),
         ref other => {
             return Err(TransferredError::source(format!(
                 "Postgres type `{}` (oid {}) not supported in 0.1",
@@ -43,72 +91,10 @@ fn pg_to_arrow(pg: &Type) -> Result<DataType> {
     })
 }
 
-/// Build a `RecordBatch` from a chunk of PG rows matching `schema`.
-pub fn rows_to_batch(schema: &Arc<Schema>, chunk: &[BinaryCopyOutRow]) -> Result<RecordBatch> {
-    let arrays = schema
-        .fields()
-        .iter()
-        .enumerate()
-        .map(|(i, field)| {
-            Ok(match field.data_type() {
-                DataType::Boolean => {
-                    Arc::new(BooleanArray::from(col::<bool>(chunk, i))) as ArrayRef
-                }
-                DataType::Int16 => Arc::new(Int16Array::from(col::<i16>(chunk, i))) as ArrayRef,
-                DataType::Int32 => Arc::new(Int32Array::from(col::<i32>(chunk, i))) as ArrayRef,
-                DataType::Int64 => Arc::new(Int64Array::from(col::<i64>(chunk, i))) as ArrayRef,
-                DataType::Float32 => Arc::new(Float32Array::from(col::<f32>(chunk, i))) as ArrayRef,
-                DataType::Float64 => Arc::new(Float64Array::from(col::<f64>(chunk, i))) as ArrayRef,
-                DataType::Utf8 => Arc::new(StringArray::from(col::<&str>(chunk, i))) as ArrayRef,
-                DataType::Binary => Arc::new(BinaryArray::from(col::<&[u8]>(chunk, i))) as ArrayRef,
-                other => {
-                    return Err(TransferredError::source(format!(
-                        "unsupported arrow type: {other}"
-                    )));
-                }
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    Ok(RecordBatch::try_new(schema.clone(), arrays)?)
-}
-
 /// Collect column `i` from every row, `None` for SQL NULL.
 fn col<'a, T>(rows: &'a [BinaryCopyOutRow], i: usize) -> Vec<Option<T>>
 where
     Option<T>: FromSql<'a>,
 {
     rows.iter().map(|row| row.get(i)).collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Every type `pg_to_arrow` accepts must have a matching arm in `rows_to_batch`.
-    #[test]
-    fn no_drift_between_schema_and_batch_conversion() {
-        let mut drifted = Vec::new();
-
-        for oid in 0..10_000 {
-            let Some(pg) = Type::from_oid(oid) else {
-                continue;
-            };
-
-            let Ok(data_type) = pg_to_arrow(&pg) else {
-                continue;
-            };
-
-            let schema = Arc::new(Schema::new(vec![Field::new("c", data_type.clone(), true)]));
-
-            if let Err(e) = rows_to_batch(&schema, &[]) {
-                drifted.push(format!(
-                    "`{}` maps to `{data_type}` but `rows_to_batch` can't build it: {e}",
-                    pg.name()
-                ));
-            }
-        }
-
-        assert_eq!(drifted, Vec::<String>::new());
-    }
 }
