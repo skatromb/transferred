@@ -1,4 +1,5 @@
 # Postgres fixture for integration tests (`make pg-test`).
+name: transferred-pg
 services:
   postgres:
     image: postgres:17-alpine

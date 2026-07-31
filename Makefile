@@ -2,8 +2,12 @@
 .PHONY: check
 check: rust-check python-check stubs-check
 
-# Connector-specific targets live in a separate files
-include postgres.mk
+# Connector integration tests. Needs Docker.
+.PHONY: check-connectors
+check-connectors: pg-test
+
+# Connector-specific targets live next to their crate
+include crates/transferred-postgres/postgres.mk
 
 
 # ============================================================================
@@ -127,7 +131,7 @@ bump-lock:
 
 # Pre-release validation before the version bump.
 .PHONY: pre-release
-pre-release: check examples
+pre-release: check check-connectors examples
 
 # Pre-flight: on main, clean tree, in sync with origin.
 .PHONY: release-check
