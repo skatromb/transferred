@@ -162,7 +162,7 @@ Goal: Atomic full load PG → PG and PG → Parquet. Direct type mapping only; f
 - [ ] PG → Arrow type mapping (per DESIGN.md coverage table).
 - [ ] Add TLS
 - [ ] Integration test: docker-compose PG+PostGIS fixture (round-trip PG → PG).
-- [ ] CI: docker PG service for PR gate.
+- [x] CI: docker PG service for PR gate.
 - [ ] Logging bridge crate.
 - [ ] Update deps versions
 
