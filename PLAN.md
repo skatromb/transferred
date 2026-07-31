@@ -158,12 +158,13 @@ Goal: Atomic full load PG → PG and PG → Parquet. Direct type mapping only; f
 **Tasks:**
 
 - [x] `transferred-postgres` connect + COPY binary parser.
-- [ ] PG → Arrow type mapping (per DESIGN.md coverage table).
 - [ ] `transferred-postgres` destination — `COPY ... FROM STDIN`, atomic swap.
+- [ ] PG → Arrow type mapping (per DESIGN.md coverage table).
 - [ ] Add TLS
 - [ ] Integration test: docker-compose PG+PostGIS fixture (round-trip PG → PG).
 - [ ] CI: docker PG service for PR gate.
 - [ ] Logging bridge crate.
+- [ ] Update deps versions
 
 ## 0.1.1 — supply-chain tooling
 

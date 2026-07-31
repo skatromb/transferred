@@ -58,7 +58,7 @@ Don't stack "fix CI" / "fix lint" follow-ups on a feature branch. Reserve new co
 
 Default to `## Summary` + bullets. Skip `## Test plan` when CI covers the checks or you already ran them locally. Test plan only for manual steps a reviewer must repeat (UI smoke, env-gated integration, prod check).
 
-No AI-attribution trailer (`🤖 Generated with Claude Code`) in PR bodies or commit messages.
+No AI-attribution trailer (`🤖 Generated with Claude Code`) in PR bodies.
 
 ## Merging
 
