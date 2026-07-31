@@ -64,7 +64,7 @@ No AI-attribution trailer (`🤖 Generated with Claude Code`) in PR bodies.
 
 ## Merging
 
-`gh pr merge --rebase --delete-branch`. Preserves atomic commits. Only switch strategy if explicitly requested for a specific PR.
+`gh pr merge --squash --delete-branch`. One commit per PR on `main`; the PR title becomes its subject. Only switch strategy if explicitly requested for a specific PR.
 
 ## Task tracking
 
