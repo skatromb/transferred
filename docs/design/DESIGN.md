@@ -406,7 +406,7 @@ Never silently coerce to `TEXT` or `BYTES` without a summary entry — that is t
 | Source type (Postgres)        | Arrow representation                 | Notes                                                     |
 | ----------------------------- | ------------------------------------ | --------------------------------------------------------- |
 | `int2`/`int4`/`int8`          | `Int16`/`Int32`/`Int64`              | Native.                                                   |
-| `numeric(p,s)`                | `Decimal128(p,s)` or `Decimal256`    | Native. `numeric` without precision → fail with override  |
+| `numeric(p,s)`                | `Decimal128(p,s)`                    | Native. Bare `numeric` → `Decimal128(38, 9)` (BQ `NUMERIC`) + WARN |
 | `text`/`varchar`              | `Utf8`                               | Native.                                                   |
 | `bytea`                       | `Binary`                             | Native.                                                   |
 | `bool`                        | `Boolean`                            | Native.                                                   |

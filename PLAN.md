@@ -148,7 +148,7 @@ Goal: Atomic full load PG → PG and PG → Parquet. Direct type mapping only; f
 
 **Scope:**
 
-- `transferred-postgres` source: `COPY (SELECT ...) TO STDOUT (FORMAT BINARY)` → Arrow `RecordBatch`. Both `table=` and `query=` compile to COPY. Docker compose PG+PostGIS fixture for tests.
+- `transferred-postgres` source: `COPY (SELECT ...) TO STDOUT (FORMAT BINARY)` → Arrow `RecordBatch`. Both `table=` and `query=` compile to COPY. Tests self-provision a throwaway PG+PostGIS container via `testcontainers`.
 - Source schema inference via prepared-statement RowDescription (`prepare()` the inner SELECT → column type OID + typmod); uniform across `table=`/`query=`. The COPY binary stream carries no type/name metadata — only length-prefixed field bytes — so types must come from RowDescription, not the stream. PostGIS SRID from typmod / `geometry_columns`.
 - `transferred-postgres` destination: atomic full replace — staging table built from the source-derived schema, `COPY ... FROM STDIN`, then `BEGIN; DROP target IF EXISTS; RENAME staging; COMMIT;` (transactional DDL). Source schema wins, silent overwrite — consistent with Files/BQ. Target readable during load; brief exclusive lock only at swap. Indexes/grants/ownership not preserved (full replace); index-preserving replace strategy deferred to 0.4 `on_schema_change` (cf. dlt `replace_strategy`).
 - Destination table-creation options bag (additive over source-derived DDL): PG `primary_key=`.
@@ -159,12 +159,28 @@ Goal: Atomic full load PG → PG and PG → Parquet. Direct type mapping only; f
 
 - [x] `transferred-postgres` connect + COPY binary parser.
 - [ ] `transferred-postgres` destination — `COPY ... FROM STDIN`, atomic swap.
-- [ ] PG → Arrow type mapping (per DESIGN.md coverage table).
+  - Evaluate `pgpq` (MIT) before hand-rolling the encoder: it does Arrow `RecordBatch` → PG binary COPY, i.e. exactly this direction. Caveat: it declares `arrow-array = ">=56.0.0"`, an open-ended range that could resolve to a future breaking arrow — our lockfile pins, but pair it with a `cargo-deny` bans check.
+- [x] PG → Arrow type mapping (per DESIGN.md coverage table). Done: primitives, `date`/`timestamp`/`timestamptz`, `uuid`, `json`/`jsonb`, `interval`, `numeric(p,s)`. Left: PostGIS, ranges.
+- [x] `numeric(p,s)` → `Decimal128(p,s)`, precision/scale from `Column::type_modifier()`. Bare `numeric` (typmod `-1`) defaults to `Decimal128(38, 9)` + WARN rather than failing — 0.1 has no `schema=` override, so failing would leave a very common column type unusable. 38/9 matches BigQuery `NUMERIC` exactly, so the default reaches BQ uncoerced in 0.2.0.
+  - Decode via `rust_decimal` (`db-tokio-postgres`), not by hand: its `postgres/driver.rs` already handles base-10000 digit groups, `weight`, and the `NaN`/`±Infinity` sign flags that Arrow `Decimal128` cannot represent at all.
+  - Ceiling: `rust_decimal`'s 96-bit mantissa stops at `2^96 - 1 ≈ 7.92E+28` vs BQ `NUMERIC`'s `9.99E+28`, so values in that band error out despite fitting the declared type. `Decimal256`/BQ `BIGNUMERIC` (76, 38) is unreachable with `rust_decimal` — dropped from 0.1.
+  - Bare-`numeric` scale is a trade, not a free choice: the ~28-significant-digit ceiling spends fraction and integer digits from one budget, measured as scale 9 → 20 integer digits, scale 16 → 13, scale 20 → 9. Scale 9 rounds PG's computed scales (division 20 dp, `avg()` 16 dp) but keeps 20 integer digits; scale 20 would preserve them and then fail on any value ≥ 1E+9. Rounding matches PG's own `::numeric(38,9)` cast (verified half-away-from-zero on both signs), so the loss is PG's semantics, not ours — and it now emits a WARN naming the column. **Precondition for revisiting: replace `rust_decimal` with an `i256` wire decoder**, most likely driven by 0.2.0 needing BQ `BIGNUMERIC`.
+  - Forces `PgToArrowFn` from a `fn` pointer to a boxed closure: each wire value carries its own `dscale`, but `Decimal128(p,s)` needs every value at scale `s`, so the builder must capture `s` to rescale.
+  - Typmod decoding is hand-rolled because nothing publishes it: `tokio-postgres` only carries `type_modifier()`, `postgres-protocol` has no numeric decoder, and `arrow-pg` — the one crate named for this job — is encode-only (Arrow → PG wire for pgwire; no `FromSql` anywhere in it).
+- [ ] PostGIS `geometry`/`geography` → `Binary` + `geoarrow.wkb`. Deferred behind `numeric`; the `arrow.opaque` fallback keeps these columns transferable meanwhile. Probe findings (`postgis/postgis:17-3.5`):
+  - Don't hand-write the extension metadata: `geoarrow-schema` (MIT OR Apache-2.0, geoarrow/geoarrow-rs) ships `WkbType`/`GeometryType` and the canonical names, which `arrow-schema` lacks. `arrow-pg`'s `postgis` feature is the reference wiring: `postgres-types/with-geo-types-0_7` + `postgis` + `geo-postgis` + `geoarrow`.
+  - Binary wire (`geometry_send`) is **EWKB with SRID per value**: `SRID=4326;POINT(1 2)` → `0101000020e6100000…`, where the `0x20000000` bit flags SRID and `e6100000` = 4326. `ST_AsBinary` emits plain WKB and drops it — don't use it. Byte pass-through therefore round-trips CRS losslessly.
+  - A bare `geometry` column accepts **mixed SRIDs across rows** (4326, 3006 and 0 all landed in one column), so a single column-level CRS is unsound when typmod is `-1`. Constrained columns reject mismatches.
+  - SRID from typmod: `(typmod & 0x0FFFFF00) >> 8`. `geometry(Point,4326)` → typmod `1107460` (`0x10E604`) → 4326. Bare `geometry`/`geography` → typmod `-1`.
+  - `arrow.opaque` is the wrong tag here: its metadata is only `{type_name, vendor_name}` (no CRS slot), and the spec forbids canonicalising those values — which the 0.2.0 BQ `GEOGRAPHY` mapping would have to do.
+  - Test image: `postgis/postgis:17-3.5` is **amd64-only** (887 MB, emulated on Apple Silicon). `imresamu/postgis:17-3.5` publishes arm64 + amd64. Either swap the fixture image or start a second container just for geo tests.
 - [ ] Add TLS
-- [ ] Integration test: docker-compose PG+PostGIS fixture (round-trip PG → PG).
-- [x] CI: docker PG service for PR gate.
+- [x] Integration test infra: `testcontainers` PG container started by the test itself, gated behind each crate's `integration` feature (`make check-integration`).
+- [ ] Integration test: round-trip PG → PG (needs PostGIS image for the geometry columns).
+- [x] CI: `integration` job as a separate PR gate, parallel to `rust`/`python`.
 - [ ] Logging bridge crate.
 - [ ] Update deps versions
+- [ ] Unsupported-type fallback → `arrow.opaque`. Today `pg_arrow_field_and_builder` hard-errors on any unmapped OID, killing the whole transfer for one exotic column. Fall back to `Binary` tagged `Opaque::new(type_name, "PostgreSQL")` — already shipped in `arrow-schema` and already the DESIGN.md last resort, so it needs no new extension code. Self-describing rather than a silent `Binary`, which is what DESIGN.md forbids. Decide: default or opt-in, and whether the PG destination may read `type_name` back to rebuild DDL (a same-vendor round trip, but still the canonicalisation the Opaque spec cautions against).
 
 ## 0.1.1 — supply-chain tooling
 

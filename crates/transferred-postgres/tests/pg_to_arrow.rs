@@ -4,13 +4,14 @@
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float32Array,
-    Float64Array, Int16Array, Int32Array, Int64Array, RecordBatch, StringArray,
-    TimestampMicrosecondArray,
+    ArrayRef, BinaryArray, BooleanArray, Date32Array, Decimal128Array, FixedSizeBinaryArray,
+    Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, IntervalMonthDayNanoArray,
+    RecordBatch, StringArray, TimestampMicrosecondArray,
 };
 use arrow::compute::concat_batches;
+use arrow::datatypes::IntervalMonthDayNano;
 use arrow_schema::extension::{Json, Uuid};
-use arrow_schema::{DataType, Field, Schema, TimeUnit};
+use arrow_schema::{DataType, Field, IntervalUnit, Schema, TimeUnit};
 use futures::{StreamExt, TryStreamExt, stream};
 use testcontainers_modules::postgres::Postgres;
 use testcontainers_modules::testcontainers::runners::AsyncRunner;
@@ -114,6 +115,13 @@ async fn temporal() {
     let days = vec![Some(19737), Some(-165), None];
     let micros = vec![Some(1_705_322_096_789_012), Some(-14_182_940_000_000), None];
 
+    // Months, days and micros stay separate — PG carries all three independently.
+    let intervals = vec![
+        Some(IntervalMonthDayNano::new(14, 3, 14_706_789_000_000)),
+        Some(IntervalMonthDayNano::new(-1, -2, -10_800_000_000_000)),
+        None,
+    ];
+
     let expected = expected(
         vec![
             nullable("d", DataType::Date32),
@@ -122,15 +130,64 @@ async fn temporal() {
                 "tstz",
                 DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
             ),
+            nullable("iv", DataType::Interval(IntervalUnit::MonthDayNano)),
         ],
         vec![
             Arc::new(Date32Array::from(days)),
             Arc::new(TimestampMicrosecondArray::from(micros.clone())),
             Arc::new(TimestampMicrosecondArray::from(micros).with_timezone("UTC")),
+            Arc::new(IntervalMonthDayNanoArray::from(intervals)),
         ],
     );
 
     assert_eq!(read_table("it_temporal").await, expected);
+}
+
+#[tokio::test]
+async fn numeric() {
+    // Arrow stores decimals as integer counts of 10^-scale units.
+    let expected = expected(
+        vec![
+            nullable("n", DataType::Decimal128(38, 9)),
+            nullable("small", DataType::Decimal128(28, 4)),
+            nullable("wide", DataType::Decimal128(38, 9)),
+        ],
+        vec![
+            // Row 3 arrives at scale 10, so bare `n` is the one column the mapping rounds itself.
+            Arc::new(
+                Decimal128Array::from(vec![
+                    Some(1_500_000_000),
+                    Some(-1_234_567_890_123_456_789_123_456_789),
+                    Some(123_456_789),
+                    None,
+                ])
+                .with_precision_and_scale(38, 9)
+                .unwrap(),
+            ),
+            Arc::new(
+                Decimal128Array::from(vec![
+                    Some(15_000),
+                    Some(-12_345_678_901_234_567_891_235),
+                    Some(1_235),
+                    None,
+                ])
+                .with_precision_and_scale(28, 4)
+                .unwrap(),
+            ),
+            Arc::new(
+                Decimal128Array::from(vec![
+                    Some(1_500_000_000),
+                    Some(-1_234_567_890_123_456_789_123_456_789),
+                    Some(123_456_789),
+                    None,
+                ])
+                .with_precision_and_scale(38, 9)
+                .unwrap(),
+            ),
+        ],
+    );
+
+    assert_eq!(read_table("it_numeric").await, expected);
 }
 
 #[tokio::test]
