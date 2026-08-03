@@ -2,12 +2,10 @@
 .PHONY: check
 check: rust-check python-check stubs-check
 
-# Connector integration tests. Needs Docker.
-.PHONY: check-connectors
-check-connectors: pg-test
-
-# Connector-specific targets live next to their crate
-include crates/transferred-postgres/postgres.mk
+# Integration tests, gated behind each crate's `integration` feature. Needs Docker.
+.PHONY: check-integration
+check-integration:
+	@cargo test -p transferred-postgres --features integration
 
 
 # ============================================================================
@@ -24,11 +22,12 @@ fmt:
 	@cargo fmt --all
 	@if [ -n "$$CI" ]; then git diff --exit-code -- '*.rs'; fi
 
-# Lint with clippy, deny warnings.
+# Lint with clippy, deny warnings. Enables `integration` so gated test targets are linted too.
 # Avoid `--all-features`: pyo3 `extension-module` breaks linkage outside maturin.
 .PHONY: clippy
 clippy:
-	@cargo clippy --workspace --tests --features transferred-core/dev -- -D warnings
+	@cargo clippy --workspace --tests \
+		--features transferred-core/dev,transferred-postgres/integration -- -D warnings
 
 # Run Rust tests.
 .PHONY: cargo-test
@@ -131,7 +130,7 @@ bump-lock:
 
 # Pre-release validation before the version bump.
 .PHONY: pre-release
-pre-release: check check-connectors examples
+pre-release: check check-integration examples
 
 # Pre-flight: on main, clean tree, in sync with origin.
 .PHONY: release-check
