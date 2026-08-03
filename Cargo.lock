@@ -261,6 +261,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9e4969dc350d571766247143ab36a5187d095d3d3690970408bc630d47c69e5"
 dependencies = [
  "bitflags",
+ "serde_core",
+ "serde_json",
 ]
 
 [[package]]
@@ -2238,6 +2240,7 @@ dependencies = [
  "tracing",
  "transferred-core",
  "url",
+ "uuid",
 ]
 
 [[package]]
