@@ -2230,6 +2230,7 @@ dependencies = [
  "arrow-schema",
  "async-trait",
  "bytes",
+ "chrono",
  "futures",
  "tokio",
  "tokio-postgres",

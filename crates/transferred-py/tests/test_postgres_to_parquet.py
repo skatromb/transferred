@@ -1,6 +1,7 @@
 """Integration test for Postgres. Run via `make pg-test`, seeded by `pg_seed.sql`."""
 
 import os
+from datetime import date, datetime, timezone
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -28,13 +29,41 @@ def expected_table() -> pa.Table:
     )
 
 
-def test_postgres_to_parquet(tmp_path):
+def expected_temporal_table() -> pa.Table:
+    return pa.table(
+        {
+            "d": pa.array([date(2024, 1, 15), date(1969, 7, 20), None], pa.date32()),
+            "ts": pa.array(
+                [
+                    datetime(2024, 1, 15, 12, 34, 56, 789012),
+                    datetime(1969, 7, 20, 20, 17, 40),
+                    None,
+                ],
+                pa.timestamp("us"),
+            ),
+            "tstz": pa.array(
+                [
+                    datetime(2024, 1, 15, 12, 34, 56, 789012, tzinfo=timezone.utc),
+                    datetime(1969, 7, 20, 20, 17, 40, tzinfo=timezone.utc),
+                    None,
+                ],
+                pa.timestamp("us", "UTC"),
+            ),
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("table", "expected"),
+    [("it_primitives", expected_table), ("it_temporal", expected_temporal_table)],
+)
+def test_postgres_to_parquet(tmp_path, table, expected):
     assert DSN is not None
     report = Transfer(
-        source=PostgresSource(DSN, "it_primitives"),
+        source=PostgresSource(DSN, table),
         destination=FilesDestination(tmp_path / "out"),
     ).run()
 
     assert report.rows == 3
     read = pq.read_table([*map(str, report.written_objects)])
-    assert read.equals(expected_table())
+    assert read.equals(expected())
