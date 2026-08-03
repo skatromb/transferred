@@ -3,10 +3,12 @@
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayRef, BinaryArray, BooleanArray, Float32Array, Float64Array, Int16Array, Int32Array,
-    Int64Array, RecordBatch, StringArray,
+    ArrayRef, BinaryArray, BooleanArray, Date32Array, Float32Array, Float64Array, Int16Array,
+    Int32Array, Int64Array, RecordBatch, StringArray, TimestampMicrosecondArray,
 };
-use arrow_schema::{DataType as ArrowType, Field, Schema};
+use arrow::datatypes::Date32Type;
+use arrow_schema::{DataType as ArrowType, Field, Schema, TimeUnit};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use tokio_postgres::Column as PgColumn;
 use tokio_postgres::binary_copy::BinaryCopyOutRow;
 use tokio_postgres::types::{FromSql, Type as PgType};
@@ -14,6 +16,9 @@ use transferred_core::{Result, TransferredError};
 
 /// Builds one Arrow column from column `i` of a chunk of PG binary rows.
 type PgToArrowFn = fn(&[BinaryCopyOutRow], usize) -> ArrayRef;
+
+/// PG stores `timestamptz` as UTC; the original client offset is not retained.
+const UTC: &str = "UTC";
 
 /// Arrow schema + per-column builders, derived once from PG column metadata.
 pub struct PgToArrow {
@@ -81,6 +86,34 @@ fn pg_arrow_type_and_builder(pg: &PgType) -> Result<(ArrowType, PgToArrowFn)> {
         PgType::BYTEA => (ArrowType::Binary, |rows, i| {
             Arc::new(BinaryArray::from(col::<&[u8]>(rows, i)))
         }),
+        PgType::DATE => (ArrowType::Date32, |rows, i| {
+            let days = col::<NaiveDate>(rows, i)
+                .into_iter()
+                .map(|date| date.map(Date32Type::from_naive_date));
+            Arc::new(days.collect::<Date32Array>())
+        }),
+        PgType::TIMESTAMP => (
+            ArrowType::Timestamp(TimeUnit::Microsecond, None),
+            |rows, i| {
+                let micros = col::<NaiveDateTime>(rows, i)
+                    .into_iter()
+                    .map(|ts| ts.map(|ts| ts.and_utc().timestamp_micros()));
+                Arc::new(micros.collect::<TimestampMicrosecondArray>())
+            },
+        ),
+        PgType::TIMESTAMPTZ => (
+            ArrowType::Timestamp(TimeUnit::Microsecond, Some(UTC.into())),
+            |rows, i| {
+                let micros = col::<DateTime<Utc>>(rows, i)
+                    .into_iter()
+                    .map(|ts| ts.map(|ts| ts.timestamp_micros()));
+                Arc::new(
+                    micros
+                        .collect::<TimestampMicrosecondArray>()
+                        .with_timezone(UTC),
+                )
+            },
+        ),
         ref other => {
             return Err(TransferredError::source(format!(
                 "Postgres type `{}` (oid {}) not supported in 0.1",
