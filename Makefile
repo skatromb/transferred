@@ -7,7 +7,7 @@ check: rust-check python-check stubs-check
 check-connectors: pg-test
 
 # Connector-specific targets live next to their crate
-include crates/transferred-postgres/postgres.mk
+include crates/transferred-postgres/tests/postgres.mk
 
 
 # ============================================================================
