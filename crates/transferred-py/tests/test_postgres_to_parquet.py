@@ -2,6 +2,7 @@
 
 import os
 from datetime import date, datetime, timezone
+from uuid import UUID
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -53,9 +54,30 @@ def expected_temporal_table() -> pa.Table:
     )
 
 
+def expected_semantic_table() -> pa.Table:
+    return pa.table(
+        {
+            "u": pa.array(
+                [
+                    UUID("a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11").bytes,
+                    UUID(int=0).bytes,
+                    None,
+                ],
+                pa.uuid(),
+            ),
+            "j": pa.array(['{"a": [1]}', "[]", None], pa.json_()),
+            "jb": pa.array(['{"a": [1]}', "[]", None], pa.json_()),
+        }
+    )
+
+
 @pytest.mark.parametrize(
     ("table", "expected"),
-    [("it_primitives", expected_table), ("it_temporal", expected_temporal_table)],
+    [
+        ("it_primitives", expected_table),
+        ("it_temporal", expected_temporal_table),
+        ("it_semantic", expected_semantic_table),
+    ],
 )
 def test_postgres_to_parquet(tmp_path, table, expected):
     assert DSN is not None

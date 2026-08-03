@@ -20,3 +20,12 @@ insert into it_temporal values
     ('2024-01-15', '2024-01-15 12:34:56.789012', '2024-01-15 12:34:56.789012+00'),
     ('1969-07-20', '1969-07-20 20:17:40', '1969-07-20 20:17:40+00'),
     (null, null, null);
+
+drop table if exists it_semantic;
+
+create table it_semantic (u uuid, j json, jb jsonb);
+
+insert into it_semantic values
+    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', '{"a": [1]}', '{"a": [1]}'),
+    ('00000000-0000-0000-0000-000000000000', '[]', '[]'),
+    (null, null, null);
