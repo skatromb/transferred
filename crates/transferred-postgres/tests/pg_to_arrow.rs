@@ -1,7 +1,6 @@
-//! PG → Arrow mapping against a live Postgres seeded by `pg_seed.sql`. Run via `make pg-test`.
+//! PG → Arrow mapping against a throwaway Postgres container seeded by `pg_seed.sql`. Needs Docker.
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-use std::env;
 use std::sync::Arc;
 
 use arrow::array::{
@@ -13,16 +12,49 @@ use arrow::compute::concat_batches;
 use arrow_schema::extension::{Json, Uuid};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use futures::{StreamExt, TryStreamExt, stream};
+use testcontainers_modules::postgres::Postgres;
+use testcontainers_modules::testcontainers::runners::AsyncRunner;
+use testcontainers_modules::testcontainers::{ContainerAsync, ImageExt};
+use tokio::sync::OnceCell;
 use transferred_core::Source;
 use transferred_postgres::PostgresSource;
 
+/// Postgres container, started once per test binary and seeded on first boot.
+static POSTGRES: OnceCell<(ContainerAsync<Postgres>, String)> = OnceCell::const_new();
+
+async fn dsn() -> &'static str {
+    let (_container, dsn) = POSTGRES
+        .get_or_init(|| async {
+            let container = Postgres::default()
+                .with_init_sql(include_str!("pg_seed.sql").as_bytes().to_vec())
+                .with_tag("17-alpine")
+                .start()
+                .await
+                .expect("start postgres");
+            let port = container
+                .get_host_port_ipv4(5432)
+                .await
+                .expect("map postgres port");
+
+            (
+                container,
+                format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres"),
+            )
+        })
+        .await;
+
+    dsn
+}
+
 /// Read a whole fixture table as one `RecordBatch`.
 async fn read_table(table: &str) -> RecordBatch {
-    let dsn = env::var("TRANSFERRED_PG_DSN").expect("TRANSFERRED_PG_DSN not set");
-    let partitions = Box::new(PostgresSource::new(dsn, table.to_owned()))
-        .stream_partitions()
-        .await
-        .expect("stream partitions");
+    let partitions = Box::new(PostgresSource::new(
+        dsn().await.to_owned(),
+        table.to_owned(),
+    ))
+    .stream_partitions()
+    .await
+    .expect("stream partitions");
 
     // `flatten` keeps partitions sequential, so row order stays deterministic.
     let batches: Vec<RecordBatch> = stream::iter(partitions)
@@ -45,7 +77,6 @@ fn nullable(name: &str, data_type: DataType) -> Field {
 }
 
 #[tokio::test]
-#[ignore = "needs a seeded Postgres; run via `make pg-test`"]
 async fn primitives() {
     let expected = expected(
         vec![
@@ -78,7 +109,6 @@ async fn primitives() {
 }
 
 #[tokio::test]
-#[ignore = "needs a seeded Postgres; run via `make pg-test`"]
 async fn temporal() {
     // Epoch-relative days and micros, computed independently of the mapping under test.
     let days = vec![Some(19737), Some(-165), None];
@@ -104,7 +134,6 @@ async fn temporal() {
 }
 
 #[tokio::test]
-#[ignore = "needs a seeded Postgres; run via `make pg-test`"]
 async fn semantic() {
     const A0EE: [u8; 16] = [
         0xa0, 0xee, 0xbc, 0x99, 0x9c, 0x0b, 0x4e, 0xf8, 0xbb, 0x6d, 0x6b, 0xb9, 0xbd, 0x38, 0x0a,

@@ -27,3 +27,6 @@ bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 uuid = "1"
 url = "2.5"
+
+[dev-dependencies]
+testcontainers-modules = { version = "0.15.0", features = ["postgres"] }

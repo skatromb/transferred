@@ -1,13 +1,6 @@
-# Full gate: Rust + Python + stub drift.
+# Full gate: Rust + Python + stub drift. Needs Docker for connector integration tests.
 .PHONY: check
 check: rust-check python-check stubs-check
-
-# Connector integration tests. Needs Docker.
-.PHONY: check-connectors
-check-connectors: pg-test
-
-# Connector-specific targets live next to their crate
-include crates/transferred-postgres/tests/postgres.mk
 
 
 # ============================================================================
@@ -131,7 +124,7 @@ bump-lock:
 
 # Pre-release validation before the version bump.
 .PHONY: pre-release
-pre-release: check check-connectors examples
+pre-release: check examples
 
 # Pre-flight: on main, clean tree, in sync with origin.
 .PHONY: release-check

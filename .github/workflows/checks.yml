@@ -35,7 +35,7 @@ jobs:
 
   check-all:
     name: Check all
-    needs: [rust, python, postgres]
+    needs: [rust, python]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -87,20 +87,3 @@ jobs:
 
       - name: make python-check
         run: make python-check
-
-  postgres:
-    name: Postgres (integration)
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        run: rustup show active-toolchain || rustup toolchain install
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-
-      - name: make check-connectors
-        run: make check-connectors
