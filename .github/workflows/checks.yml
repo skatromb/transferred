@@ -35,7 +35,7 @@ jobs:
 
   check-all:
     name: Check all
-    needs: [rust, python]
+    needs: [rust, python, integration]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -87,3 +87,20 @@ jobs:
 
       - name: make python-check
         run: make python-check
+
+  integration:
+    name: Integration (Docker)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: make check-integration
+        run: make check-integration

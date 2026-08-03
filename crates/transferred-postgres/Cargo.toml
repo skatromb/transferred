@@ -28,5 +28,13 @@ chrono = { version = "0.4", default-features = false, features = ["std"] }
 uuid = "1"
 url = "2.5"
 
+[features]
+# Integration tests that spin up a throwaway Postgres container. Needs Docker.
+integration = []
+
 [dev-dependencies]
 testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
+
+[[test]]
+name = "pg_to_arrow"
+required-features = ["integration"]
