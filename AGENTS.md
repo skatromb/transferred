@@ -56,7 +56,7 @@ Don't stack "fix CI" / "fix lint" follow-ups on a feature branch. Reserve new co
 
 ## PR descriptions
 
-Default to `## Summary` + bullets. One line per bullet, stating what and why was done.
+Default to bullets of what and why was done.
 
 Skip test-related stuff when CI covers the checks.
 

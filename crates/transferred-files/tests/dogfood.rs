@@ -17,18 +17,82 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayRef, BinaryArray, BooleanArray, Date32Array, Float64Array, Int32Array, Int64Array,
-    ListArray, StringArray, TimestampMicrosecondArray, UInt16Array,
+    ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float64Array,
+    Int32Array, Int64Array, ListArray, StringArray, TimestampMicrosecondArray, UInt16Array,
 };
 use arrow::buffer::OffsetBuffer;
 use arrow::record_batch::RecordBatch;
+use arrow_schema::extension::{Json, Uuid};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use tempfile::tempdir;
 use transferred_core::Transfer;
 use transferred_core::test_utils::{TestDestination, TestSource};
 use transferred_files::{Compression, FilesDestination, FilesSource, GlobOrPaths, Parquet};
 
-fn schema() -> Arc<Schema> {
+#[tokio::test]
+async fn parquet_dogfood() {
+    // Arrange
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("out");
+    let schema = input_schema();
+    let input = vec![input_batch(&schema, 5, 0), input_batch(&schema, 3, 100)];
+    let total_rows: usize = input.iter().map(RecordBatch::num_rows).sum();
+    let memory_destination = TestDestination::new();
+    let collected = memory_destination.batches.clone();
+
+    // Act
+    // Dump to directory
+    let write_report = Transfer::new(
+        Box::new(TestSource::new(input.clone())),
+        Box::new(FilesDestination::new(
+            path.clone(),
+            Arc::new(Parquet::new(Compression::Zstd)),
+            false,
+        )),
+    )
+    .run()
+    .await
+    .unwrap();
+
+    // Read the written parts back to memory
+    let parts: Vec<PathBuf> = write_report
+        .written_objects
+        .iter()
+        .map(PathBuf::from)
+        .collect();
+    let read_report = Transfer::new(
+        Box::new(FilesSource::new(
+            GlobOrPaths::Paths(parts),
+            Arc::new(Parquet::default()),
+        )),
+        Box::new(memory_destination),
+    )
+    .run()
+    .await
+    .unwrap();
+
+    // Assert
+    assert!(path.is_dir());
+    assert_eq!(write_report.written_objects.len(), 1);
+    assert_eq!(write_report.rows as usize, total_rows);
+    assert!(write_report.bytes_written > 0);
+    assert_eq!(read_report.rows as usize, total_rows);
+
+    let read = collected.lock().unwrap();
+    let read_schema = read[0].schema();
+    assert_eq!(read_schema.fields(), schema.fields());
+
+    // Names spelled out, not taken from `Uuid::NAME`: a wrong constant would agree with itself.
+    // The equality above passes when metadata is absent on both sides, so assert it is present.
+    assert_eq!(extension_name(&read_schema, "uuid"), Some("arrow.uuid"));
+    assert_eq!(extension_name(&read_schema, "json"), Some("arrow.json"));
+
+    let concat_in = arrow::compute::concat_batches(&schema, &input).unwrap();
+    let concat_read = arrow::compute::concat_batches(&read_schema, read.iter()).unwrap();
+    assert_eq!(concat_in, concat_read);
+}
+
+fn input_schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![
         Field::new("i32", DataType::Int32, false),
         Field::new("i64", DataType::Int64, true),
@@ -48,10 +112,14 @@ fn schema() -> Arc<Schema> {
             DataType::List(Arc::new(Field::new("item", DataType::Int32, true))),
             true,
         ),
+        // Extension types live in field metadata; the round-trip must carry it through Parquet.
+        Field::new("uuid", DataType::FixedSizeBinary(16), true).with_extension_type(Uuid),
+        Field::new("json", DataType::Utf8, true).with_extension_type(Json::default()),
     ]))
 }
 
-fn batch(schema: &Arc<Schema>, rows: usize, offset: i64) -> RecordBatch {
+#[allow(clippy::too_many_lines)]
+fn input_batch(schema: &Arc<Schema>, rows: usize, offset: i64) -> RecordBatch {
     let i32_arr = Arc::new(Int32Array::from(
         (0..rows)
             .map(|i| i as i32 + offset as i32)
@@ -146,70 +214,30 @@ fn batch(schema: &Arc<Schema>, rows: usize, offset: i64) -> RecordBatch {
         None,
     )) as ArrayRef;
 
+    let uuid_arr = Arc::new(
+        FixedSizeBinaryArray::try_from_sparse_iter_with_size(
+            (0..rows).map(|i| (i % 3 != 0).then_some([i as u8; 16])),
+            16,
+        )
+        .unwrap(),
+    ) as ArrayRef;
+    let json_arr = Arc::new(StringArray::from(
+        (0..rows)
+            .map(|i| (i % 2 == 0).then(|| format!(r#"{{"i": {}}}"#, i + offset as usize)))
+            .collect::<Vec<_>>(),
+    )) as ArrayRef;
+
     RecordBatch::try_new(
         schema.clone(),
         vec![
             i32_arr, i64_arr, u16_arr, f64_arr, bool_arr, utf8_arr, bin_arr, date_arr, ts_arr,
-            list_arr,
+            list_arr, uuid_arr, json_arr,
         ],
     )
     .unwrap()
 }
 
-#[tokio::test]
-async fn parquet_dogfood() {
-    // Arrange
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("out");
-    let schema = schema();
-    let input = vec![batch(&schema, 5, 0), batch(&schema, 3, 100)];
-    let total_rows: usize = input.iter().map(RecordBatch::num_rows).sum();
-    let memory_destination = TestDestination::new();
-    let collected = memory_destination.batches.clone();
-
-    // Act
-    // Dump to directory
-    let write_report = Transfer::new(
-        Box::new(TestSource::new(input.clone())),
-        Box::new(FilesDestination::new(
-            path.clone(),
-            Arc::new(Parquet::new(Compression::Zstd)),
-            false,
-        )),
-    )
-    .run()
-    .await
-    .unwrap();
-
-    // Read the written parts back to memory
-    let parts: Vec<PathBuf> = write_report
-        .written_objects
-        .iter()
-        .map(PathBuf::from)
-        .collect();
-    let read_report = Transfer::new(
-        Box::new(FilesSource::new(
-            GlobOrPaths::Paths(parts),
-            Arc::new(Parquet::default()),
-        )),
-        Box::new(memory_destination),
-    )
-    .run()
-    .await
-    .unwrap();
-
-    // Assert
-    assert!(path.is_dir());
-    assert_eq!(write_report.written_objects.len(), 1);
-    assert_eq!(write_report.rows as usize, total_rows);
-    assert!(write_report.bytes_written > 0);
-    assert_eq!(read_report.rows as usize, total_rows);
-
-    let read = collected.lock().unwrap();
-    let read_schema = read[0].schema();
-    assert_eq!(read_schema.fields(), schema.fields());
-
-    let concat_in = arrow::compute::concat_batches(&schema, &input).unwrap();
-    let concat_read = arrow::compute::concat_batches(&read_schema, read.iter()).unwrap();
-    assert_eq!(concat_in, concat_read);
+/// Canonical Arrow extension name a field carries in its metadata, if any.
+fn extension_name<'a>(schema: &'a Schema, field: &str) -> Option<&'a str> {
+    schema.field_with_name(field).unwrap().extension_type_name()
 }
