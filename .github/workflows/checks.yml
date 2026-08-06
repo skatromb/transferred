@@ -29,6 +29,7 @@ jobs:
               - 'crates/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
+              - 'deny.toml'
               - 'rust-toolchain.toml'
               - 'Makefile'
               - '.github/workflows/checks.yml'
@@ -44,7 +45,7 @@ jobs:
         run: exit 1
 
   rust:
-    name: Rust (fmt, clippy, test, stubs, vet)
+    name: Rust
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04-arm
@@ -64,7 +65,7 @@ jobs:
         run: make stubs-check
 
   python:
-    name: Python (ruff, ty, pytest)
+    name: Python
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04-arm
@@ -89,7 +90,7 @@ jobs:
         run: make python-check
 
   integration:
-    name: Integration (Docker)
+    name: Integration
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04-arm
