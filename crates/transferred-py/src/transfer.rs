@@ -9,7 +9,7 @@ use transferred_core::{Destination, Source, Transfer};
 use crate::arrow::PyArrowSource;
 use crate::error::to_pyerr;
 use crate::files::{PyFilesDestination, PyFilesSource};
-use crate::postgres::PyPostgresSource;
+use crate::postgres::{PyPostgresDestination, PyPostgresSource};
 use crate::report::PyRunReport;
 
 /// Internal `PyO3` wrapper around `transferred_core::Transfer`. Subclassed by the
@@ -92,7 +92,7 @@ fn extract_source(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Source + Send>> {
 }
 
 fn extract_destination(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Destination + Send>> {
-    try_take_inner!(obj, PyFilesDestination);
+    try_take_inner!(obj, PyFilesDestination, PyPostgresDestination);
     // PyO3 convention: Python wrappers expose a `_native_destination` attr holding a native destination.
     if let Ok(inner) = obj.getattr("_native_destination") {
         return extract_destination(&inner);

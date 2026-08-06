@@ -20,6 +20,7 @@ fn _native(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<files::PyFilesDestination>()?;
     m.add_class::<arrow::PyArrowSource>()?;
     m.add_class::<postgres::PyPostgresSource>()?;
+    m.add_class::<postgres::PyPostgresDestination>()?;
     m.add_class::<transfer::PyTransfer>()?;
     Ok(())
 }

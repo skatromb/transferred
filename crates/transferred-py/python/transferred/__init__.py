@@ -13,7 +13,7 @@ from transferred._native import (
 from transferred.arrow import ArrowSource
 from transferred.files import FilesDestination, FilesSource
 from transferred.formats import Parquet
-from transferred.postgres import PostgresSource
+from transferred.postgres import PostgresDestination, PostgresSource
 from transferred.transfer import Transfer
 
 __all__ = [
@@ -33,6 +33,7 @@ __all__ = [
     "ArrowSource",
     "FilesDestination",
     "FilesSource",
+    "PostgresDestination",
     "PostgresSource",
     "Parquet",
 ]
