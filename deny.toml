@@ -1,0 +1,29 @@
+# Supply-chain gate: RUSTSEC advisories, license allow-list, source allow-list.
+# Run via `make deny`. Docs: https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+yanked = "deny"
+# RustSec's unmaintained class is informational, not a vulnerability, and every hit
+# today is transitive under `pyo3-stub-gen` with no upgrade available.
+unmaintained = "workspace"
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

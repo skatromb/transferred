@@ -14,7 +14,7 @@ check-integration:
 
 # Full Rust gate: fmt, clippy, tests, supply chain audit.
 .PHONY: rust-check
-rust-check: fmt clippy cargo-test vet
+rust-check: fmt clippy cargo-test deny
 
 # Format in place. Auto-fixes locally; CI fails if anything changed.
 .PHONY: fmt
@@ -34,15 +34,15 @@ clippy:
 cargo-test:
 	@cargo test --workspace --features transferred-core/dev
 
-# Install cargo-vet for supply chain audits.
-.PHONY: vet-install
-vet-install:
-	@cargo install cargo-vet --locked
+# Install cargo-deny for supply chain audits.
+.PHONY: deny-install
+deny-install:
+	@cargo install cargo-deny --locked
 
-# Run supply chain audit.
-.PHONY: vet
-vet: vet-install
-	@cargo vet check --locked
+# Audit advisories, licenses, bans and sources against `deny.toml`.
+.PHONY: deny
+deny: deny-install
+	@cargo deny --locked check
 
 
 # ============================================================================
