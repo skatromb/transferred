@@ -16,7 +16,7 @@ env:
 jobs:
   changes:
     name: Detect code changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
@@ -37,7 +37,7 @@ jobs:
     name: Check all
     needs: [rust, python, integration]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Fail if any of required checks failed
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
@@ -47,7 +47,7 @@ jobs:
     name: Rust (fmt, clippy, test, stubs, vet)
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
 
@@ -67,7 +67,7 @@ jobs:
     name: Python (ruff, ty, pytest)
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
 
@@ -92,7 +92,7 @@ jobs:
     name: Integration (Docker)
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
 
