@@ -15,8 +15,9 @@ use postgres_protocol::escape::escape_identifier;
 
 use crate::arrow_to_pg::{ArrowToPg, PgValue};
 
-/// Suffix for the staging table the load fills before the swap.
-const STAGING_SUFFIX: &str = "__transferred_staging";
+/// Suffix for the staging table the load fills before the swap. A table carrying it is a
+/// leftover from an interrupted run and is safe to drop.
+pub const STAGING_SUFFIX: &str = "__transferred_staging";
 
 /// PG truncates identifiers past `NAMEDATALEN - 1`, which would let staging collide with its target.
 /// <https://www.postgresql.org/docs/17/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS>
@@ -44,7 +45,7 @@ impl PostgresDestination {
 impl Destination for PostgresDestination {
     async fn write_partitions(self: Box<Self>, partitions: Vec<BatchStream>) -> Result<RunReport> {
         let start = Instant::now();
-        let client = connect(&self.dsn).await?;
+        let mut client = connect(&self.dsn).await?;
         let target = Target::resolve(&client, &self.table).await?;
 
         let rows = match load_staging(&client, &target, partitions).await {
@@ -55,7 +56,7 @@ impl Destination for PostgresDestination {
             }
         };
 
-        if let Err(error) = target.swap(&client).await {
+        if let Err(error) = target.swap(&mut client).await {
             drop_staging(&client, &target).await;
             return Err(error);
         }
@@ -208,17 +209,26 @@ impl Target {
     }
 
     /// Replace the target with the staging table. Transactional DDL, so the swap is all-or-nothing.
-    async fn swap(&self, client: &Client) -> Result<()> {
-        client
+    /// Failure drops the `Transaction`, which rolls back and leaves the session usable for cleanup.
+    async fn swap(&self, client: &mut Client) -> Result<()> {
+        let transaction = client
+            .transaction()
+            .await
+            .map_err(TransferredError::destination)?;
+
+        transaction
             .batch_execute(&format!(
-                "begin; \
-                 drop table if exists {target}; \
-                 alter table {staging} rename to {bare}; \
-                 commit;",
+                "drop table if exists {target}; \
+                 alter table {staging} rename to {bare};",
                 target = self.qualified,
                 staging = self.staging,
                 bare = self.bare,
             ))
+            .await
+            .map_err(TransferredError::destination)?;
+
+        transaction
+            .commit()
             .await
             .map_err(TransferredError::destination)
     }

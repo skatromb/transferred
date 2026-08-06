@@ -5,5 +5,5 @@ mod destination;
 mod pg_to_arrow;
 mod source;
 
-pub use destination::PostgresDestination;
+pub use destination::{PostgresDestination, STAGING_SUFFIX};
 pub use source::PostgresSource;

@@ -1,5 +1,6 @@
 //! Throwaway Postgres container, seeded by `pg_seed.sql`, shared by the integration test binaries.
-#![allow(clippy::expect_used)]
+// Shared by both integration binaries; neither uses every helper.
+#![allow(clippy::expect_used, dead_code)]
 
 use arrow::array::RecordBatch;
 use arrow::compute::concat_batches;
@@ -37,6 +38,32 @@ pub async fn start_postgres() -> String {
         .await;
 
     dsn.clone()
+}
+
+/// Connect to this binary's Postgres container, driving the connection in the background.
+pub async fn client() -> tokio_postgres::Client {
+    let (client, connection) =
+        tokio_postgres::connect(&start_postgres().await, tokio_postgres::NoTls)
+            .await
+            .expect("connect");
+    tokio::spawn(connection);
+    client
+}
+
+/// Run one statement against this binary's container.
+pub async fn exec(sql: &str) {
+    client().await.batch_execute(sql).await.expect("exec");
+}
+
+/// Whether `table` exists, optionally schema-qualified. `to_regclass` yields null instead of erroring.
+pub async fn table_exists(table: &str) -> bool {
+    let name: Option<String> = client()
+        .await
+        .query_one("select to_regclass($1)::text", &[&table])
+        .await
+        .expect("resolve table")
+        .get(0);
+    name.is_some()
 }
 
 /// Read a whole table as one `RecordBatch`.
