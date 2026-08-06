@@ -158,8 +158,11 @@ Goal: Atomic full load PG → PG and PG → Parquet. Direct type mapping only; f
 **Tasks:**
 
 - [x] `transferred-postgres` connect + COPY binary parser.
-- [ ] `transferred-postgres` destination — `COPY ... FROM STDIN`, atomic swap.
-  - Evaluate `pgpq` (MIT) before hand-rolling the encoder: it does Arrow `RecordBatch` → PG binary COPY, i.e. exactly this direction. Caveat: it declares `arrow-array = ">=56.0.0"`, an open-ended range that could resolve to a future breaking arrow — our lockfile pins, but pair it with a `cargo-deny` bans check.
+- [x] `transferred-postgres` destination — `COPY ... FROM STDIN`, atomic swap.
+  - No encoder crate: `tokio_postgres::binary_copy::BinaryCopyInWriter` already owns the COPY framing, and every value we send has a `ToSql` impl. Cost is one `Box<dyn ToSql>` per cell, since `write_raw` is row-wise and Arrow is columnar.
+  - `pgpq` (MIT) rejected. Probed at 0.11.1 against the schema our source emits: `Interval(MonthDayNano)` hard-errors (`PostgresType::Interval` is only reachable from Arrow `Duration`), `FixedSizeBinary` is routed to the `LargeBinary` encoder and fails its downcast at encode time, extension metadata is ignored (`arrow.json` → `text`), `timestamptz` degrades to `timestamp`, and `PostgresType` carries no precision/scale, `Uuid`, or PostGIS variants. Its real job is *deriving* a PG schema from Arrow, which we don't need — the source already has the true PG types.
+  - Target identifiers are split by `parse_ident()` server-side, then requoted, so `schema.table` works without our own SQL parser.
+- [ ] Python `PostgresDestination` wrapper. `PostgresSource` is already wrapped; the destination needs the matching `_PostgresDestination` pyclass, public wrapper, stub regen, and a pytest round-trip against the testcontainer.
 - [x] PG → Arrow type mapping (per DESIGN.md coverage table). Done: primitives, `date`/`timestamp`/`timestamptz`, `uuid`, `json`/`jsonb`, `interval`, `numeric(p,s)`. Left: PostGIS, ranges.
 - [x] `numeric(p,s)` → `Decimal128(p,s)`, precision/scale from `Column::type_modifier()`. Bare `numeric` (typmod `-1`) defaults to `Decimal128(38, 9)` + WARN rather than failing — 0.1 has no `schema=` override, so failing would leave a very common column type unusable. 38/9 matches BigQuery `NUMERIC` exactly, so the default reaches BQ uncoerced in 0.2.0.
   - Decode via `rust_decimal` (`db-tokio-postgres`), not by hand: its `postgres/driver.rs` already handles base-10000 digit groups, `weight`, and the `NaN`/`±Infinity` sign flags that Arrow `Decimal128` cannot represent at all.
@@ -176,7 +179,7 @@ Goal: Atomic full load PG → PG and PG → Parquet. Direct type mapping only; f
   - Test image: `postgis/postgis:17-3.5` is **amd64-only** (887 MB, emulated on Apple Silicon). `imresamu/postgis:17-3.5` publishes arm64 + amd64. Either swap the fixture image or start a second container just for geo tests.
 - [ ] Add TLS
 - [x] Integration test infra: `testcontainers` PG container started by the test itself, gated behind each crate's `integration` feature (`make check-integration`).
-- [ ] Integration test: round-trip PG → PG (needs PostGIS image for the geometry columns).
+- [x] Integration test: round-trip PG → PG. Copies each fixture table through `Transfer` and asserts a re-read equals the original, so the destination is checked against the source mapping rather than hand-written SQL. Also covers replacing an existing target and staging-table cleanup. Geometry columns arrive with the PostGIS task.
 - [x] CI: `integration` job as a separate PR gate, parallel to `rust`/`python`.
 - [ ] Logging bridge crate.
 - [ ] Update deps versions
