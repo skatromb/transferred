@@ -3468,6 +3468,7 @@ dependencies = [
  "chrono",
  "futures",
  "pg_interval",
+ "postgres-protocol",
  "rust_decimal",
  "serde_json",
  "testcontainers-modules",

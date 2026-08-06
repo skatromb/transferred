@@ -1,6 +1,6 @@
 [package]
 name = "transferred-postgres"
-description = "Postgres source for the transferred data transfer engine."
+description = "Postgres source + destination for the transferred data transfer engine."
 readme = "../../README.md"
 keywords = ["transferred", "postgres", "arrow", "etl", "data-transfer"]
 categories = ["database"]
@@ -23,6 +23,7 @@ tokio-stream = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1", "with-serde_json-1"] }
+postgres-protocol = "0.6"
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 pg_interval = "0.6"
@@ -40,4 +41,8 @@ testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
 
 [[test]]
 name = "pg_to_arrow"
+required-features = ["integration"]
+
+[[test]]
+name = "pg_round_trip"
 required-features = ["integration"]

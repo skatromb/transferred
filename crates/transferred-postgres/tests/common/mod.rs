@@ -14,13 +14,13 @@ use transferred_postgres::PostgresSource;
 /// Postgres container, started once per test binary and seeded on first boot.
 static POSTGRES: OnceCell<(ContainerAsync<Postgres>, String)> = OnceCell::const_new();
 
-/// Connection string for this binary's container, booting it on first call.
-pub async fn dsn() -> &'static str {
+/// Start and seed this binary's Postgres container, once, and hand back its connection string.
+pub async fn start_postgres() -> String {
     let (_container, dsn) = POSTGRES
         .get_or_init(|| async {
             let container = Postgres::default()
                 .with_init_sql(include_str!("../pg_seed.sql").as_bytes().to_vec())
-                .with_tag("17-alpine")
+                .with_tag("18-alpine")
                 .start()
                 .await
                 .expect("start postgres");
@@ -36,13 +36,13 @@ pub async fn dsn() -> &'static str {
         })
         .await;
 
-    dsn
+    dsn.clone()
 }
 
 /// Read a whole table as one `RecordBatch`.
 pub async fn read_table(table: &str) -> RecordBatch {
     let partitions = Box::new(PostgresSource::new(
-        dsn().await.to_owned(),
+        start_postgres().await,
         table.to_owned(),
     ))
     .stream_partitions()
