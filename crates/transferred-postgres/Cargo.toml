@@ -40,6 +40,7 @@ integration = []
 
 [dev-dependencies]
 testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
+ctor = "0.6"
 
 [[test]]
 name = "integration"

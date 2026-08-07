@@ -1,5 +1,7 @@
 //! Throwaway Postgres container, seeded by `pg_seed.sql`, shared by the integration tests.
-#![allow(clippy::expect_used)]
+#![allow(clippy::expect_used, unsafe_code)]
+
+use std::sync::Mutex;
 
 use arrow::array::RecordBatch;
 use arrow::compute::concat_batches;
@@ -11,10 +13,29 @@ use tokio::sync::OnceCell;
 use transferred_core::Source;
 use transferred_postgres::PostgresSource;
 
+/// Ids of the containers this run started, for [`reap`] to remove.
+static RUNNING: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Runs after `main` off the `atexit` chain — the teardown libtest lacks, since `static`s never drop.
+#[ctor::dtor]
+fn reap() {
+    let ids = std::mem::take(&mut *RUNNING.lock().expect("reaper lock"));
+    if ids.is_empty() {
+        return;
+    }
+
+    // Shelling out, because Rust destroys the main thread's locals before atexit runs and tokio
+    // cannot start without them.
+    let _ = std::process::Command::new("docker")
+        .args(["rm", "--force", "--volumes"])
+        .args(ids)
+        .output();
+}
+
 /// Image every fixture runs. Not `18-alpine`: it ships no `openssl`, which the TLS fixture needs.
 pub const IMAGE_TAG: &str = "18";
 
-/// Boot `request` and hand back the live container with its connection string.
+/// Boot `request`, register it for reaping, and hand back the live container with its DSN.
 pub async fn start_pg_container(
     request: ContainerRequest<Postgres>,
 ) -> (ContainerAsync<Postgres>, String) {
@@ -23,6 +44,10 @@ pub async fn start_pg_container(
         .get_host_port_ipv4(5432)
         .await
         .expect("map postgres port");
+    RUNNING
+        .lock()
+        .expect("reaper lock")
+        .push(container.id().to_owned());
 
     (
         container,
