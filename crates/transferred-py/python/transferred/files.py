@@ -61,10 +61,15 @@ class FilesDestination(Destination):
             When `true`, writes all partitions to one file.
 
     Example:
-        >>> from transferred import FilesDestination
+        >>> from transferred import FilesSource, FilesDestination, Transfer
         >>> from transferred.formats import Parquet
         >>>
         >>> destination = FilesDestination("out", format=Parquet(compression="zstd"))
+        >>>
+        >>> report = Transfer(
+        ...     source=FilesSource("small.parquet"),
+        ...     destination=destination,
+        ... ).run()
     """
 
     _native_destination: _FilesDestination

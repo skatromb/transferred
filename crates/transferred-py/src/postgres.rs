@@ -1,8 +1,8 @@
-//! Postgres source Python wrapper.
+//! Postgres source + destination Python wrappers.
 
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-use transferred_postgres::PostgresSource;
+use transferred_postgres::{PostgresDestination, PostgresSource};
 
 /// Internal `PyO3` wrapper around `transferred_postgres::PostgresSource`.
 #[gen_stub_pyclass]
@@ -23,6 +23,33 @@ impl PyPostgresSource {
     fn new(dsn: String, table: String) -> Self {
         Self {
             inner: Some(PostgresSource::new(dsn, table)),
+        }
+    }
+}
+
+/// Internal `PyO3` wrapper around `transferred_postgres::PostgresDestination`.
+#[gen_stub_pyclass]
+#[pyclass(
+    name = "_PostgresDestination",
+    module = "transferred._native",
+    unsendable
+)]
+pub struct PyPostgresDestination {
+    pub(crate) inner: Option<PostgresDestination>,
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PyPostgresDestination {
+    #[gen_stub(override_return_type(
+        type_repr = "typing.Self",
+        imports = ("typing")
+    ))]
+    #[new]
+    #[pyo3(signature = (dsn, table))]
+    fn new(dsn: String, table: String) -> Self {
+        Self {
+            inner: Some(PostgresDestination::new(dsn, table)),
         }
     }
 }
