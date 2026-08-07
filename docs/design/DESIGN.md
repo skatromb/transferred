@@ -1,6 +1,6 @@
 # `transferred` — Design
 
-Package name `transferred` on both crates.io and PyPI. Workspace is split into per-connector crates (`transferred-core`, `transferred-files`, `transferred-postgres`, `transferred-bigquery`) plus a Python binding crate. `transferred-files` is the local-filesystem connector — it owns the `Files` source + destination *and* the file-format codecs (Parquet now; Csv/Avro later, in-crate). Formats split into their own crates only if that earns its keep. Workspace version is shared across all crates; untie only if release cadence diverges.
+Package name `transferred` on both crates.io and PyPI. Workspace is split into per-connector crates (`transferred-core`, `transferred-files`, `transferred-postgres`, `transferred-bigquery`) plus a Python binding crate and `transferred-perf` (unpublished perf harness). `transferred-files` is the local-filesystem connector — it owns the `Files` source + destination *and* the file-format codecs (Parquet now; Csv/Avro later, in-crate). Formats split into their own crates only if that earns its keep. Workspace version is shared across all crates; untie only if release cadence diverges.
 
 ## Why
 
@@ -42,13 +42,11 @@ While the project is in its initial development, breaking changes are allowed bu
 ### API surface (Python, code-first)
 
 ```python
-from transferred import Transfer
-from transferred.sources import PostgresSource
-from transferred.destinations import FilesDestination, BigQueryDestination
+from transferred import Transfer, PostgresSource, FilesDestination, BigQueryDestination
 from transferred.formats import Parquet
 
 # Local directory destination — no cloud creds needed.
-# Format inherited from source; pass `format=Parquet(...)` to override.
+# `format=` defaults to `Parquet()`.
 Transfer(
     source=PostgresSource(dsn="postgres://...", table="public.orders"),
     destination=FilesDestination(path="./out/orders"),
@@ -81,7 +79,7 @@ Transfer(source=order_iter, destination=FilesDestination("out")).run()
 Module layout for the iterable + Arrow path:
 
 - `transferred.arrow.ArrowSource` — accepts a `pa.RecordBatchReader` only. The Arrow seam into Rust. Future overloads (`pa.Table`, `pa.RecordBatch`) drop in here.
-- `transferred.iterable._iterable_to_arrow` — converts an iterable of `dict` / `@dataclass` / `pydantic.BaseModel` into an `ArrowSource` via `pa.RecordBatch.from_pylist`. Depends on `arrow` (one-way), not the other way.
+- `transferred.iterable._iterable_to_arrow` — wraps an iterable of `dict` / `@dataclass` / `pydantic.BaseModel` as an `ArrowSource`. The batching itself lives in `_iterable_to_reader`, which builds the `pa.RecordBatchReader` (see Memory model). Depends on `arrow` (one-way), not the other way.
 - `transferred.transfer.Transfer` — Python wrapper around `_native.Transfer`. Coerces iterables on construction.
 
 Dispatcher rules in `Transfer.__init__`:
@@ -100,7 +98,7 @@ PostgresSource(dsn="...", query="SELECT id, total FROM orders WHERE region = 'EU
 
 Internally both compile to `COPY (SELECT ...) TO STDOUT`. `table=` is sugar.
 
-Source-side column filtering — `columns=` or `skip_columns=` (mutually exclusive):
+Source-side column filtering — `columns=` or `skip_columns=` (mutually exclusive)
 
 ```python
 source=PostgresSource(
@@ -112,43 +110,56 @@ source=PostgresSource(
 
 **Schema direction — source-owned, destination-validated.** Source schema is ground truth: connectors infer it natively (PG `information_schema`, Parquet file metadata, Arrow batch schema, …) and preserve it end-to-end. User overrides per column via `schema=` short-circuit source inference. Destination validates the resolved schema against its accepted type set and fails loudly on incompatibility. Vocabulary stays destination-native (BQ types in `BigQueryDestination`, PG types in `PostgresDestination`, …); Arrow is internal, never spelled in Python. Source-side filtering via `columns=` / `skip_columns=` (mutually exclusive) is the only source-side typing knob.
 
-**User schema API.** Single `schema=` knob. Strict by default; partial when an ellipsis key (`...: ...`) is present.
+**User schema API.** Single `schema=` knob, always `dict[column_name, type]`. Values are typed objects, not string literals — a typo should be a red squiggle, not a runtime `SchemaError`.
+
+| Destination | `schema=` values | Where the vocabulary lives | Python → Rust seam |
+| ----------- | ---------------- | -------------------------- | ------------------ |
+| `FilesDestination` | `pa.DataType` | pyarrow | assemble a `pa.Schema`, hand over `__arrow_c_schema__()` — the C Data Interface `ArrowSource` already uses |
+| `BigQueryDestination` | `transferred.bigquery.types` | googleapis protos | `TableFieldSchema`, the Storage Write / copy-job wire shape |
+| `PostgresDestination` | `transferred.postgres.types` | `postgres_types::Type` | type name; extension types validated by `::regtype` |
+
+Type names are borrowed, never hand-listed. The BQ and PG vocabularies both come from generated upstream sources, wrapped behind an exhaustive `match` so a new upstream variant breaks the build rather than drifting silently. The Python BQ SDK is not one of them — its `SchemaField` holds the type name as a bare string anyway. Probe notes in PLAN.md.
+
+Postgres also needs `pg.Raw("hstore")`: extension types get OIDs at `CREATE EXTENSION` time and can never be in a static list. `postgres_types` draws the same line with `Kind::Other`.
 
 ```python
-# Strict full schema — every source column must be listed.
+from transferred.bigquery import types as t
+
+# Strict — every source column must be listed.
 BigQueryDestination(
     project="p", dataset="d", table="orders",
     schema={
-        "id":         "INT64",
-        "total":      "NUMERIC(18, 4)",
-        "created_at": "TIMESTAMP",
-        "tags":       "ARRAY<STRING>",
+        "id":         t.INT64,
+        "total":      t.Numeric(18, 4),
+        "created_at": t.TIMESTAMP,
+        "tags":       t.Array(t.STRING),
     },
 )
 
-# Partial schema — `...: ...` sentinel means "infer the rest from source".
+# Partial — `...: ...` means "infer the rest from source".
 BigQueryDestination(
     project="p", dataset="d", table="orders",
-    schema={
-        "total": "NUMERIC(18, 4)",
-        ...:     ...,
-    },
+    schema={"total": t.Numeric(18, 4), ...: ...},
 )
 
-# Or native lib objects, where the library ships them.
-BigQueryDestination(
-    project="p", dataset="d", table="orders",
-    schema=[
-        bigquery.SchemaField("id", "INT64"),
-        bigquery.SchemaField("total", "NUMERIC", precision=18, scale=4),
-    ],
+# Files: pyarrow types.
+FilesDestination("out", schema={"total": pa.decimal128(18, 4), ...: ...})
+
+# Postgres: its own vocabulary, plus `Raw` for extension types.
+from transferred.postgres import types as pg
+
+PostgresDestination(
+    dsn="...", table="public.orders",
+    schema={"total": pg.Numeric(18, 4), "meta": pg.Raw("hstore"), ...: ...},
 )
 ```
+
+Parameterless types are module-level singletons (`t.INT64`, `pg.TEXT`), parameterised ones are constructors (`t.Numeric(18, 4)`, `t.Array(...)`), so every value is one type and `dict[str, BqType]` annotates cleanly. Only the names are borrowed — precision and scale sit outside the type name upstream too, so the constructors are ours.
 
 Rules:
 
 - `schema=` is **strict** by default: every source column must have an entry. Missing → `SchemaError: column 'X' inferred from source has no entry in schema=`.
-- Ellipsis key (`...: ...`) flips it to **partial**: unlisted source columns are inferred.
+- An `...: ...` key flips it to **partial**: unlisted source columns are inferred.
 - Schema column not present in source → `SchemaError: schema column 'X' not found in source`.
 - Vocabulary is owned by each destination. No cross-destination DSL.
 - Coercion follows the tier model in §Type mapping. Tier-3 lossy-semantic conversions fail by default.
@@ -162,23 +173,26 @@ report.bytes_written   # 1_503_948_211
 report.written_objects # ["out/part-00001.parquet", ...] — paths/URIs/tables written
 report.duration        # timedelta
 report.coercions       # list[Coercion] — column, original type, target, level
-report.staging         # transient artifacts (deleted unless keep_staging=True)
 ```
+
+The report is flat — no per-destination structs, no staging inventory. Staging artifacts are an
+implementation detail of each destination's atomicity primitive and are always cleaned up; a
+`keep_staging=` escape hatch stays out until someone needs to debug a real failure with it.
 
 No row-level Python callbacks. The FFI boundary is crossed once per transfer (per-batch for `ArrowSource`), not per row.
 
 ### File destinations and formats
 
-File-shaped destinations are decoupled from file formats. A destination describes **where** bytes land; a `FileFormat` describes **how** they are encoded.
+File-shaped destinations are decoupled from file formats. A destination describes **where** bytes land; a format codec describes **how** they are encoded.
 
-- `FileFormat` trait. Implementations carry encoder knobs:
-  - `Parquet(compression="zstd")` — keeps the parquet-rs default row-group size (1,048,576 rows; `DEFAULT_MAX_ROW_GROUP_ROW_COUNT`). Row-group sizing is a write-side memory lever but isn't exposed yet — revisit once a byte-based cap (`set_max_row_group_bytes`) earns its keep. The `FileFormat` trait is symmetric — `read` (decode → Arrow) for the source, `write` (encode ← Arrow) for the destination. Both trait and the `Parquet` codec live in `transferred-files`.
+- `FormatRead` (decode → Arrow) and `FormatWrite` (encode ← Arrow) traits — split, not one symmetric trait, so a read-only or write-only codec doesn't have to stub the other half. Both traits and the `Parquet` codec live in `transferred-files`. Implementations carry encoder knobs:
+  - `Parquet(compression="zstd")` — keeps the parquet-rs default row-group size (1,048,576 rows; `DEFAULT_MAX_ROW_GROUP_ROW_COUNT`). Row-group sizing is a write-side memory lever but isn't exposed yet — revisit once a byte-based cap (`set_max_row_group_bytes`) earns its keep.
   - `Avro(...)`
   - `Json(...)`
   - `Csv(...)`
-- File-shaped destinations carry an optional `format`:
-  - `FilesDestination(path, format=None, single_file=False)` — local filesystem. `path` is always a directory (see below).
-  - `S3Destination(bucket, key, format=None)`, `GCSDestination(bucket, key, format=None)` — cloud, `object_store`-backed, each carrying its own typed auth params. Separate classes, not a `FilesDestination(backend=)` enum: per-backend auth surfaces (S3 region/keys/endpoint vs GCS service-account) differ, and `object_store`'s own unified surface is either Rust builders or a stringly-typed options bag — neither a clean typed Python API.
+- File-shaped destinations carry a `format`, defaulting to `Parquet()`:
+  - `FilesDestination(path, format=Parquet(), single_file=False)` — local filesystem. `path` is always a directory (see below).
+  - `S3Destination(bucket, key, format=Parquet())`, `GCSDestination(bucket, key, format=Parquet())` — cloud, `object_store`-backed, each carrying its own typed auth params. Separate classes, not a `FilesDestination(backend=)` enum: per-backend auth surfaces (S3 region/keys/endpoint vs GCS service-account) differ, and `object_store`'s own unified surface is either Rust builders or a stringly-typed options bag — neither a clean typed Python API.
 - Row-protocol destinations have no `format` knob — the wire protocol is the encoding:
   - `BigQueryDestination(project, dataset, table)` — Storage Write API.
   - `PostgresDestination(dsn, table)` — `COPY ... FROM STDIN`.
@@ -194,22 +208,17 @@ tmp dir + rename. Written file paths are returned in `RunReport.written_objects`
 | `True` | all partitions flattened into one `<dir>.<ext>` (named after the directory) |
 
 A flag, not extension inference — no path-shape ambiguity (dotted dirs, type
-conflicts). The directory has no extension, so format can't be inferred from it —
-it inherits the source format or needs an explicit `format=`.
+conflicts). The directory has no extension, so format is never inferred from it.
 
-**Format resolution** when the user does not pass `format=` explicitly:
+**Format resolution.** `format=` defaults to `Parquet()` on both `FilesSource` and
+`FilesDestination` — no inheritance from the source, no extension sniffing. Inferring a
+format is only meaningful once a second codec exists; until then it is a branch with one
+outcome.
 
-| Source              | `format=` arg | Behaviour                                                                              |
-| ------------------- | ------------- | -------------------------------------------------------------------------------------- |
-| File source         | absent        | Inherit source's format. Detected by path extension first; bytes-sniff on ambiguity.   |
-| File source         | present       | Convert source → requested format.                                                     |
-| Non-file source     | absent        | Default to `Parquet()`.                                                                |
-| Non-file source     | present       | Convert to requested format.                                                           |
-
-Byte-copy short-circuit (won't do): even when source and destination resolve to the same `FileFormat`, the engine always decodes through Arrow. Skipping the decode would bypass schema validation and coercion reporting, and the perf win does not justify a second code path.
+Byte-copy short-circuit (won't do): even when source and destination resolve to the same format, the engine always decodes through Arrow. Skipping the decode would bypass schema validation and coercion reporting, and the perf win does not justify a second code path.
 
 ```python
-from transferred.destinations import FilesDestination, S3Destination
+from transferred import FilesDestination, S3Destination
 from transferred.formats import Csv, Avro
 
 # Directory output — one part-NNNNN.parquet per source partition.
@@ -221,10 +230,10 @@ Transfer(source=parquet_src, destination=FilesDestination("out", single_file=Tru
 # Override format.
 Transfer(source=parquet_src, destination=FilesDestination("out", format=Csv())).run()
 
-# Non-file source → default Parquet.
+# No format= → Parquet.
 Transfer(source=pg_src, destination=S3Destination(bucket="dwh", key="orders/")).run()
 
-# Non-file source + explicit format.
+# Explicit format.
 Transfer(source=pg_src, destination=S3Destination(bucket="dwh", key="orders/", format=Avro())).run()
 ```
 
@@ -246,8 +255,8 @@ Transfer(source=pg_src, destination=S3Destination(bucket="dwh", key="orders/", f
 ```
 
 - Single Rust process. `transferred` Python module is a PyO3 extension.
-- `Source` trait: `partitions(self) -> Result<Vec<BatchStream>>`. Each `BatchStream` = one partition's async `Stream<Item = RecordBatch>`. Non-partitionable sources return a one-element `Vec`.
-- `Destination` trait consumes `Vec<BatchStream>`. Single-file destinations serialize partitions; partition-aware destinations (e.g., partitioned Parquet directory, BQ multi-stream) run them concurrently.
+- `Source` trait: `stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>>`. Each `BatchStream` = one partition's async `Stream<Item = Result<RecordBatch>>`. Non-partitionable sources return a one-element `Vec`.
+- `Destination` trait: `write_partitions(self: Box<Self>, partitions: Vec<BatchStream>) -> Result<RunReport>`. Both traits are single-shot — consuming `Box<Self>` makes that a type error rather than a runtime one. Single-file destinations serialize partitions; partition-aware destinations (e.g., partitioned Parquet directory, BQ multi-stream) run them concurrently.
 - Async end-to-end: native async I/O via `AsyncArrowWriter` and `ParquetRecordBatchStream`. No `spawn_blocking`, no internal mpsc channels.
 - Backpressure happens naturally — `.next().await` on the source stream blocks until the writer is ready.
 - Schema resolution happens once, before partitions are produced.
@@ -258,7 +267,7 @@ Transfer(source=pg_src, destination=S3Destination(bucket="dwh", key="orders/", f
 2. If `destination.schema=` is set, destination parses it (with ellipsis sentinel handling) into a per-column override map. Strict mode (no `...: ...`) requires every source column to appear; missing → fail.
 3. Engine resolves canonical schema column-by-column: declared user type if present, else inferred type from source.
 4. Destination validates each resolved column against its accepted type set. Plan-time fail (`SchemaError`) only when no Arrow cast kernel exists at all (type fundamentally incompatible, e.g. `geography → INT64`). Width/precision mismatches that *might* fit at the row level are deferred to step 6.
-5. If an existing destination is present (file, table), compare resolved schema vs existing. Incompatibility → `SchemaError: source column 'X' (type Y) incompatible with existing destination column 'X' (type Z). Likely source schema drift. Override with columns=.`
+5. If an existing destination is present (file, table), compare resolved schema vs existing. Incompatibility → `SchemaError: source column 'X' (type Y) incompatible with existing destination column 'X' (type Z). Likely source schema drift. Override with schema=.`
 6. Source emits batches; engine coerces each batch per-column to the canonical schema (Tier 1 auto, Tier 2 warn, Tier 3 fail). Arrow `cast` uses `safe=true`; first overflow row aborts the run. Atomic destinations guarantee no half-written state on failure.
 7. Destination writes canonical batches, mapping to its native representation.
 
@@ -271,12 +280,12 @@ trait Destination {
     /// Validate resolved Arrow schema against destination's accepted types.
     /// Returns canonical schema (after Tier 1 widening) or fails (Tier 3 / missing kernel).
     fn validate_schema(&self, source_arrow: ArrowSchema, overrides: UserOverrides) -> Result<ArrowSchema>;
-    /// Existing write path.
-    async fn write(self: Box<Self>, schema: SchemaRef, partitions: Vec<BatchStream>) -> Result<RunReport>;
+    /// Consume the destination and write the partitions.
+    async fn write_partitions(self: Box<Self>, partitions: Vec<BatchStream>) -> Result<RunReport>;
 }
 ```
 
-`UserSchema` / `UserOverrides` are opaque carriers passed in from Python (string DSL, native lib objects, or mixed). Destination is sole interpreter.
+`UserSchema` / `UserOverrides` are opaque carriers passed in from Python (`TableFieldSchema` JSON, an Arrow schema over the C Data Interface, or PG type strings — see §User schema API). Destination is sole interpreter.
 
 ### Memory model
 
@@ -328,7 +337,7 @@ Fast path for callers who already have Arrow: `ArrowSource(pa_record_batch_reade
 
 - **Atomic loads.** Each backend uses its own native atomic primitive.
     - BQ: Storage Write API in `pending` mode against a transient staging table in the destination dataset, then a server-side copy job with `WRITE_TRUNCATE` from staging into the final table, then `DROP TABLE staging`. Atomicity comes from the copy job; the Storage Write commit makes the staging table whole, the copy-replace makes the final table whole. Partitioning, clustering, description, labels, IAM on the final table are preserved (data replaced, table object not recreated). Schema enforcement is server-side: AppendRows rejects mismatched rows, the copy job rejects mismatched schemas. No client-side staging in GCS, no Parquet encoding, no `staging_bucket` knob on the public API. Errors surfaced as `TransferredError` subclasses.
-    - Postgres: `BEGIN; DROP target; RENAME staging; COMMIT;`. Client-side schema compare needed here since there's no equivalent server-side enforcement.
+    - Postgres: staging table built from the source-derived schema, `COPY ... FROM STDIN`, then `BEGIN; DROP target; RENAME staging; COMMIT;` under transactional DDL. The swap runs through `Client::transaction()`, whose `Drop` rolls back — otherwise a failed statement strands the session in an aborted transaction and silently swallows staging cleanup. No client-side schema compare: source schema wins and the target is replaced outright, so there is nothing to compare against. Indexes, grants and ownership are not preserved.
   Transfers never leave the destination half-written. `mode="append"` and `mode="upsert"` are out of scope while the project is in initial development. `on_schema_change="replace"` to opt into destructive schema replacement is a deferred kwarg.
 - **Source filter surface.** `table=` and `query=` are the two ways to bound the extract. No partial filter DSL on top — keeps the API one knob wide.
 - **Credentials.** All GCP auth delegates to `gcp_auth`: Application Default Credentials, `GOOGLE_APPLICATION_CREDENTIALS` service-account JSON, gcloud user creds, workload identity. Postgres uses standard DSN-embedded creds or libpq env vars.
@@ -343,7 +352,7 @@ See [INCREMENTAL.md](INCREMENTAL.md)
 
 ### Type mapping
 
-User-facing vocabulary is **destination-native**. Arrow is the internal lingua franca, never spelled in the Python API. Each destination owns its own schema DSL parser (string forms like `"NUMERIC(18, 4)"`) and accepts native lib objects (`bigquery.SchemaField`, `pa.Field`) where the destination's ecosystem ships them. Cross-destination consistency is not a goal — `STRING` in BQ and `text` in PG and `Utf8` in Arrow are independent vocabularies.
+User-facing vocabulary is **destination-native** — typed objects per destination, sourced per §User schema API. Arrow is the internal lingua franca, never spelled in the Python API. Cross-destination consistency is not a goal — `STRING` in BQ and `text` in PG and `Utf8` in Arrow are independent vocabularies.
 
 Arrow covers most primitives directly. The tricky types — geometry, JSON, UUID, ranges, intervals, vendor-specific — go through a registry, not ad-hoc per-connector code.
 
@@ -379,13 +388,11 @@ enum Fallback {
 | Lossy structural     | Unknown type → `arrow.opaque` (bytes). Composite → struct flatten. Hstore → JSON. `geometry(_, 4326)` no Z/M → BQ `GEOGRAPHY` (planar→geodesic edge reinterpretation). | Auto-apply            | WARN, in run summary    |
 | Lossy semantic       | CRS reprojection. `ST_MakeValid`. Z/M drop. Decimal truncation. tz coercion.            | **Fail**              | ERROR, stops the run    |
 
-User overrides choose the strategy per column when the default doesn't fit:
+Overriding a default is just naming the type you want in `schema=` — no strategy objects, no second vocabulary. Pair with the partial sentinel to leave the rest inferred:
 
 ```python
-column_overrides={
-    "valid":  Range(strategy="expand"),    # already the default; override only if you want "text"
-    "blob":   Coerce(to="bytes"),
-}
+# PG destination: tsrange expands to five columns by default; take the text form instead.
+schema={"valid": "text", ...: ...}
 ```
 
 **Tier 3 workaround.** Lossy-semantic coercions are not implemented; the run fails on the offending column. Workaround = drop the column from the transfer via `columns=` or `skip_columns=` on the source. They are mutually exclusive.
