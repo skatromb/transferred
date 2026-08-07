@@ -166,7 +166,7 @@ fn shared_row_count(columns: &[Vec<PgValue<'_>>]) -> Result<usize> {
 async fn drop_staging(client: &Client, target: &Target) {
     let sql = format!("drop table if exists {}", target.staging);
     if let Err(error) = client.batch_execute(&sql).await {
-        warn!(table = %target.staging, %error, "failed to drop staging table");
+        warn!(target: "postgres::destination", table = %target.staging, %error, "failed to drop staging table");
     }
 }
 
@@ -252,7 +252,7 @@ async fn connect(dsn: &str) -> Result<Client> {
 
     tokio::spawn(async move {
         if let Err(error) = connection.await {
-            warn!(%error, "postgres connection closed");
+            warn!(target: "postgres::destination", %error, "postgres connection closed");
         }
     });
 

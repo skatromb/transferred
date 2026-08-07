@@ -148,7 +148,7 @@ async fn cleanup(tmp_dir: &Path) {
     if let Err(err) = tokio::fs::remove_dir_all(tmp_dir).await
         && err.kind() != std::io::ErrorKind::NotFound
     {
-        warn!(path = %tmp_dir.display(), error = %err, "failed to remove tmp dir");
+        warn!(target: "files::destination", path = %tmp_dir.display(), error = %err, "failed to remove tmp dir");
     }
 }
 
