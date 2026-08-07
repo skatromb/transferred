@@ -40,9 +40,6 @@ integration = []
 testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
 
 [[test]]
-name = "pg_to_arrow"
-required-features = ["integration"]
-
-[[test]]
-name = "pg_round_trip"
+name = "integration"
+path = "tests/integration/main.rs"
 required-features = ["integration"]
