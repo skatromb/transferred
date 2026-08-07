@@ -9,6 +9,8 @@ class PostgresSource(Source):
 
     Args:
         dsn: Connection string, e.g. `'postgres://user:pass@localhost:5432/db'`.
+            Encrypted whenever the server offers it; add `sslmode=verify-full`
+            to also check the server certificate.
         table: Table name, optionally schema-qualified (`'public.users'`).
 
     Example:
@@ -35,6 +37,8 @@ class PostgresDestination(Destination):
 
     Args:
         dsn: Connection string, e.g. `'postgres://user:pass@localhost:5432/db'`.
+            Encrypted whenever the server offers it; add `sslmode=verify-full`
+            to also check the server certificate.
         table: Table to replace, optionally schema-qualified (`'public.users'`).
             Created if absent.
 

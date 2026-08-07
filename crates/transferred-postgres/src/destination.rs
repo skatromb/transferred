@@ -7,25 +7,23 @@ use std::time::Instant;
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt, stream};
 use tokio_postgres::types::ToSql;
-use tokio_postgres::{Client, NoTls, binary_copy::BinaryCopyInWriter};
+use tokio_postgres::{Client, binary_copy::BinaryCopyInWriter};
 use tracing::warn;
 use transferred_core::{BatchStream, Destination, Result, RunReport, TransferredError};
 
 use postgres_protocol::escape::escape_identifier;
 
 use crate::arrow_to_pg::{ArrowToPg, PgValue};
+use crate::connection::connect;
 
-/// Suffix for the staging table the load fills before the swap. A table carrying it is a
-/// leftover from an interrupted run and is safe to drop.
+/// Suffix marking the staging table a load fills before the swap; a leftover one is safe to drop.
 pub const STAGING_SUFFIX: &str = "__transferred_staging";
 
 /// PG truncates identifiers past `NAMEDATALEN - 1`, which would let staging collide with its target.
 /// <https://www.postgresql.org/docs/17/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS>
 const MAX_IDENTIFIER_BYTES: usize = 63;
 
-/// A `Destination` that replaces a Postgres table with the transferred rows.
-/// Loads into a staging table first, then swaps it in one transaction, so
-/// the target stays readable until the swap and is never half-written.
+/// A `Destination` that replaces a Postgres table, loading into staging and swapping in one transaction.
 pub struct PostgresDestination {
     /// Postgres connection string.
     pub dsn: String,
@@ -45,7 +43,9 @@ impl PostgresDestination {
 impl Destination for PostgresDestination {
     async fn write_partitions(self: Box<Self>, partitions: Vec<BatchStream>) -> Result<RunReport> {
         let start = Instant::now();
-        let mut client = connect(&self.dsn).await?;
+        let mut client = connect(&self.dsn)
+            .await
+            .map_err(TransferredError::destination)?;
         let target = Target::resolve(&client, &self.table).await?;
 
         let rows = match load_staging(&client, &target, partitions).await {
@@ -208,8 +208,7 @@ impl Target {
         })
     }
 
-    /// Replace the target with the staging table. Transactional DDL, so the swap is all-or-nothing.
-    /// Failure drops the `Transaction`, which rolls back and leaves the session usable for cleanup.
+    /// Replace the target with the staging table in one transaction, so the swap is all-or-nothing.
     async fn swap(&self, client: &mut Client) -> Result<()> {
         let transaction = client
             .transaction()
@@ -243,18 +242,4 @@ fn qualify(schema: &[String], name: &str) -> String {
         .map(escape_identifier)
         .collect::<Vec<_>>()
         .join(".")
-}
-
-async fn connect(dsn: &str) -> Result<Client> {
-    let (client, connection) = tokio_postgres::connect(dsn, NoTls)
-        .await
-        .map_err(TransferredError::destination)?;
-
-    tokio::spawn(async move {
-        if let Err(error) = connection.await {
-            warn!(target: "postgres::destination", %error, "postgres connection closed");
-        }
-    });
-
-    Ok(client)
 }
