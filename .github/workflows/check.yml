@@ -1,4 +1,4 @@
-name: Checks
+name: Check
 
 on:
   pull_request:
@@ -6,7 +6,7 @@ on:
     branches: [main]
 
 concurrency:
-  group: checks-${{ github.ref }}
+  group: check-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -32,7 +32,7 @@ jobs:
               - 'deny.toml'
               - 'rust-toolchain.toml'
               - 'Makefile'
-              - '.github/workflows/checks.yml'
+              - '.github/workflows/check.yml'
 
   # The only required status check. The jobs below stay optional so the path filter can skip them.
   check-all:
