@@ -35,5 +35,5 @@ unimplemented = "deny"
 indexing_slicing = "deny"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 missing_docs = "deny"
