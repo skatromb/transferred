@@ -18,9 +18,7 @@ Open-source library read by humans. Optimise for the next reader, make it beauti
 
 ## Rust docs
 
-- `///` one-liner on top-level pub items + free functions + trait/inherent methods. Describe the *what*.
-- No docs on individual struct fields or enum variants.
-- No docs on trivial wrappers (e.g. `Into<String>` constructors).
+- `///` one-liner describing the *what*. Skip it where the name already says everything (e.g. `Into<String>` constructors).
 - **Exception — Python-visible PyO3 classes/methods in `crates/transferred-py/` (pyclass names not prefixed with `_`):** full docstring with one-line summary, `Args:` block, `Example:` block with runnable `>>> from transferred import …` snippet. Internal underscore-prefixed pyclasses keep the one-liner rule.
 
 ## Python docstrings (public API)
