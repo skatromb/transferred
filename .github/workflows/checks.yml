@@ -34,15 +34,19 @@ jobs:
               - 'Makefile'
               - '.github/workflows/checks.yml'
 
+  # The only required status check. The jobs below stay optional so the path filter can skip them.
   check-all:
     name: Check all
-    needs: [rust, python, integration]
+    needs: [changes, rust, python, integration]
     if: always()
     runs-on: ubuntu-24.04-arm
     steps:
-      - name: Fail if any of required checks failed
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
-        run: exit 1
+      - name: Fail unless every check passed or skipped
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS"
+          jq -e 'all(.[].result; . == "success" or . == "skipped")' <<<"$NEEDS" >/dev/null
 
   rust:
     name: Rust
