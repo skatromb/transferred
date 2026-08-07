@@ -23,6 +23,8 @@ tokio-stream = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1", "with-serde_json-1"] }
+tokio-postgres-rustls = { version = "0.14", features = ["native-certs", "ring"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
 postgres-protocol = "0.6"
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }

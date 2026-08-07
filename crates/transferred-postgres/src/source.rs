@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
-use tokio_postgres::{self, NoTls, binary_copy::BinaryCopyOutStream};
+use tokio_postgres::binary_copy::BinaryCopyOutStream;
 use transferred_core::{BatchStream, Result, Source, TransferredError};
 
+use crate::connection::connect;
 use crate::pg_to_arrow::PgToArrow;
 
 const BATCH_ROWS: usize = 10_000;
@@ -26,15 +27,7 @@ impl PostgresSource {
 #[async_trait]
 impl Source for PostgresSource {
     async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>> {
-        let (client, connection) = tokio_postgres::connect(&self.dsn, NoTls)
-            .await
-            .map_err(TransferredError::source)?;
-
-        tokio::spawn(async move {
-            if let Err(error) = connection.await {
-                eprintln!("connection error: {error}");
-            }
-        });
+        let client = connect(&self.dsn).await.map_err(TransferredError::source)?;
 
         let verified_table: String = client
             .query_one("SELECT $1::text::regclass::text", &[&self.table])
