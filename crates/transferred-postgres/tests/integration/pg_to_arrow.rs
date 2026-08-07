@@ -12,8 +12,7 @@ use arrow::datatypes::IntervalMonthDayNano;
 use arrow_schema::extension::{Json, Uuid};
 use arrow_schema::{DataType, Field, IntervalUnit, Schema, TimeUnit};
 
-mod common;
-use common::read_table;
+use crate::common::read_table;
 
 /// Assemble the expected batch from nullable fields and their columns.
 fn expected(fields: Vec<Field>, columns: Vec<ArrayRef>) -> RecordBatch {

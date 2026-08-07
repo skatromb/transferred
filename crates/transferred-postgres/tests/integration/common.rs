@@ -1,6 +1,5 @@
-//! Throwaway Postgres container, seeded by `pg_seed.sql`, shared by the integration test binaries.
-// Shared by both integration binaries; neither uses every helper.
-#![allow(clippy::expect_used, dead_code)]
+//! Throwaway Postgres container, seeded by `pg_seed.sql`, shared by the integration tests.
+#![allow(clippy::expect_used)]
 
 use arrow::array::RecordBatch;
 use arrow::compute::concat_batches;
