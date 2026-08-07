@@ -6,6 +6,16 @@ Conventions for AI agents (Claude Code, Cursor, Codex, Aider, …) working in th
 
 Record durable conventions and learnings here, not in agent-private memory.
 
+## Code taste
+
+Open-source library read by humans. Optimise for the next reader, make it beautiful, not for closing the task.
+
+- Simple and readable code — best code.
+- Prefer removing a concept over adding a flag. Least code that fully does the job wins.
+- A new abstraction (trait, enum, config knob, helper module) needs ≥2 real call sites *today*. No "we'll need it later".
+- One function, one thing, one level of abstraction. Can't name it without "and"? Split it.
+- Match the neighbours — naming, error handling, module layout come from the surrounding code.
+
 ## Rust docs
 
 - `///` one-liner on top-level pub items + free functions + trait/inherent methods. Describe the *what*.
