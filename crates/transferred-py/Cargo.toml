@@ -26,6 +26,7 @@ transferred-files = { workspace = true }
 transferred-postgres = { workspace = true }
 arrow = { workspace = true, features = ["pyarrow"] }
 pyo3 = { version = "0.29" }
+pyo3-log = "0.13"
 pyo3-stub-gen = { version = "0.23", default-features = false, features = ["infer_signature"] }
 tokio = { workspace = true }
 futures = { workspace = true }

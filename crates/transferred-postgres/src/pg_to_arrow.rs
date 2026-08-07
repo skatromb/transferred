@@ -151,6 +151,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
             let (precision, scale) = numeric_precision_scale(column.type_modifier())?;
             if column.type_modifier() == BARE_NUMERIC_TYPMOD {
                 warn!(
+                    target: "postgres::source",
                     column = name,
                     "`numeric` without declared precision; mapping to \
                      Decimal128({precision}, {scale}) and rounding beyond {scale} decimals"
