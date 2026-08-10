@@ -9,7 +9,7 @@ use tokio::sync::OnceCell;
 use transferred_core::{Result, Source};
 use transferred_postgres::PostgresSource;
 
-use crate::common::{IMAGE_TAG, start_pg_container};
+use crate::common::start_pg_container;
 
 /// Entrypoint that gives the container a certificate and starts Postgres with TLS on.
 const ENABLE_SSL: &str = include_str!("../pg_enable_ssl.sh");
@@ -32,7 +32,6 @@ async fn start_tls_postgres(sslmode: &str) -> String {
                         )
                         .into_bytes(),
                     )
-                    .with_tag(IMAGE_TAG)
                     .with_cmd(["sh", "-c", ENABLE_SSL]),
             )
         })
