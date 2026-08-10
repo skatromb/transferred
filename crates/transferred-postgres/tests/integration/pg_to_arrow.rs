@@ -9,7 +9,7 @@ use arrow::array::{
     RecordBatch, StringArray, TimestampMicrosecondArray,
 };
 use arrow::datatypes::IntervalMonthDayNano;
-use arrow_schema::extension::{Json, Uuid};
+use arrow_schema::extension::{Json, Opaque, Uuid};
 use arrow_schema::{DataType, Field, IntervalUnit, Schema, TimeUnit};
 
 use crate::common::read_table;
@@ -164,4 +164,31 @@ async fn semantic() {
     );
 
     assert_eq!(read_table("it_semantic").await, expected);
+}
+
+/// A type with no mapping keeps its wire bytes and says what it was, instead of failing the read.
+#[tokio::test]
+async fn unmapped_types() {
+    let expected = expected(
+        vec![
+            nullable("mac", DataType::Binary)
+                .with_extension_type(Opaque::new("macaddr", "PostgreSQL")),
+            nullable("mood", DataType::Binary)
+                .with_extension_type(Opaque::new("it_mood", "PostgreSQL")),
+        ],
+        vec![
+            Arc::new(BinaryArray::from(vec![
+                Some(&[0x08, 0x00, 0x2b, 0x01, 0x02, 0x03][..]),
+                Some(&[0xff; 6][..]),
+                None,
+            ])),
+            Arc::new(BinaryArray::from(vec![
+                Some(&b"glad"[..]),
+                Some(&b"sad"[..]),
+                None,
+            ])),
+        ],
+    );
+
+    assert_eq!(read_table("it_opaque").await, expected);
 }

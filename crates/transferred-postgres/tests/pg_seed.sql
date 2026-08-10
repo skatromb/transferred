@@ -1,7 +1,5 @@
 -- Fixture for the `pg_to_arrow` integration test; applied on container boot.
--- Tested at crates/transferred-postgres/tests/pg_to_arrow.rs
-drop table if exists it_primitives;
-
+-- Tested at crates/transferred-postgres/tests/integration/pg_to_arrow.rs
 create table it_primitives (
     b bool, i2 int2, i4 int4, i8 int8,
     f4 float4, f8 float8, t text, bin bytea
@@ -11,8 +9,6 @@ insert into it_primitives values
     (true, 1, 2, 3, 1.5, 2.5, 'one', '\x0102'),
     (false, -1, -2, -3, -1.5, -2.5, '', '\x'),
     (null, null, null, null, null, null, null, null);
-
-drop table if exists it_temporal;
 
 create table it_temporal (d date, ts timestamp, tstz timestamptz, iv interval);
 
@@ -24,8 +20,6 @@ insert into it_temporal values
     ('1969-07-20', '1969-07-20 20:17:40', '1969-07-20 20:17:40+00',
      '-1 mons -2 days -03:00:00'),
     (null, null, null, null);
-
-drop table if exists it_numeric;
 
 -- `n` is bare on purpose: it exercises the Decimal128(38, 9) default for typmod -1.
 create table it_numeric (n numeric, small numeric(28,4), wide numeric(38,9));
@@ -40,11 +34,20 @@ insert into it_numeric values
     (0.1234567885, 0.1234567885, 0.1234567885),
     (null, null, null);
 
-drop table if exists it_semantic;
-
 create table it_semantic (u uuid, j json, jb jsonb);
 
 insert into it_semantic values
     ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', '{"a": [1]}', '{"a": [1]}'),
     ('00000000-0000-0000-0000-000000000000', '[]', '[]'),
     (null, null, null);
+
+-- Two types the mapping has no rule for: one built in, one user-defined, so the type name in the
+-- `arrow.opaque` metadata has to come from the catalogue rather than a fixed list.
+create type it_mood as enum ('glad', 'sad');
+create table it_opaque (mac macaddr, mood it_mood);
+
+-- macaddr goes on the wire as its six bytes; an enum label as its UTF-8 text.
+insert into it_opaque values
+    ('08:00:2b:01:02:03', 'glad'),
+    ('ff:ff:ff:ff:ff:ff', 'sad'),
+    (null, null);

@@ -6,6 +6,7 @@
 use std::error::Error as _;
 
 use arrow::array::RecordBatch;
+use arrow_schema::{DataType, Field, Schema};
 use async_trait::async_trait;
 use futures::{StreamExt, stream};
 use transferred_core::{BatchStream, Result, RunReport, Source, Transfer, TransferredError};
@@ -98,6 +99,24 @@ async fn numeric_round_trip() {
 #[tokio::test]
 async fn semantic_round_trip() {
     assert_round_trips("it_semantic").await;
+}
+
+/// Opaque columns are transferable but not restorable: the destination has no rule for the tag,
+/// so the bytes come through while the original type name is left behind.
+#[tokio::test]
+async fn opaque_columns_land_as_bytea() {
+    let into = "it_opaque_copy";
+    transfer_run("it_opaque", into).await;
+
+    let copy = read_table(into).await;
+    assert_eq!(copy.columns(), read_table("it_opaque").await.columns());
+
+    // `Field` equality covers metadata, so this also pins the absence of an `arrow.opaque` tag.
+    let expected = Schema::new(vec![
+        Field::new("mac", DataType::Binary, true),
+        Field::new("mood", DataType::Binary, true),
+    ]);
+    assert_eq!(*copy.schema(), expected);
 }
 
 /// A second run must replace the target, not append to it or trip over the existing table.
