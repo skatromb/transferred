@@ -32,14 +32,20 @@ fn reap() {
         .output();
 }
 
-/// Image every fixture runs. Not `18-alpine`: it ships no `openssl`, which the TLS fixture needs.
-pub const IMAGE_TAG: &str = "18";
+/// Image every fixture runs: Postgres with `PostGIS`, published for arm64 as well as amd64.
+const IMAGE: &str = "imresamu/postgis";
+const IMAGE_TAG: &str = "18-3.6";
 
-/// Boot `request`, register it for reaping, and hand back the live container with its DSN.
+/// Boot `request` on this suite's image, register it for reaping, and return it with its DSN.
 pub async fn start_pg_container(
-    request: ContainerRequest<Postgres>,
+    request: impl Into<ContainerRequest<Postgres>>,
 ) -> (ContainerAsync<Postgres>, String) {
-    let container = request.start().await.expect("start postgres");
+    let container = request
+        .with_name(IMAGE)
+        .with_tag(IMAGE_TAG)
+        .start()
+        .await
+        .expect("start postgres");
     let port = container
         .get_host_port_ipv4(5432)
         .await
@@ -64,8 +70,7 @@ pub async fn start_seeded_postgres() -> String {
         .get_or_init(|| {
             start_pg_container(
                 Postgres::default()
-                    .with_init_sql(include_str!("../pg_seed.sql").as_bytes().to_vec())
-                    .with_tag(IMAGE_TAG),
+                    .with_init_sql(include_str!("../pg_seed.sql").as_bytes().to_vec()),
             )
         })
         .await;
