@@ -8,7 +8,7 @@ use arrow::array::{
     RecordBatch, StringArray, TimestampMicrosecondArray,
 };
 use arrow::datatypes::Date32Type;
-use arrow_schema::extension::{ExtensionType, Json, Uuid};
+use arrow_schema::extension::{ExtensionType, Json, Opaque, Uuid};
 use arrow_schema::{DataType as ArrowType, Field, IntervalUnit, Schema, TimeUnit};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use pg_interval::Interval as PgInterval;
@@ -18,7 +18,7 @@ use tokio_postgres::Column as PgColumn;
 use tokio_postgres::binary_copy::BinaryCopyOutRow;
 use tokio_postgres::types::{FromSql, Json as PgJson, Type as PgType};
 use tracing::warn;
-use transferred_core::{Result, TransferredError};
+use transferred_core::Result;
 
 use crate::convert::{BARE_NUMERIC_TYPMOD, decimal_units, month_day_nano, numeric_precision_scale};
 
@@ -27,6 +27,9 @@ type PgToArrowFn = Box<dyn Fn(&[BinaryCopyOutRow], usize) -> Result<ArrayRef> + 
 
 /// PG stores `timestamptz` as UTC; the original client offset is not retained.
 const UTC: &str = "UTC";
+
+/// The `arrow.opaque` fallback's `vendor_name`: the system an unmapped type came from.
+const VENDOR: &str = "PostgreSQL";
 
 /// Arrow schema + per-column builders, derived once from PG column metadata.
 pub struct PgToArrow {
@@ -192,12 +195,25 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
                 Ok(Arc::new(text.collect::<StringArray>()))
             }),
         ),
+        // No mapping: keep the column transferable as self-describing bytes.
         ref other => {
-            return Err(TransferredError::source(format!(
-                "Postgres type `{}` (oid {}) not supported in 0.1",
+            warn!(
+                target: "postgres::source",
+                column = name,
+                "no Arrow mapping for Postgres type `{}` (oid {}); \
+                 passing its wire bytes through as opaque binary",
                 other.name(),
                 other.oid()
-            )));
+            );
+            (
+                extended_field(name, ArrowType::Binary, Opaque::new(other.name(), VENDOR))?,
+                Box::new(|rows, i| {
+                    let bytes = col::<RawBytes>(rows, i)
+                        .into_iter()
+                        .map(|raw| raw.map(|raw| raw.bytes));
+                    Ok(Arc::new(bytes.collect::<BinaryArray>()))
+                }),
+            )
         }
     })
 }
@@ -207,6 +223,24 @@ fn extended_field<E: ExtensionType>(name: &str, arrow: ArrowType, extension: E) 
     let mut field = Field::new(name, arrow, true);
     field.try_with_extension_type(extension)?;
     Ok(field)
+}
+
+/// A column's bytes exactly as PG sent them, accepting any type so unmapped OIDs still decode.
+struct RawBytes<'a> {
+    bytes: &'a [u8],
+}
+
+impl<'a> FromSql<'a> for RawBytes<'a> {
+    fn from_sql(
+        _: &PgType,
+        bytes: &'a [u8],
+    ) -> std::result::Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        Ok(Self { bytes })
+    }
+
+    fn accepts(_: &PgType) -> bool {
+        true
+    }
 }
 
 /// Collect column `i` from every row, `None` for SQL NULL.
