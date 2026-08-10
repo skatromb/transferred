@@ -22,7 +22,10 @@ from transferred import FilesDestination, FilesSource, Parquet, Transfer
 
 report = Transfer(
     source=FilesSource("in.parquet"),
-    destination=FilesDestination("output_directory", format=Parquet(compression="zstd")),
+    destination=FilesDestination(
+        "output_directory",
+        format=Parquet(compression="zstd"),
+    ),
 ).run()
 
 print(report)
