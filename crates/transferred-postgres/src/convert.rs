@@ -18,6 +18,17 @@ const BARE_NUMERIC: (i32, i32) = (DECIMAL128_MAX_PRECISION, 9);
 /// Typmod PG reports for a `numeric` declared without precision.
 pub const BARE_NUMERIC_TYPMOD: i32 = -1;
 
+/// Typmod PG reports for a `geometry`/`geography` declared without a coordinate system. Such a
+/// column takes rows with differing SRIDs, so only each value's own EWKB can name one.
+const UNCONSTRAINED_GEO_TYPMOD: i32 = -1;
+
+/// `PostGIS` spells "coordinate system unknown" as SRID 0.
+const UNKNOWN_SRID: i32 = 0;
+
+/// The `PostGIS` type names, which carry no fixed OID: `CREATE EXTENSION` assigns one per database.
+pub const GEOMETRY: &str = "geometry";
+pub const GEOGRAPHY: &str = "geography";
+
 /// PG counts sub-second time in microseconds; Arrow intervals count nanoseconds.
 const NANOS_PER_MICRO: i64 = 1_000;
 
@@ -44,6 +55,15 @@ pub fn numeric_precision_scale(typmod: i32) -> Result<(u8, i8)> {
              which holds {DECIMAL128_MAX_PRECISION} digits"
         ))),
     }
+}
+
+/// Decode the SRID a `geometry`/`geography` typmod pins its column to, if it pins one at all.
+pub fn geo_srid(typmod: i32) -> Option<i32> {
+    // `TYPMOD_GET_SRID`: 20 SRID bits sitting above the 8 that hold the geometry subtype.
+    // https://github.com/postgis/postgis/blob/3.6.0/postgis/gserialized_typmod.c
+    let srid = (typmod & 0x0fff_ff00) >> 8;
+
+    (typmod != UNCONSTRAINED_GEO_TYPMOD && srid != UNKNOWN_SRID).then_some(srid)
 }
 
 /// Restate a decimal as an integer count of `10^-scale` units, as Arrow `Decimal128` stores it.
@@ -145,6 +165,10 @@ mod tests {
     const NUMERIC_5_NEG2: i32 = 329_730;
     const NUMERIC_1000_500: i32 = 65_536_504;
     const NUMERIC_5_200: i32 = 327_884;
+    const GEOMETRY_BARE: i32 = -1;
+    const GEOMETRY_POINT: i32 = 4;
+    const GEOMETRY_POINT_4326: i32 = 1_107_460;
+    const GEOMETRY_ANY_4326: i32 = 1_107_456;
 
     /// Largest mantissa `rust_decimal` can hold: 2^96 - 1, with no room to zero-pad.
     const U96_MAX: Decimal = Decimal::from_parts(u32::MAX, u32::MAX, u32::MAX, false, 0);
@@ -175,6 +199,26 @@ mod tests {
     #[test]
     fn typmod_rejects_scale_past_i8() {
         assert!(numeric_precision_scale(NUMERIC_5_200).is_err());
+    }
+
+    /// The SRID sits above the subtype bits, so constraining one must not disturb the other.
+    #[test]
+    fn geo_typmod_decodes_the_declared_srid() {
+        assert_eq!(geo_srid(GEOMETRY_POINT_4326), Some(4326));
+        assert_eq!(geo_srid(GEOMETRY_ANY_4326), Some(4326));
+    }
+
+    /// An unconstrained column takes rows with differing SRIDs, so it has no single one to report.
+    /// Masking `-1` blindly would read it as SRID 1048575.
+    #[test]
+    fn geo_typmod_reports_no_srid_for_an_unconstrained_column() {
+        assert_eq!(geo_srid(GEOMETRY_BARE), None);
+    }
+
+    /// `geometry(Point)` pins the subtype only, which `PostGIS` records as SRID 0 — its own "unknown".
+    #[test]
+    fn geo_typmod_reports_no_srid_for_postgis_unknown() {
+        assert_eq!(geo_srid(GEOMETRY_POINT), None);
     }
 
     #[test]
