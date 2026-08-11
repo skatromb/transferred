@@ -22,7 +22,7 @@ use arrow::array::{
 };
 use arrow::buffer::OffsetBuffer;
 use arrow::record_batch::RecordBatch;
-use arrow_schema::extension::{Json, Uuid};
+use arrow_schema::extension::{ExtensionType, Json, Opaque, Uuid};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use tempfile::tempdir;
 use transferred_core::Transfer;
@@ -86,6 +86,11 @@ async fn parquet_dogfood() {
     // The equality above passes when metadata is absent on both sides, so assert it is present.
     assert_eq!(extension_name(&read_schema, "uuid"), Some("arrow.uuid"));
     assert_eq!(extension_name(&read_schema, "json"), Some("arrow.json"));
+    assert_eq!(extension_name(&read_schema, "opaque"), Some(Opaque::NAME));
+    assert_eq!(
+        extension_metadata(&read_schema, "opaque"),
+        Some(r#"{"type_name":"macaddr","vendor_name":"PostgreSQL"}"#)
+    );
 
     let concat_in = arrow::compute::concat_batches(&schema, &input).unwrap();
     let concat_read = arrow::compute::concat_batches(&read_schema, read.iter()).unwrap();
@@ -115,6 +120,10 @@ fn input_schema() -> Arc<Schema> {
         // Extension types live in field metadata; the round-trip must carry it through Parquet.
         Field::new("uuid", DataType::FixedSizeBinary(16), true).with_extension_type(Uuid),
         Field::new("json", DataType::Utf8, true).with_extension_type(Json::default()),
+        // `uuid` and `json` serialize no metadata of their own, so only this field proves the
+        // second reserved key survives — the one every CRS-carrying geo type rides in.
+        Field::new("opaque", DataType::Binary, true)
+            .with_extension_type(Opaque::new("macaddr", "PostgreSQL")),
     ]))
 }
 
@@ -226,12 +235,18 @@ fn input_batch(schema: &Arc<Schema>, rows: usize, offset: i64) -> RecordBatch {
             .map(|i| (i % 2 == 0).then(|| format!(r#"{{"i": {}}}"#, i + offset as usize)))
             .collect::<Vec<_>>(),
     )) as ArrayRef;
+    // Six macaddr bytes, as an unmapped Postgres type reaches Arrow.
+    let opaque_arr = Arc::new(BinaryArray::from_opt_vec(
+        (0..rows)
+            .map(|i| (i % 2 == 0).then_some(&b"\x08\x00\x2b\x01\x02\x03"[..]))
+            .collect::<Vec<_>>(),
+    )) as ArrayRef;
 
     RecordBatch::try_new(
         schema.clone(),
         vec![
             i32_arr, i64_arr, u16_arr, f64_arr, bool_arr, utf8_arr, bin_arr, date_arr, ts_arr,
-            list_arr, uuid_arr, json_arr,
+            list_arr, uuid_arr, json_arr, opaque_arr,
         ],
     )
     .unwrap()
@@ -240,4 +255,12 @@ fn input_batch(schema: &Arc<Schema>, rows: usize, offset: i64) -> RecordBatch {
 /// Canonical Arrow extension name a field carries in its metadata, if any.
 fn extension_name<'a>(schema: &'a Schema, field: &str) -> Option<&'a str> {
     schema.field_with_name(field).unwrap().extension_type_name()
+}
+
+/// Serialized parameters of a field's extension type, the second reserved key, if any.
+fn extension_metadata<'a>(schema: &'a Schema, field: &str) -> Option<&'a str> {
+    schema
+        .field_with_name(field)
+        .unwrap()
+        .extension_type_metadata()
 }

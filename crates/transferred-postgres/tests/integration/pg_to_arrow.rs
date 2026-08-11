@@ -11,6 +11,7 @@ use arrow::array::{
 use arrow::datatypes::IntervalMonthDayNano;
 use arrow_schema::extension::{Json, Opaque, Uuid};
 use arrow_schema::{DataType, Field, IntervalUnit, Schema, TimeUnit};
+use transferred_postgres::Wkb;
 
 use crate::common::read_table;
 
@@ -164,6 +165,79 @@ async fn semantic() {
     );
 
     assert_eq!(read_table("it_semantic").await, expected);
+}
+
+/// Decode the hex `PostGIS` prints for a geometry, so expectations read as its own output.
+fn ewkb(hex: &str) -> Vec<u8> {
+    hex.as_bytes()
+        .chunks(2)
+        .map(|byte| {
+            let byte = std::str::from_utf8(byte).expect("ascii hex");
+            u8::from_str_radix(byte, 16).expect("hex byte")
+        })
+        .collect()
+}
+
+/// Nullable `geoarrow.wkb` field, as the mapping tags a `PostGIS` column.
+fn wkb(name: &str, wkb: Wkb) -> Field {
+    nullable(name, DataType::Binary).with_extension_type(wkb)
+}
+
+/// `PostGIS` goes on the wire as EWKB, which `geoarrow.wkb` accepts verbatim, so the coordinate
+/// system rides along in every value even where the column declares none.
+#[tokio::test]
+async fn geometry() {
+    // `geometry_send` output byte for byte. `0x20` in the type word flags a trailing SRID:
+    // `e6100000` is 4326 and `be0b0000` is 3006; the plain `POINT`s carry no SRID at all.
+    let point_4326 = ewkb("0101000020e6100000000000000000f03f0000000000000040");
+    let line_3006 = ewkb(
+        "0102000020be0b0000020000000000000000000000000000000000\
+         0000000000000000f03f000000000000f03f",
+    );
+    let city_4326 = ewkb("0101000020e6100000d7a3703d0a7f52c039b4c876be5f4440");
+    let point = ewkb("0101000000000000000000f03f0000000000000040");
+    let other_point = ewkb("010100000000000000000008400000000000001040");
+    let point_4269 = ewkb("0101000020ad100000000000000000f03f0000000000000040");
+
+    let expected = expected(
+        vec![
+            wkb("geom", Wkb::planar(None)),
+            wkb("pt", Wkb::planar(Some(4326))),
+            wkb("nosrid", Wkb::planar(None)),
+            wkb("geog", Wkb::spherical(Some(4326))),
+            // An unconstrained `geography` takes any geographic SRID, 4269 here, not just 4326.
+            wkb("bare", Wkb::spherical(None)),
+        ],
+        vec![
+            Arc::new(BinaryArray::from(vec![
+                Some(point_4326.as_slice()),
+                Some(line_3006.as_slice()),
+                None,
+            ])),
+            Arc::new(BinaryArray::from(vec![
+                Some(point_4326.as_slice()),
+                Some(city_4326.as_slice()),
+                None,
+            ])),
+            Arc::new(BinaryArray::from(vec![
+                Some(point.as_slice()),
+                Some(other_point.as_slice()),
+                None,
+            ])),
+            Arc::new(BinaryArray::from(vec![
+                Some(point_4326.as_slice()),
+                Some(city_4326.as_slice()),
+                None,
+            ])),
+            Arc::new(BinaryArray::from(vec![
+                Some(point_4269.as_slice()),
+                Some(point_4326.as_slice()),
+                None,
+            ])),
+        ],
+    );
+
+    assert_eq!(read_table("it_geo").await, expected);
 }
 
 /// A type with no mapping keeps its wire bytes and says what it was, instead of failing the read.

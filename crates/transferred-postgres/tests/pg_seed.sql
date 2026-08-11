@@ -41,6 +41,31 @@ insert into it_semantic values
     ('00000000-0000-0000-0000-000000000000', '[]', '[]'),
     (null, null, null);
 
+create extension if not exists postgis;
+
+-- `geom` is bare on purpose: such a column accepts mixed SRIDs, so its coordinate system lives in
+-- each value's EWKB rather than in the column type. `nosrid` constrains the subtype but no
+-- coordinate system, which PostGIS records as SRID 0. `geog` measures on a sphere, the rest planar.
+-- `bare` holds NAD83, not the 4326 an unconstrained `geography` defaults to, so its column cannot
+-- claim a coordinate system either.
+create table it_geo (
+    geom geometry,
+    pt geometry(Point, 4326),
+    nosrid geometry(Point),
+    geog geography(Point, 4326),
+    bare geography
+);
+
+insert into it_geo values
+    ('SRID=4326;POINT(1 2)', 'SRID=4326;POINT(1 2)', 'POINT(1 2)', 'SRID=4326;POINT(1 2)',
+     'SRID=4269;POINT(1 2)'),
+    ('SRID=3006;LINESTRING(0 0, 1 1)',
+     'SRID=4326;POINT(-73.985 40.748)',
+     'POINT(3 4)',
+     'SRID=4326;POINT(-73.985 40.748)',
+     'SRID=4326;POINT(1 2)'),
+    (null, null, null, null, null);
+
 -- Two types the mapping has no rule for: one built in, one user-defined, so the type name in the
 -- `arrow.opaque` metadata has to come from the catalogue rather than a fixed list.
 create type it_mood as enum ('glad', 'sad');

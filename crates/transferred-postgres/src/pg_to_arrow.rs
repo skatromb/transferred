@@ -20,7 +20,11 @@ use tokio_postgres::types::{FromSql, Json as PgJson, Type as PgType};
 use tracing::warn;
 use transferred_core::Result;
 
-use crate::convert::{BARE_NUMERIC_TYPMOD, decimal_units, month_day_nano, numeric_precision_scale};
+use crate::convert::{
+    BARE_NUMERIC_TYPMOD, GEOGRAPHY, GEOMETRY, decimal_units, geo_srid, month_day_nano,
+    numeric_precision_scale,
+};
+use crate::geoarrow::Wkb;
 
 /// Builds one Arrow column from column `i` of a chunk of PG binary rows.
 type PgToArrowFn = Box<dyn Fn(&[BinaryCopyOutRow], usize) -> Result<ArrayRef> + Send + Sync>;
@@ -195,6 +199,25 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
                 Ok(Arc::new(text.collect::<StringArray>()))
             }),
         ),
+        // `PostGIS` carries no fixed OID, so its types answer to a name. Their wire form is EWKB,
+        // which `geoarrow.wkb` accepts as-is, SRID per value and all.
+        ref geo if geo.name() == GEOMETRY => (
+            extended_field(
+                name,
+                ArrowType::Binary,
+                Wkb::planar(geo_srid(column.type_modifier())),
+            )?,
+            Box::new(|rows, i| Ok(wire_bytes(rows, i))),
+        ),
+        // The same bytes, but `geography` bends its edges around the globe.
+        ref geo if geo.name() == GEOGRAPHY => (
+            extended_field(
+                name,
+                ArrowType::Binary,
+                Wkb::spherical(geo_srid(column.type_modifier())),
+            )?,
+            Box::new(|rows, i| Ok(wire_bytes(rows, i))),
+        ),
         // No mapping: keep the column transferable as self-describing bytes.
         ref other => {
             warn!(
@@ -207,15 +230,19 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
             );
             (
                 extended_field(name, ArrowType::Binary, Opaque::new(other.name(), VENDOR))?,
-                Box::new(|rows, i| {
-                    let bytes = col::<RawBytes>(rows, i)
-                        .into_iter()
-                        .map(|raw| raw.map(|raw| raw.bytes));
-                    Ok(Arc::new(bytes.collect::<BinaryArray>()))
-                }),
+                Box::new(|rows, i| Ok(wire_bytes(rows, i))),
             )
         }
     })
+}
+
+/// Column `i` exactly as PG sent it, for the types we pass through rather than decode.
+fn wire_bytes(rows: &[BinaryCopyOutRow], i: usize) -> ArrayRef {
+    let bytes = col::<RawBytes>(rows, i)
+        .into_iter()
+        .map(|raw| raw.map(|raw| raw.bytes));
+
+    Arc::new(bytes.collect::<BinaryArray>())
 }
 
 /// Nullable Arrow field carrying a canonical Arrow extension type in its metadata.

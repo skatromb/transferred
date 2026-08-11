@@ -356,6 +356,20 @@ User-facing vocabulary is **destination-native** — typed objects per destinati
 
 Arrow covers most primitives directly. The tricky types — geometry, JSON, UUID, ranges, intervals, vendor-specific — go through a registry, not ad-hoc per-connector code.
 
+**As shipped (0.1), that registry does not exist.** The Arrow schema is the entire contract between a source and a destination, and each destination pattern-matches `(DataType, extension name)` for itself:
+
+| Arrow representation      | Files (Parquet)                | Postgres                                                        |
+| ------------------------- | ------------------------------ | --------------------------------------------------------------- |
+| Native types              | written as-is                  | mapped by `arrow_to_pg`                                         |
+| `arrow.uuid`, `arrow.json`| metadata written verbatim      | `uuid`, `json`                                                  |
+| `geoarrow.wkb`            | metadata written verbatim      | `geometry`/`geography`, with the SRID when the CRS is an authority code |
+| `arrow.opaque`            | metadata written verbatim      | `bytea`, type name dropped                                      |
+| Anything else             | written as-is                  | refused, naming the Arrow type                                  |
+
+Parquet interprets none of it — the schema goes straight to the writer, so every extension and every CRS spelling survives untouched. Postgres is the only destination that reads the tags, which is why the registry waits for a second reader rather than being built for one.
+
+`DataType::Binary` carries three meanings — plain bytes, `arrow.opaque`, `geoarrow.wkb` — separated only by the extension name. A destination that forgets to check it writes a wrong column type silently, so each destination resolves all three in one place (`arrow_to_pg::arrow_pg_column`), never split between the encoder and the DDL.
+
 **Lookup order for any source-native type:**
 
 1. Native Arrow type if one matches (`int4` → `Int32`, `numeric(p,s)` → `Decimal128(p,s)`, `interval` → `Interval(MonthDayNano)`, `timestamptz` → `Timestamp(Microsecond, "UTC")`, …).
@@ -422,7 +436,7 @@ Never silently coerce to `TEXT` or `BYTES` without a summary entry — that is t
 | `interval`                    | `Interval(MonthDayNano)`             | Native, exact match.                                      |
 | `uuid`                        | `FixedSizeBinary(16)` + `arrow.uuid` | Canonical extension.                                      |
 | `json`/`jsonb`                | `Utf8` + `arrow.json`                | Canonical extension.                                      |
-| `geometry`/`geography` (PostGIS) | `Binary` + `geoarrow.wkb` + CRS   | Community extension. CRS from `geometry_columns`.         |
+| `geometry`/`geography` (PostGIS) | `Binary` + `geoarrow.wkb` + CRS   | Community extension. EWKB passed through; column CRS from typmod. |
 | `tsrange`/`int4range`/...     | `Struct` + `transferred.pg_range`    | Private extension. Default destination fallback = expand. |
 | `hstore`, `ltree`, composites | `arrow.opaque` initially             | Later promotion to structured forms.                      |
 

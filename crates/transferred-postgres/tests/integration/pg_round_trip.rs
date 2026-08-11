@@ -101,6 +101,13 @@ async fn semantic_round_trip() {
     assert_round_trips("it_semantic").await;
 }
 
+/// The destination rebuilds a `PostGIS` column from the tag alone: `geography` where the edges are
+/// spherical, and the declared coordinate system where the source column had one.
+#[tokio::test]
+async fn geometry_round_trips() {
+    assert_round_trips("it_geo").await;
+}
+
 /// Opaque columns are transferable but not restorable: the destination has no rule for the tag,
 /// so the bytes come through while the original type name is left behind.
 #[tokio::test]
