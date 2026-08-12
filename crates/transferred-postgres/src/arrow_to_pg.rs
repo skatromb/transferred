@@ -127,8 +127,8 @@ impl ArrowToPg {
 
 /// The Postgres column an Arrow field maps to.
 trait ToPgColumn {
-    /// Resolve the `CREATE TABLE` type name, wire type and value encoder together, so no two of
-    /// the three can disagree about what a column is.
+    /// Resolve the `CREATE TABLE` type name, binary COPY type and value encoder together, so no
+    /// two of the three can disagree about what a column is.
     fn to_pg_column(&self) -> Result<PgColumn>;
 }
 

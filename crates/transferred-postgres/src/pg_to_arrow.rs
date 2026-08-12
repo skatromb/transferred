@@ -199,7 +199,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(ArrowField, PgToArro
                 Ok(Arc::new(text.collect::<StringArray>()))
             }),
         ),
-        // Both go on the wire as their own UTF-8 text. `citext` has no fixed OID, so goes by name.
+        // PG sends both as their own UTF-8 text. `citext` has no fixed OID, so goes by name.
         ref text if matches!(text.kind(), Kind::Enum(_)) || text.name() == CITEXT => (
             ArrowField::new(name, ArrowType::Utf8, true),
             Box::new(|rows, i| {
@@ -209,15 +209,15 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(ArrowField, PgToArro
                 Ok(Arc::new(strings.collect::<StringArray>()))
             }),
         ),
-        // `PostGIS` carries no fixed OID, so its types answer to a name. Their wire form is EWKB,
-        // which `geoarrow.wkb` accepts as-is, SRID per value and all.
+        // `PostGIS` carries no fixed OID, so its types answer to a name. Their binary form is
+        // EWKB, which `geoarrow.wkb` accepts as-is, SRID per value and all.
         ref geo if geo.name() == GEOMETRY => (
             extended_field(
                 name,
                 ArrowType::Binary,
                 Wkb::planar(geo_srid(column.type_modifier())),
             )?,
-            Box::new(wire_bytes),
+            Box::new(raw_bytes),
         ),
         // The same bytes, but `geography` bends its edges around the globe.
         ref geo if geo.name() == GEOGRAPHY => (
@@ -226,7 +226,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(ArrowField, PgToArro
                 ArrowType::Binary,
                 Wkb::spherical(geo_srid(column.type_modifier())),
             )?,
-            Box::new(wire_bytes),
+            Box::new(raw_bytes),
         ),
         // No mapping: keep the column transferable as self-describing bytes.
         ref other => {
@@ -234,20 +234,20 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(ArrowField, PgToArro
                 target: "postgres::source",
                 column = name,
                 "no Arrow mapping for Postgres type `{}` (oid {}); \
-                 passing its wire bytes through as opaque binary",
+                 passing its bytes through as opaque binary",
                 other.name(),
                 other.oid()
             );
             (
                 extended_field(name, ArrowType::Binary, Opaque::new(other.name(), VENDOR))?,
-                Box::new(wire_bytes),
+                Box::new(raw_bytes),
             )
         }
     })
 }
 
 /// Column `i` exactly as PG sent it, for the types we pass through rather than decode.
-fn wire_bytes(rows: &[BinaryCopyOutRow], i: usize) -> Result<ArrayRef> {
+fn raw_bytes(rows: &[BinaryCopyOutRow], i: usize) -> Result<ArrayRef> {
     let bytes = col::<RawBytes>(rows, i)?
         .into_iter()
         .map(|raw| raw.map(|raw| raw.bytes));
@@ -284,7 +284,7 @@ impl<'a> FromSql<'a> for RawBytes<'a> {
     }
 }
 
-/// A column's text exactly as PG sent it; `&str` declines the enum OIDs whose wire form it is.
+/// A column's text exactly as PG sent it; `&str` declines the enum OIDs whose binary form it is.
 struct RawText<'a> {
     text: &'a str,
 }
