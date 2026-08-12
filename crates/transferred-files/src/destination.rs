@@ -61,7 +61,7 @@ impl Destination for FilesDestination {
 }
 
 impl FilesDestination {
-    /// Build a destination. No I/O performed.
+    /// Builds a destination. No I/O performed.
     #[must_use]
     pub fn new(path: PathBuf, format: Arc<dyn FormatWrite>, single_file: bool) -> Self {
         Self {
@@ -71,7 +71,7 @@ impl FilesDestination {
         }
     }
 
-    /// Pick a filename: `{dir}.{ext}` if `single_file`, else `part-NNNNN.{ext}`.
+    /// Picks a filename: `{dir}.{ext}` if `single_file`, else `part-NNNNN.{ext}`.
     fn output_filename(&self, part: usize) -> String {
         let ext = self.format.file_extension();
         let base_name = self
@@ -86,7 +86,7 @@ impl FilesDestination {
         }
     }
 
-    /// Create and write files into `tmp_dir`; returns the final paths and row counts.
+    /// Creates and writes files into `tmp_dir`; returns the final paths and row counts.
     async fn write_files(
         &self,
         tmp_dir: &Path,
@@ -122,7 +122,7 @@ impl FilesDestination {
         Ok(written)
     }
 
-    /// Atomically overwrite `path` dir with `tmp_dir`, removing any existing output first.
+    /// Atomically overwrites `path` dir with `tmp_dir`, removing any existing output first.
     async fn atomic_replace(&self, tmp_dir: &Path) -> Result<()> {
         match tokio::fs::metadata(&self.path).await {
             Ok(meta) if meta.is_dir() => tokio::fs::remove_dir_all(&self.path).await?,
@@ -143,7 +143,7 @@ struct Written {
     rows: u64,
 }
 
-/// Remove a leftover tmp directory, logging non-`NotFound` failures.
+/// Removes a leftover tmp directory, logging non-`NotFound` failures.
 async fn cleanup(tmp_dir: &Path) {
     if let Err(err) = tokio::fs::remove_dir_all(tmp_dir).await
         && err.kind() != std::io::ErrorKind::NotFound
@@ -152,7 +152,7 @@ async fn cleanup(tmp_dir: &Path) {
     }
 }
 
-/// Create `{name}.tmp` near the `final_path`, for staging files.
+/// Creates `{name}.tmp` near the `final_path`, for staging files.
 fn make_tmp(final_path: &Path) -> PathBuf {
     let mut name = final_path
         .file_name()

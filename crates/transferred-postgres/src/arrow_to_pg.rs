@@ -66,7 +66,7 @@ pub struct ArrowToPg {
 }
 
 impl ArrowToPg {
-    /// Derive Postgres columns and encoders from an Arrow schema. All columns nullable.
+    /// Derives Postgres columns and encoders from an Arrow schema. All columns nullable.
     pub fn derive(schema: &Schema) -> Result<Self> {
         let columns = schema
             .fields()
@@ -98,7 +98,7 @@ impl ArrowToPg {
             .collect()
     }
 
-    /// Encode a batch into Postgres values, one vector per column.
+    /// Encodes a batch into Postgres values, one vector per column.
     pub fn encode<'a>(&self, batch: &'a RecordBatch) -> Result<Vec<Vec<PgValue<'a>>>> {
         // The table was created from the first batch, so a later partition may not fit it.
         if batch.schema().fields() != self.schema.fields() {
@@ -127,7 +127,7 @@ impl ArrowToPg {
 
 /// The Postgres column an Arrow field maps to.
 trait ToPgColumn {
-    /// Resolve the `CREATE TABLE` type name, binary COPY type and value encoder together, so no
+    /// Resolves the `CREATE TABLE` type name, binary COPY type and value encoder together, so no
     /// two of the three can disagree about what a column is.
     fn to_pg_column(&self) -> Result<PgColumn>;
 }
@@ -300,14 +300,14 @@ fn geo_sql_type(field: &ArrowField) -> Result<String> {
     })
 }
 
-/// Box one Postgres value per row, `None` for Arrow null.
+/// Boxes one Postgres value per row, `None` for Arrow null.
 fn values<'a, T: ToSql + Sync + Send + 'a>(
     column: impl Iterator<Item = Option<T>>,
 ) -> Vec<PgValue<'a>> {
     column.map(|value| Box::new(value) as PgValue).collect()
 }
 
-/// Downcast an Arrow column; a mismatch is unreachable, as the encoder came from the same field.
+/// Downcasts an Arrow column; a mismatch is unreachable, as the encoder came from the same field.
 fn cast<A: 'static>(array: &ArrayRef) -> Result<&A> {
     array.as_any().downcast_ref::<A>().ok_or_else(|| {
         TransferredError::destination(format!("column is not a {}", type_name::<A>()))

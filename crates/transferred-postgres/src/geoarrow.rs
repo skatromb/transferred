@@ -121,7 +121,7 @@ impl ExtensionType for Wkb {
     }
 }
 
-/// Read an EPSG code back out, ignoring any coordinate system spelled another way — the ones
+/// Reads an EPSG code back out, ignoring any coordinate system spelled another way — the ones
 /// Postgres could not be told about either.
 fn epsg(object: &Value) -> Option<i32> {
     // The spec omits `crs_type` exactly when the producer cannot vouch for the value. A declared
@@ -144,7 +144,7 @@ mod tests {
 
     use super::*;
 
-    /// Serialize then read back, which is the whole contract a destination relies on.
+    /// Serializes then reads back, which is the whole contract a destination relies on.
     fn round_trip(wkb: &Wkb) -> Wkb {
         Wkb::deserialize_metadata(wkb.serialize_metadata().as_deref()).unwrap()
     }

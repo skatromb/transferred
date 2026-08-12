@@ -93,7 +93,7 @@ impl PyFilesDestination {
     }
 }
 
-/// Extract a `Parquet` codec from the `format=` argument. Parquet is the only
+/// Extracts a `Parquet` codec from the `format=` argument. Parquet is the only
 /// format today, so any `Parquet` instance resolves here.
 fn parquet_arg(format: &Bound<'_, PyAny>) -> PyResult<Parquet> {
     Ok(format.extract::<PyRef<'_, PyParquet>>()?.inner.clone())

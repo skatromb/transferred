@@ -16,7 +16,7 @@ pub struct FilesSource {
 }
 
 impl FilesSource {
-    /// Build a source. No I/O performed.
+    /// Builds a source. No I/O performed.
     #[must_use]
     pub fn new(paths: GlobOrPaths, format: Arc<dyn FormatRead>) -> Self {
         Self { paths, format }
@@ -46,7 +46,7 @@ pub enum GlobOrPaths {
 }
 
 impl GlobOrPaths {
-    /// Resolve to concrete paths. Glob walks the filesystem; empty results error.
+    /// Resolves to concrete paths. Glob walks the filesystem; empty results error.
     fn resolve(self) -> Result<Vec<PathBuf>> {
         let paths = match self {
             GlobOrPaths::Glob(pattern) => expand_glob(&pattern)?,
@@ -68,7 +68,7 @@ impl GlobOrPaths {
     }
 }
 
-/// Expand a glob pattern to matching paths. Empty matches error.
+/// Expands a glob pattern to matching paths. Empty matches error.
 fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>> {
     let paths: Vec<PathBuf> = glob::glob(pattern)
         .map_err(|err| {
@@ -86,7 +86,7 @@ fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-/// Keep files opening lazy so that only opened files has file descriptors.
+/// Keeps file opening lazy, so that only opened files hold file descriptors.
 fn lazy_open_file(path: PathBuf, format: Arc<dyn FormatRead>) -> BatchStream {
     Box::pin(stream::once(open_file_stream(path, format)).try_flatten())
 }

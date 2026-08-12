@@ -12,7 +12,7 @@ use pyo3::prelude::*;
 use pyo3_log::{Caching, Logger};
 use pyo3_stub_gen::define_stub_info_gatherer;
 
-/// Route Rust `tracing` events into Python `logging` under the `transferred` logger.
+/// Routes Rust `tracing` events into Python `logging` under the `transferred` logger.
 fn install_logging(py: Python<'_>) -> PyResult<()> {
     // Not the default `LoggersAndLevels`: caching levels would freeze `setLevel` calls made later.
     let logger = Logger::new(py, Caching::Loggers)?.set_prefix("transferred");

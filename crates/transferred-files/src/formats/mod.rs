@@ -21,7 +21,7 @@ impl<T: AsyncWrite + Send + Unpin> FileWriter for T {}
 /// Decodes a file's bytes into Arrow batches.
 #[async_trait]
 pub trait FormatRead: Send + Sync {
-    /// Read one open file handle into a stream of Arrow batches.
+    /// Reads one open file handle into a stream of Arrow batches.
     async fn read(&self, reader: Box<dyn FileReader>) -> Result<BatchStream>;
 }
 
@@ -31,6 +31,6 @@ pub trait FormatWrite: Send + Sync {
     /// File extension for written parts, no dot (e.g. `"parquet"`).
     fn file_extension(&self) -> &'static str;
 
-    /// Write all batches into one open sink. Returns the row count written.
+    /// Writes all batches into one open sink. Returns the row count written.
     async fn write(&self, writer: Box<dyn FileWriter>, batches: BatchStream) -> Result<u64>;
 }

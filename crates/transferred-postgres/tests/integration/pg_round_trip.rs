@@ -14,7 +14,7 @@ use transferred_postgres::{PostgresDestination, PostgresSource, STAGING_SUFFIX};
 
 use crate::common::{client, exec, read_table, start_seeded_postgres, table_exists};
 
-/// Run a transfer from `source` into `into`, handing back the result so failures stay assertable.
+/// Runs a transfer from `source` into `into`, handing back the result so failures stay assertable.
 async fn try_transfer(source: Box<dyn Source + Send>, into: &str) -> Result<RunReport> {
     Transfer::new(
         source,
@@ -35,7 +35,7 @@ async fn pg_source(table: &str) -> Box<dyn Source + Send> {
     ))
 }
 
-/// Run a full transfer from `table` into `into` and return the run's row count.
+/// Runs a full transfer from `table` into `into` and returns the run's row count.
 async fn transfer_run(table: &str, into: &str) -> u64 {
     try_transfer(pg_source(table).await, into)
         .await
@@ -43,7 +43,7 @@ async fn transfer_run(table: &str, into: &str) -> u64 {
         .rows
 }
 
-/// Replace `table` with one holding a single marker row, so a later assertion proves it untouched.
+/// Replaces `table` with one holding a single marker row, so a later assertion proves it untouched.
 /// `cascade` clears any dependent left by an earlier run of the same test.
 async fn seed_marker_table(table: &str) {
     exec(&format!("drop table if exists {table} cascade")).await;
