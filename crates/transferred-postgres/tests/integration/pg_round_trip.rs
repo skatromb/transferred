@@ -101,6 +101,12 @@ async fn semantic_round_trip() {
     assert_round_trips("it_semantic").await;
 }
 
+/// Values come through as plain `text`: no Arrow tag carries the variant set or case-folding.
+#[tokio::test]
+async fn text_extensions_round_trip() {
+    assert_round_trips("it_text").await;
+}
+
 /// The destination rebuilds a `PostGIS` column from the tag alone: `geography` where the edges are
 /// spherical, and the declared coordinate system where the source column had one.
 #[tokio::test]
@@ -121,7 +127,7 @@ async fn opaque_columns_land_as_bytea() {
     // `Field` equality covers metadata, so this also pins the absence of an `arrow.opaque` tag.
     let expected = Schema::new(vec![
         Field::new("mac", DataType::Binary, true),
-        Field::new("mood", DataType::Binary, true),
+        Field::new("point", DataType::Binary, true),
     ]);
     assert_eq!(*copy.schema(), expected);
 }

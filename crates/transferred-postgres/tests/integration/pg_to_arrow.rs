@@ -167,8 +167,29 @@ async fn semantic() {
     assert_eq!(read_table("it_semantic").await, expected);
 }
 
-/// Decode the hex `PostGIS` prints for a geometry, so expectations read as its own output.
-fn ewkb(hex: &str) -> Vec<u8> {
+/// A type PG sends as text arrives as text, whatever OID it was given.
+#[tokio::test]
+async fn text_extensions() {
+    let expected = expected(
+        vec![
+            nullable("mood", DataType::Utf8),
+            nullable("email", DataType::Utf8),
+        ],
+        vec![
+            Arc::new(StringArray::from(vec![Some("glad"), Some("sad"), None])),
+            Arc::new(StringArray::from(vec![
+                Some("Foo@Example.COM"),
+                Some(""),
+                None,
+            ])),
+        ],
+    );
+
+    assert_eq!(read_table("it_text").await, expected);
+}
+
+/// Decode a hex byte string, so expectations read as the hex PG itself prints.
+fn hex_bytes(hex: &str) -> Vec<u8> {
     hex.as_bytes()
         .chunks(2)
         .map(|byte| {
@@ -189,15 +210,15 @@ fn wkb(name: &str, wkb: Wkb) -> Field {
 async fn geometry() {
     // `geometry_send` output byte for byte. `0x20` in the type word flags a trailing SRID:
     // `e6100000` is 4326 and `be0b0000` is 3006; the plain `POINT`s carry no SRID at all.
-    let point_4326 = ewkb("0101000020e6100000000000000000f03f0000000000000040");
-    let line_3006 = ewkb(
+    let point_4326 = hex_bytes("0101000020e6100000000000000000f03f0000000000000040");
+    let line_3006 = hex_bytes(
         "0102000020be0b0000020000000000000000000000000000000000\
          0000000000000000f03f000000000000f03f",
     );
-    let city_4326 = ewkb("0101000020e6100000d7a3703d0a7f52c039b4c876be5f4440");
-    let point = ewkb("0101000000000000000000f03f0000000000000040");
-    let other_point = ewkb("010100000000000000000008400000000000001040");
-    let point_4269 = ewkb("0101000020ad100000000000000000f03f0000000000000040");
+    let city_4326 = hex_bytes("0101000020e6100000d7a3703d0a7f52c039b4c876be5f4440");
+    let point = hex_bytes("0101000000000000000000f03f0000000000000040");
+    let other_point = hex_bytes("010100000000000000000008400000000000001040");
+    let point_4269 = hex_bytes("0101000020ad100000000000000000f03f0000000000000040");
 
     let expected = expected(
         vec![
@@ -243,12 +264,15 @@ async fn geometry() {
 /// A type with no mapping keeps its wire bytes and says what it was, instead of failing the read.
 #[tokio::test]
 async fn unmapped_types() {
+    let one_two = hex_bytes("00000002000000170000000400000001000000170000000400000002");
+    let three_null = hex_bytes("0000000200000017000000040000000300000017ffffffff");
+
     let expected = expected(
         vec![
             nullable("mac", DataType::Binary)
                 .with_extension_type(Opaque::new("macaddr", "PostgreSQL")),
-            nullable("mood", DataType::Binary)
-                .with_extension_type(Opaque::new("it_mood", "PostgreSQL")),
+            nullable("point", DataType::Binary)
+                .with_extension_type(Opaque::new("it_point", "PostgreSQL")),
         ],
         vec![
             Arc::new(BinaryArray::from(vec![
@@ -256,9 +280,11 @@ async fn unmapped_types() {
                 Some(&[0xff; 6][..]),
                 None,
             ])),
+            // PG's record framing: field count, then each field's type OID, byte length and bytes.
+            // `int4` is OID 23, and a null field is a length of -1 followed by nothing.
             Arc::new(BinaryArray::from(vec![
-                Some(&b"glad"[..]),
-                Some(&b"sad"[..]),
+                Some(one_two.as_slice()),
+                Some(three_null.as_slice()),
                 None,
             ])),
         ],

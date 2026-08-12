@@ -41,6 +41,17 @@ insert into it_semantic values
     ('00000000-0000-0000-0000-000000000000', '[]', '[]'),
     (null, null, null);
 
+create extension if not exists citext;
+
+-- Two types whose wire form already is their text. `citext` has no fixed OID, so goes by name.
+create type it_mood as enum ('glad', 'sad');
+create table it_text (mood it_mood, email citext);
+
+insert into it_text values
+    ('glad', 'Foo@Example.COM'),
+    ('sad', ''),
+    (null, null);
+
 create extension if not exists postgis;
 
 -- `geom` is bare on purpose: such a column accepts mixed SRIDs, so its coordinate system lives in
@@ -68,11 +79,11 @@ insert into it_geo values
 
 -- Two types the mapping has no rule for: one built in, one user-defined, so the type name in the
 -- `arrow.opaque` metadata has to come from the catalogue rather than a fixed list.
-create type it_mood as enum ('glad', 'sad');
-create table it_opaque (mac macaddr, mood it_mood);
+create type it_point as (x int4, y int4);
+create table it_opaque (mac macaddr, point it_point);
 
--- macaddr goes on the wire as its six bytes; an enum label as its UTF-8 text.
+-- macaddr goes on the wire as its six bytes; a composite as PG's record framing.
 insert into it_opaque values
-    ('08:00:2b:01:02:03', 'glad'),
-    ('ff:ff:ff:ff:ff:ff', 'sad'),
+    ('08:00:2b:01:02:03', '(1,2)'),
+    ('ff:ff:ff:ff:ff:ff', '(3,)'),
     (null, null);

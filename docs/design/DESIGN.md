@@ -368,7 +368,7 @@ Arrow covers most primitives directly. The tricky types — geometry, JSON, UUID
 
 Parquet interprets none of it — the schema goes straight to the writer, so every extension and every CRS spelling survives untouched. Postgres is the only destination that reads the tags, which is why the registry waits for a second reader rather than being built for one.
 
-`DataType::Binary` carries three meanings — plain bytes, `arrow.opaque`, `geoarrow.wkb` — separated only by the extension name. A destination that forgets to check it writes a wrong column type silently, so each destination resolves all three in one place (`arrow_to_pg::arrow_pg_column`), never split between the encoder and the DDL.
+`DataType::Binary` carries three meanings — plain bytes, `arrow.opaque`, `geoarrow.wkb` — separated only by the extension name. A destination that forgets to check it writes a wrong column type silently, so each destination resolves all three in one place (`arrow_to_pg::ToPgColumn`), never split between the encoder and the DDL.
 
 **Lookup order for any source-native type:**
 
@@ -436,6 +436,7 @@ Never silently coerce to `TEXT` or `BYTES` without a summary entry — that is t
 | `interval`                    | `Interval(MonthDayNano)`             | Native, exact match.                                      |
 | `uuid`                        | `FixedSizeBinary(16)` + `arrow.uuid` | Canonical extension.                                      |
 | `json`/`jsonb`                | `Utf8` + `arrow.json`                | Canonical extension.                                      |
+| `enum`, `citext`              | `Utf8`                               | Native. The wire form already is the text; the variant set and case-folding are not carried. |
 | `geometry`/`geography` (PostGIS) | `Binary` + `geoarrow.wkb` + CRS   | Community extension. EWKB passed through; column CRS from typmod. |
 | `tsrange`/`int4range`/...     | `Struct` + `transferred.pg_range`    | Private extension. Default destination fallback = expand. |
 | `hstore`, `ltree`, composites | `arrow.opaque` initially             | Later promotion to structured forms.                      |
