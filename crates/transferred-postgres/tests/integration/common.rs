@@ -36,7 +36,7 @@ fn reap() {
 const IMAGE: &str = "imresamu/postgis";
 const IMAGE_TAG: &str = "18-3.6";
 
-/// Boot `request` on this suite's image, register it for reaping, and return it with its DSN.
+/// Boots `request` on this suite's image, registers it for reaping, and returns it with its DSN.
 pub async fn start_pg_container(
     request: impl Into<ContainerRequest<Postgres>>,
 ) -> (ContainerAsync<Postgres>, String) {
@@ -64,7 +64,7 @@ pub async fn start_pg_container(
 /// Postgres container, started once per test binary and seeded on first boot.
 static POSTGRES: OnceCell<(ContainerAsync<Postgres>, String)> = OnceCell::const_new();
 
-/// Start this binary's seeded Postgres, once, and hand back its connection string.
+/// Starts this binary's seeded Postgres, once, and hands back its connection string.
 pub async fn start_seeded_postgres() -> String {
     let (_container, dsn) = POSTGRES
         .get_or_init(|| {
@@ -78,7 +78,7 @@ pub async fn start_seeded_postgres() -> String {
     dsn.clone()
 }
 
-/// Connect to this binary's Postgres container, driving the connection in the background.
+/// Connects to this binary's Postgres container, driving the connection in the background.
 pub async fn client() -> tokio_postgres::Client {
     let dsn = start_seeded_postgres().await;
 
@@ -89,7 +89,7 @@ pub async fn client() -> tokio_postgres::Client {
     client
 }
 
-/// Run one statement against this binary's container.
+/// Runs one statement against this binary's container.
 pub async fn exec(sql: &str) {
     client().await.batch_execute(sql).await.expect("exec");
 }
@@ -105,7 +105,7 @@ pub async fn table_exists(table: &str) -> bool {
     name.is_some()
 }
 
-/// Read a whole table as one `RecordBatch`.
+/// Reads a whole table as one `RecordBatch`.
 pub async fn read_table(table: &str) -> RecordBatch {
     let dsn = start_seeded_postgres().await;
 

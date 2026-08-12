@@ -13,7 +13,7 @@ use url::Url;
 
 type AnyError = Box<dyn std::error::Error + Send + Sync>;
 
-/// Connect to Postgres, reading `sslmode` out of the DSN the way libpq does.
+/// Connects to Postgres, reading `sslmode` out of the DSN the way libpq does.
 pub(crate) async fn connect(dsn: &str) -> Result<Client, AnyError> {
     let (dsn, verify) = split_verify_full(dsn);
     let config: Config = dsn.parse()?;
@@ -28,7 +28,7 @@ pub(crate) async fn connect(dsn: &str) -> Result<Client, AnyError> {
     Ok(client)
 }
 
-/// Rewrite libpq's `sslmode=verify-full` to the `require` `Config` understands, reporting the intent.
+/// Rewrites `sslmode=verify-full` to the `require` `Config` understands, and reports the intent.
 fn split_verify_full(dsn: &str) -> (String, bool) {
     let Ok(mut url) = Url::parse(dsn) else {
         return (dsn.to_owned(), false);

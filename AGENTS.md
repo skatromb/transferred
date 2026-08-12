@@ -18,7 +18,8 @@ Open-source library read by humans. Optimise for the next reader, make it beauti
 
 ## Rust docs
 
-- `///` one-liner describing the *what*. Skip it where the name already says everything (e.g. `Into<String>` constructors).
+- `///` one-liner describing the *what* and *why*. Skip it where the name already says everything (e.g. `Into<String>` constructors).
+- A function's doc opens with a verb in third person, as std does.
 - **Exception — Python-visible PyO3 classes/methods in `crates/transferred-py/` (pyclass names not prefixed with `_`):** full docstring with one-line summary, `Args:` block, `Example:` block with runnable `>>> from transferred import …` snippet. Internal underscore-prefixed pyclasses keep the one-liner rule.
 
 ## Python docstrings (public API)

@@ -19,7 +19,7 @@ const SESSION_SSL_VIEW: &str = "ssl_in_use";
 
 static POSTGRES: OnceCell<(ContainerAsync<Postgres>, String)> = OnceCell::const_new();
 
-/// Start this file's TLS-enabled Postgres, once, and hand back its connection string at `sslmode`.
+/// Starts this file's TLS-enabled Postgres once and hands back its connection string at `sslmode`.
 async fn start_tls_postgres(sslmode: &str) -> String {
     let (_container, base) = POSTGRES
         .get_or_init(|| {

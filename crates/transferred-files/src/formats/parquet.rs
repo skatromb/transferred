@@ -41,7 +41,7 @@ pub struct Parquet {
 }
 
 impl Parquet {
-    /// Build a Parquet codec.
+    /// Builds a Parquet codec.
     #[must_use]
     pub fn new(compression: Compression) -> Self {
         Self { compression }

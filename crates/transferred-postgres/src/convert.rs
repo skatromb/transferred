@@ -35,7 +35,7 @@ pub const CITEXT: &str = "citext";
 /// PG counts sub-second time in microseconds; Arrow intervals count nanoseconds.
 const NANOS_PER_MICRO: i64 = 1_000;
 
-/// Decode a `numeric` typmod, defaulting bare `numeric` `-1` to (38,9).
+/// Decodes a `numeric` typmod, defaulting bare `numeric` `-1` to (38,9).
 pub fn numeric_precision_scale(typmod: i32) -> Result<(u8, i8)> {
     let (precision, scale) = match typmod {
         BARE_NUMERIC_TYPMOD => BARE_NUMERIC,
@@ -60,7 +60,7 @@ pub fn numeric_precision_scale(typmod: i32) -> Result<(u8, i8)> {
     }
 }
 
-/// Decode the SRID a `geometry`/`geography` typmod pins its column to, if it pins one at all.
+/// Decodes the SRID a `geometry`/`geography` typmod pins its column to, if it pins one at all.
 pub fn geo_srid(typmod: i32) -> Option<i32> {
     // `TYPMOD_GET_SRID`: 20 SRID bits sitting above the 8 that hold the geometry subtype.
     // https://github.com/postgis/postgis/blob/3.6.0/postgis/gserialized_typmod.c
@@ -69,7 +69,7 @@ pub fn geo_srid(typmod: i32) -> Option<i32> {
     (typmod != UNCONSTRAINED_GEO_TYPMOD && srid != UNKNOWN_SRID).then_some(srid)
 }
 
-/// Restate a decimal as an integer count of `10^-scale` units, as Arrow `Decimal128` stores it.
+/// Restates a decimal as an integer count of `10^-scale` units, as Arrow `Decimal128` stores it.
 pub fn decimal_units(mut decimal: Decimal, scale: i8) -> Result<i128> {
     let scale = u32::try_from(scale).map_err(|_| {
         TransferredError::source("`numeric` with negative scale is not supported in 0.1")
@@ -103,7 +103,7 @@ pub fn month_day_nano(interval: PgInterval) -> Result<IntervalMonthDayNano> {
     ))
 }
 
-/// Restate an Arrow count of `10^-scale` units as a decimal, as PG `numeric` carries it.
+/// Restates an Arrow count of `10^-scale` units as a decimal, as PG `numeric` carries it.
 pub fn pg_numeric(units: i128, scale: i8) -> Result<Decimal> {
     let scale = u32::try_from(scale).map_err(|_| {
         TransferredError::destination("`Decimal128` with negative scale is not supported in 0.1")
@@ -128,26 +128,26 @@ pub fn pg_interval(interval: IntervalMonthDayNano) -> Result<PgInterval> {
     ))
 }
 
-/// Restate a count of days from the epoch as a date, as PG stores it.
+/// Restates a count of days from the epoch as a date, as PG stores it.
 pub fn pg_date(days: i32) -> Result<NaiveDate> {
     Date32Type::to_naive_date_opt(days).ok_or_else(|| {
         TransferredError::destination(format!("`date` {days} days from epoch is out of range"))
     })
 }
 
-/// Restate a count of microseconds from the epoch as a UTC instant, as PG stores it.
+/// Restates a count of microseconds from the epoch as a UTC instant, as PG stores it.
 pub fn pg_timestamp(micros: i64) -> Result<DateTime<Utc>> {
     DateTime::from_timestamp_micros(micros).ok_or_else(|| {
         TransferredError::destination(format!("timestamp {micros}µs from epoch is out of range"))
     })
 }
 
-/// Read 16 Arrow bytes as a uuid.
+/// Reads 16 Arrow bytes as a uuid.
 pub fn pg_uuid(bytes: &[u8]) -> Result<uuid::Uuid> {
     uuid::Uuid::from_slice(bytes).map_err(TransferredError::destination)
 }
 
-/// Borrow JSON text as a pre-serialized document, rejecting anything Postgres would reject anyway.
+/// Borrows JSON text as a pre-serialized document, rejecting anything Postgres would reject anyway.
 pub fn pg_json(text: &str) -> Result<PgJson<&RawValue>> {
     serde_json::from_str(text)
         .map(PgJson)

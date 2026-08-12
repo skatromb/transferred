@@ -15,7 +15,7 @@ use transferred_postgres::Wkb;
 
 use crate::common::read_table;
 
-/// Assemble the expected batch from nullable fields and their columns.
+/// Assembles the expected batch from nullable fields and their columns.
 fn expected(fields: Vec<Field>, columns: Vec<ArrayRef>) -> RecordBatch {
     RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("build expected batch")
 }
@@ -188,7 +188,7 @@ async fn text_extensions() {
     assert_eq!(read_table("it_text").await, expected);
 }
 
-/// Decode a hex byte string, so expectations read as the hex PG itself prints.
+/// Decodes a hex byte string, so expectations read as the hex PG itself prints.
 fn hex_bytes(hex: &str) -> Vec<u8> {
     hex.as_bytes()
         .chunks(2)
@@ -199,7 +199,7 @@ fn hex_bytes(hex: &str) -> Vec<u8> {
         .collect()
 }
 
-/// Nullable `geoarrow.wkb` field, as the mapping tags a `PostGIS` column.
+/// Builds a nullable `geoarrow.wkb` field, as the mapping tags a `PostGIS` column.
 fn wkb(name: &str, wkb: Wkb) -> Field {
     nullable(name, DataType::Binary).with_extension_type(wkb)
 }

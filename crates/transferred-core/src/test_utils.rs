@@ -16,7 +16,7 @@ pub struct TestSource {
 }
 
 impl TestSource {
-    /// Build from pre-built batches.
+    /// Builds from pre-built batches.
     #[must_use]
     pub fn new(batches: Vec<RecordBatch>) -> Self {
         Self { batches }
@@ -38,7 +38,7 @@ pub struct TestDestination {
 }
 
 impl TestDestination {
-    /// Build an empty collector.
+    /// Builds an empty collector.
     #[must_use]
     pub fn new() -> Self {
         Self {

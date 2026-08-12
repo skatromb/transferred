@@ -42,7 +42,7 @@ pub struct PgToArrow {
 }
 
 impl PgToArrow {
-    /// Derive schema and builders from a prepared statement's columns. All fields nullable.
+    /// Derives schema and builders from a prepared statement's columns. All fields nullable.
     pub fn derive(columns: &[PgColumn]) -> Result<Self> {
         let (fields, pg_to_arrows) = columns
             .iter()
@@ -55,7 +55,7 @@ impl PgToArrow {
         })
     }
 
-    /// Build a `RecordBatch` from a chunk of PG binary rows.
+    /// Builds a `RecordBatch` from a chunk of PG binary rows.
     pub fn batch(&self, chunk: &[BinaryCopyOutRow]) -> Result<RecordBatch> {
         let arrays = self
             .pg_to_arrows
@@ -304,7 +304,7 @@ impl<'a> FromSql<'a> for RawText<'a> {
     }
 }
 
-/// Collect column `i` from every row, `None` for SQL NULL. The one place row bytes are decoded, so
+/// Collects column `i` from every row, `None` for SQL NULL. The one place row bytes are decoded, so
 /// `try_get` here is what keeps a malformed value an error rather than a panic.
 fn col<'a, T>(rows: &'a [BinaryCopyOutRow], i: usize) -> Result<Vec<Option<T>>>
 where

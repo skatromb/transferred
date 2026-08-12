@@ -17,7 +17,7 @@ pub struct PostgresSource {
 }
 
 impl PostgresSource {
-    /// Construct a `PostgresSource`
+    /// Constructs a `PostgresSource`
     #[must_use]
     pub fn new(dsn: String, table: String) -> Self {
         Self { dsn, table }

@@ -32,7 +32,7 @@ pub struct PostgresDestination {
 }
 
 impl PostgresDestination {
-    /// Construct a `PostgresDestination`. No I/O performed.
+    /// Constructs a `PostgresDestination`. No I/O performed.
     #[must_use]
     pub fn new(dsn: String, table: String) -> Self {
         Self { dsn, table }
@@ -71,7 +71,7 @@ impl Destination for PostgresDestination {
     }
 }
 
-/// Create the staging table from the first batch's schema and COPY every batch into it.
+/// Creates the staging table from the first batch's schema, then COPYs every batch into it.
 async fn load_staging(
     client: &Client,
     target: &Target,
@@ -113,7 +113,7 @@ async fn load_staging(
     writer.finish().await.map_err(TransferredError::destination)
 }
 
-/// Write one COPY row per Arrow row, reading the encoded columns in lockstep.
+/// Writes one COPY row per Arrow row, reading the encoded columns in lockstep.
 async fn write_rows(
     mut writer: Pin<&mut BinaryCopyInWriter>,
     columns: &[Vec<PgValue<'_>>],
@@ -162,7 +162,7 @@ fn shared_row_count(columns: &[Vec<PgValue<'_>>]) -> Result<usize> {
     Ok(num_rows)
 }
 
-/// Remove a leftover staging table, logging failures rather than masking the error that got us here.
+/// Removes a leftover staging table, logging failures rather than masking the error that got us here.
 async fn drop_staging(client: &Client, target: &Target) {
     let sql = format!("drop table if exists {}", target.staging);
     if let Err(error) = client.batch_execute(&sql).await {
@@ -181,7 +181,7 @@ struct Target {
 }
 
 impl Target {
-    /// Split `table` into identifier parts using PG's own parser, then requote both names.
+    /// Splits `table` into identifier parts using PG's own parser, then requotes both names.
     async fn resolve(client: &Client, table: &str) -> Result<Self> {
         let parts: Vec<String> = client
             .query_one("select parse_ident($1)", &[&table])
@@ -208,7 +208,7 @@ impl Target {
         })
     }
 
-    /// Replace the target with the staging table in one transaction, so the swap is all-or-nothing.
+    /// Replaces the target with the staging table in one transaction, so the swap is all-or-nothing.
     async fn swap(&self, client: &mut Client) -> Result<()> {
         let transaction = client
             .transaction()
@@ -233,7 +233,7 @@ impl Target {
     }
 }
 
-/// Join identifier parts into one quoted, dotted table reference.
+/// Joins identifier parts into one quoted, dotted table reference.
 fn qualify(schema: &[String], name: &str) -> String {
     schema
         .iter()

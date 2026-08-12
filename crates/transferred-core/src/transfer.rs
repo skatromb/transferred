@@ -10,7 +10,7 @@ pub type BatchStream = BoxStream<'static, Result<RecordBatch>>;
 /// A data source. Yields one or more partitions of Arrow batches.
 #[async_trait]
 pub trait Source: Send {
-    /// Consume the source and produce its partitions. Single-shot.
+    /// Consumes the source and produces its partitions. Single-shot.
     /// Non-partitionable sources return a single-element `Vec`.
     async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>>;
 }
@@ -18,7 +18,7 @@ pub trait Source: Send {
 /// A destination. Writes batch partitions atomically and reports stats.
 #[async_trait]
 pub trait Destination: Send {
-    /// Consume the destination and write the partitions. Single-shot.
+    /// Consumes the destination and writes the partitions. Single-shot.
     /// Schema is taken from the first batch each partition emits.
     async fn write_partitions(self: Box<Self>, partitions: Vec<BatchStream>) -> Result<RunReport>;
 }
@@ -30,7 +30,7 @@ pub struct Transfer {
 }
 
 impl Transfer {
-    /// Build a transfer.
+    /// Builds a transfer.
     #[must_use]
     pub fn new(source: Box<dyn Source>, destination: Box<dyn Destination>) -> Self {
         Self {
@@ -39,7 +39,7 @@ impl Transfer {
         }
     }
 
-    /// Fetch partitions, hand them to the destination.
+    /// Fetches partitions and hands them to the destination.
     ///
     /// # Errors
     /// Propagates any error from partition setup or write.
