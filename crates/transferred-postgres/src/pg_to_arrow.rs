@@ -18,7 +18,7 @@ use tokio_postgres::Column as PgColumn;
 use tokio_postgres::binary_copy::BinaryCopyOutRow;
 use tokio_postgres::types::{FromSql, Json as PgJson, Type as PgType};
 use tracing::warn;
-use transferred_core::Result;
+use transferred_core::{Result, TransferredError};
 
 use crate::convert::{
     BARE_NUMERIC_TYPMOD, GEOGRAPHY, GEOMETRY, decimal_units, geo_srid, month_day_nano,
@@ -75,40 +75,40 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
     Ok(match *column.type_() {
         PgType::BOOL => (
             Field::new(name, ArrowType::Boolean, true),
-            Box::new(|rows, i| Ok(Arc::new(BooleanArray::from(col::<bool>(rows, i))))),
+            Box::new(|rows, i| Ok(Arc::new(BooleanArray::from(col::<bool>(rows, i)?)))),
         ),
         PgType::INT2 => (
             Field::new(name, ArrowType::Int16, true),
-            Box::new(|rows, i| Ok(Arc::new(Int16Array::from(col::<i16>(rows, i))))),
+            Box::new(|rows, i| Ok(Arc::new(Int16Array::from(col::<i16>(rows, i)?)))),
         ),
         PgType::INT4 => (
             Field::new(name, ArrowType::Int32, true),
-            Box::new(|rows, i| Ok(Arc::new(Int32Array::from(col::<i32>(rows, i))))),
+            Box::new(|rows, i| Ok(Arc::new(Int32Array::from(col::<i32>(rows, i)?)))),
         ),
         PgType::INT8 => (
             Field::new(name, ArrowType::Int64, true),
-            Box::new(|rows, i| Ok(Arc::new(Int64Array::from(col::<i64>(rows, i))))),
+            Box::new(|rows, i| Ok(Arc::new(Int64Array::from(col::<i64>(rows, i)?)))),
         ),
         PgType::FLOAT4 => (
             Field::new(name, ArrowType::Float32, true),
-            Box::new(|rows, i| Ok(Arc::new(Float32Array::from(col::<f32>(rows, i))))),
+            Box::new(|rows, i| Ok(Arc::new(Float32Array::from(col::<f32>(rows, i)?)))),
         ),
         PgType::FLOAT8 => (
             Field::new(name, ArrowType::Float64, true),
-            Box::new(|rows, i| Ok(Arc::new(Float64Array::from(col::<f64>(rows, i))))),
+            Box::new(|rows, i| Ok(Arc::new(Float64Array::from(col::<f64>(rows, i)?)))),
         ),
         PgType::TEXT | PgType::VARCHAR | PgType::BPCHAR | PgType::NAME => (
             Field::new(name, ArrowType::Utf8, true),
-            Box::new(|rows, i| Ok(Arc::new(StringArray::from(col::<&str>(rows, i))))),
+            Box::new(|rows, i| Ok(Arc::new(StringArray::from(col::<&str>(rows, i)?)))),
         ),
         PgType::BYTEA => (
             Field::new(name, ArrowType::Binary, true),
-            Box::new(|rows, i| Ok(Arc::new(BinaryArray::from(col::<&[u8]>(rows, i))))),
+            Box::new(|rows, i| Ok(Arc::new(BinaryArray::from(col::<&[u8]>(rows, i)?)))),
         ),
         PgType::DATE => (
             Field::new(name, ArrowType::Date32, true),
             Box::new(|rows, i| {
-                let days = col::<NaiveDate>(rows, i)
+                let days = col::<NaiveDate>(rows, i)?
                     .into_iter()
                     .map(|date| date.map(Date32Type::from_naive_date));
                 Ok(Arc::new(days.collect::<Date32Array>()))
@@ -121,7 +121,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
                 true,
             ),
             Box::new(|rows, i| {
-                let micros = col::<NaiveDateTime>(rows, i)
+                let micros = col::<NaiveDateTime>(rows, i)?
                     .into_iter()
                     .map(|ts| ts.map(|ts| ts.and_utc().timestamp_micros()));
                 Ok(Arc::new(micros.collect::<TimestampMicrosecondArray>()))
@@ -134,7 +134,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
                 true,
             ),
             Box::new(|rows, i| {
-                let micros = col::<DateTime<Utc>>(rows, i)
+                let micros = col::<DateTime<Utc>>(rows, i)?
                     .into_iter()
                     .map(|ts| ts.map(|ts| ts.timestamp_micros()));
                 Ok(Arc::new(
@@ -147,7 +147,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
         PgType::INTERVAL => (
             Field::new(name, ArrowType::Interval(IntervalUnit::MonthDayNano), true),
             Box::new(|rows, i| {
-                let intervals = col::<PgInterval>(rows, i)
+                let intervals = col::<PgInterval>(rows, i)?
                     .into_iter()
                     .map(|interval| interval.map(month_day_nano).transpose())
                     .collect::<Result<Vec<_>>>()?;
@@ -167,7 +167,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
             (
                 Field::new(name, ArrowType::Decimal128(precision, scale), true),
                 Box::new(move |rows, i| {
-                    let units = col::<Decimal>(rows, i)
+                    let units = col::<Decimal>(rows, i)?
                         .into_iter()
                         .map(|decimal| decimal.map(|decimal| decimal_units(decimal, scale)))
                         .map(Option::transpose)
@@ -182,7 +182,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
         PgType::UUID => (
             extended_field(name, ArrowType::FixedSizeBinary(16), Uuid)?,
             Box::new(|rows, i| {
-                let bytes = col::<uuid::Uuid>(rows, i)
+                let bytes = col::<uuid::Uuid>(rows, i)?
                     .into_iter()
                     .map(|uuid| uuid.map(uuid::Uuid::into_bytes));
                 Ok(Arc::new(
@@ -193,7 +193,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
         PgType::JSON | PgType::JSONB => (
             extended_field(name, ArrowType::Utf8, Json::default())?,
             Box::new(|rows, i| {
-                let text = col::<PgJson<&RawValue>>(rows, i)
+                let text = col::<PgJson<&RawValue>>(rows, i)?
                     .into_iter()
                     .map(|json| json.map(|json| json.0.get()));
                 Ok(Arc::new(text.collect::<StringArray>()))
@@ -207,7 +207,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
                 ArrowType::Binary,
                 Wkb::planar(geo_srid(column.type_modifier())),
             )?,
-            Box::new(|rows, i| Ok(wire_bytes(rows, i))),
+            Box::new(wire_bytes),
         ),
         // The same bytes, but `geography` bends its edges around the globe.
         ref geo if geo.name() == GEOGRAPHY => (
@@ -216,7 +216,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
                 ArrowType::Binary,
                 Wkb::spherical(geo_srid(column.type_modifier())),
             )?,
-            Box::new(|rows, i| Ok(wire_bytes(rows, i))),
+            Box::new(wire_bytes),
         ),
         // No mapping: keep the column transferable as self-describing bytes.
         ref other => {
@@ -230,19 +230,19 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
             );
             (
                 extended_field(name, ArrowType::Binary, Opaque::new(other.name(), VENDOR))?,
-                Box::new(|rows, i| Ok(wire_bytes(rows, i))),
+                Box::new(wire_bytes),
             )
         }
     })
 }
 
 /// Column `i` exactly as PG sent it, for the types we pass through rather than decode.
-fn wire_bytes(rows: &[BinaryCopyOutRow], i: usize) -> ArrayRef {
-    let bytes = col::<RawBytes>(rows, i)
+fn wire_bytes(rows: &[BinaryCopyOutRow], i: usize) -> Result<ArrayRef> {
+    let bytes = col::<RawBytes>(rows, i)?
         .into_iter()
         .map(|raw| raw.map(|raw| raw.bytes));
 
-    Arc::new(bytes.collect::<BinaryArray>())
+    Ok(Arc::new(bytes.collect::<BinaryArray>()))
 }
 
 /// Nullable Arrow field carrying a canonical Arrow extension type in its metadata.
@@ -270,10 +270,13 @@ impl<'a> FromSql<'a> for RawBytes<'a> {
     }
 }
 
-/// Collect column `i` from every row, `None` for SQL NULL.
-fn col<'a, T>(rows: &'a [BinaryCopyOutRow], i: usize) -> Vec<Option<T>>
+/// Collect column `i` from every row, `None` for SQL NULL. The one place row bytes are decoded, so
+/// `try_get` here is what keeps a malformed value an error rather than a panic.
+fn col<'a, T>(rows: &'a [BinaryCopyOutRow], i: usize) -> Result<Vec<Option<T>>>
 where
     Option<T>: FromSql<'a>,
 {
-    rows.iter().map(|row| row.get(i)).collect()
+    rows.iter()
+        .map(|row| row.try_get(i).map_err(TransferredError::source))
+        .collect()
 }
