@@ -7,7 +7,7 @@
 // PLAN.md records what the swap costs and why the release buys no capability of its own.
 
 use arrow_schema::extension::ExtensionType;
-use arrow_schema::{ArrowError, DataType};
+use arrow_schema::{ArrowError, DataType as ArrowType};
 use serde_json::{Map, Value};
 
 /// How every `PostGIS` SRID this maps is named. Its `spatial_ref_sys` is a plain table, so a
@@ -101,10 +101,10 @@ impl ExtensionType for Wkb {
         })
     }
 
-    fn supports_data_type(&self, data_type: &DataType) -> Result<(), ArrowError> {
+    fn supports_data_type(&self, data_type: &ArrowType) -> Result<(), ArrowError> {
         matches!(
             data_type,
-            DataType::Binary | DataType::LargeBinary | DataType::BinaryView
+            ArrowType::Binary | ArrowType::LargeBinary | ArrowType::BinaryView
         )
         .then_some(())
         .ok_or_else(|| {
@@ -115,7 +115,7 @@ impl ExtensionType for Wkb {
         })
     }
 
-    fn try_new(data_type: &DataType, metadata: Self) -> Result<Self, ArrowError> {
+    fn try_new(data_type: &ArrowType, metadata: Self) -> Result<Self, ArrowError> {
         metadata.supports_data_type(data_type)?;
         Ok(metadata)
     }
@@ -211,12 +211,12 @@ mod tests {
     fn rejects_a_storage_type_that_cannot_hold_bytes() {
         assert!(
             Wkb::planar(None)
-                .supports_data_type(&DataType::Binary)
+                .supports_data_type(&ArrowType::Binary)
                 .is_ok()
         );
         assert!(
             Wkb::planar(None)
-                .supports_data_type(&DataType::Utf8)
+                .supports_data_type(&ArrowType::Utf8)
                 .is_err()
         );
     }
