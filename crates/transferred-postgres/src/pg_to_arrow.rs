@@ -16,12 +16,12 @@ use rust_decimal::Decimal;
 use serde_json::value::RawValue;
 use tokio_postgres::Column as PgColumn;
 use tokio_postgres::binary_copy::BinaryCopyOutRow;
-use tokio_postgres::types::{FromSql, Json as PgJson, Type as PgType};
+use tokio_postgres::types::{FromSql, Json as PgJson, Kind, Type as PgType};
 use tracing::warn;
 use transferred_core::{Result, TransferredError};
 
 use crate::convert::{
-    BARE_NUMERIC_TYPMOD, GEOGRAPHY, GEOMETRY, decimal_units, geo_srid, month_day_nano,
+    BARE_NUMERIC_TYPMOD, CITEXT, GEOGRAPHY, GEOMETRY, decimal_units, geo_srid, month_day_nano,
     numeric_precision_scale,
 };
 use crate::geoarrow::Wkb;
@@ -199,6 +199,16 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
                 Ok(Arc::new(text.collect::<StringArray>()))
             }),
         ),
+        // Both go on the wire as their own UTF-8 text. `citext` has no fixed OID, so goes by name.
+        ref text if matches!(text.kind(), Kind::Enum(_)) || text.name() == CITEXT => (
+            Field::new(name, ArrowType::Utf8, true),
+            Box::new(|rows, i| {
+                let strings = col::<RawText>(rows, i)?
+                    .into_iter()
+                    .map(|raw| raw.map(|raw| raw.text));
+                Ok(Arc::new(strings.collect::<StringArray>()))
+            }),
+        ),
         // `PostGIS` carries no fixed OID, so its types answer to a name. Their wire form is EWKB,
         // which `geoarrow.wkb` accepts as-is, SRID per value and all.
         ref geo if geo.name() == GEOMETRY => (
@@ -263,6 +273,26 @@ impl<'a> FromSql<'a> for RawBytes<'a> {
         bytes: &'a [u8],
     ) -> std::result::Result<Self, Box<dyn std::error::Error + Sync + Send>> {
         Ok(Self { bytes })
+    }
+
+    fn accepts(_: &PgType) -> bool {
+        true
+    }
+}
+
+/// A column's text exactly as PG sent it; `&str` declines the enum OIDs whose wire form it is.
+struct RawText<'a> {
+    text: &'a str,
+}
+
+impl<'a> FromSql<'a> for RawText<'a> {
+    fn from_sql(
+        _: &PgType,
+        bytes: &'a [u8],
+    ) -> std::result::Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        Ok(Self {
+            text: str::from_utf8(bytes)?,
+        })
     }
 
     fn accepts(_: &PgType) -> bool {

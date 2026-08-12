@@ -29,6 +29,9 @@ const UNKNOWN_SRID: i32 = 0;
 pub const GEOMETRY: &str = "geometry";
 pub const GEOGRAPHY: &str = "geography";
 
+/// Case-insensitive text, another extension type answering to a name rather than a fixed OID.
+pub const CITEXT: &str = "citext";
+
 /// PG counts sub-second time in microseconds; Arrow intervals count nanoseconds.
 const NANOS_PER_MICRO: i64 = 1_000;
 
