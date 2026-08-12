@@ -9,7 +9,7 @@ use arrow::array::{
 };
 use arrow::datatypes::Date32Type;
 use arrow_schema::extension::{ExtensionType, Json, Opaque, Uuid};
-use arrow_schema::{DataType as ArrowType, Field, IntervalUnit, Schema, TimeUnit};
+use arrow_schema::{DataType as ArrowType, Field as ArrowField, IntervalUnit, Schema, TimeUnit};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use pg_interval::Interval as PgInterval;
 use rust_decimal::Decimal;
@@ -70,43 +70,43 @@ impl PgToArrow {
 
 /// Returns Arrow field and array builder for a given PG type.
 #[allow(clippy::too_many_lines)]
-fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)> {
+fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(ArrowField, PgToArrowFn)> {
     let name = column.name();
     Ok(match *column.type_() {
         PgType::BOOL => (
-            Field::new(name, ArrowType::Boolean, true),
+            ArrowField::new(name, ArrowType::Boolean, true),
             Box::new(|rows, i| Ok(Arc::new(BooleanArray::from(col::<bool>(rows, i)?)))),
         ),
         PgType::INT2 => (
-            Field::new(name, ArrowType::Int16, true),
+            ArrowField::new(name, ArrowType::Int16, true),
             Box::new(|rows, i| Ok(Arc::new(Int16Array::from(col::<i16>(rows, i)?)))),
         ),
         PgType::INT4 => (
-            Field::new(name, ArrowType::Int32, true),
+            ArrowField::new(name, ArrowType::Int32, true),
             Box::new(|rows, i| Ok(Arc::new(Int32Array::from(col::<i32>(rows, i)?)))),
         ),
         PgType::INT8 => (
-            Field::new(name, ArrowType::Int64, true),
+            ArrowField::new(name, ArrowType::Int64, true),
             Box::new(|rows, i| Ok(Arc::new(Int64Array::from(col::<i64>(rows, i)?)))),
         ),
         PgType::FLOAT4 => (
-            Field::new(name, ArrowType::Float32, true),
+            ArrowField::new(name, ArrowType::Float32, true),
             Box::new(|rows, i| Ok(Arc::new(Float32Array::from(col::<f32>(rows, i)?)))),
         ),
         PgType::FLOAT8 => (
-            Field::new(name, ArrowType::Float64, true),
+            ArrowField::new(name, ArrowType::Float64, true),
             Box::new(|rows, i| Ok(Arc::new(Float64Array::from(col::<f64>(rows, i)?)))),
         ),
         PgType::TEXT | PgType::VARCHAR | PgType::BPCHAR | PgType::NAME => (
-            Field::new(name, ArrowType::Utf8, true),
+            ArrowField::new(name, ArrowType::Utf8, true),
             Box::new(|rows, i| Ok(Arc::new(StringArray::from(col::<&str>(rows, i)?)))),
         ),
         PgType::BYTEA => (
-            Field::new(name, ArrowType::Binary, true),
+            ArrowField::new(name, ArrowType::Binary, true),
             Box::new(|rows, i| Ok(Arc::new(BinaryArray::from(col::<&[u8]>(rows, i)?)))),
         ),
         PgType::DATE => (
-            Field::new(name, ArrowType::Date32, true),
+            ArrowField::new(name, ArrowType::Date32, true),
             Box::new(|rows, i| {
                 let days = col::<NaiveDate>(rows, i)?
                     .into_iter()
@@ -115,7 +115,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
             }),
         ),
         PgType::TIMESTAMP => (
-            Field::new(
+            ArrowField::new(
                 name,
                 ArrowType::Timestamp(TimeUnit::Microsecond, None),
                 true,
@@ -128,7 +128,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
             }),
         ),
         PgType::TIMESTAMPTZ => (
-            Field::new(
+            ArrowField::new(
                 name,
                 ArrowType::Timestamp(TimeUnit::Microsecond, Some(UTC.into())),
                 true,
@@ -145,7 +145,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
             }),
         ),
         PgType::INTERVAL => (
-            Field::new(name, ArrowType::Interval(IntervalUnit::MonthDayNano), true),
+            ArrowField::new(name, ArrowType::Interval(IntervalUnit::MonthDayNano), true),
             Box::new(|rows, i| {
                 let intervals = col::<PgInterval>(rows, i)?
                     .into_iter()
@@ -165,7 +165,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
                 );
             }
             (
-                Field::new(name, ArrowType::Decimal128(precision, scale), true),
+                ArrowField::new(name, ArrowType::Decimal128(precision, scale), true),
                 Box::new(move |rows, i| {
                     let units = col::<Decimal>(rows, i)?
                         .into_iter()
@@ -201,7 +201,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(Field, PgToArrowFn)>
         ),
         // Both go on the wire as their own UTF-8 text. `citext` has no fixed OID, so goes by name.
         ref text if matches!(text.kind(), Kind::Enum(_)) || text.name() == CITEXT => (
-            Field::new(name, ArrowType::Utf8, true),
+            ArrowField::new(name, ArrowType::Utf8, true),
             Box::new(|rows, i| {
                 let strings = col::<RawText>(rows, i)?
                     .into_iter()
@@ -256,8 +256,12 @@ fn wire_bytes(rows: &[BinaryCopyOutRow], i: usize) -> Result<ArrayRef> {
 }
 
 /// Nullable Arrow field carrying a canonical Arrow extension type in its metadata.
-fn extended_field<E: ExtensionType>(name: &str, arrow: ArrowType, extension: E) -> Result<Field> {
-    let mut field = Field::new(name, arrow, true);
+fn extended_field<E: ExtensionType>(
+    name: &str,
+    arrow: ArrowType,
+    extension: E,
+) -> Result<ArrowField> {
+    let mut field = ArrowField::new(name, arrow, true);
     field.try_with_extension_type(extension)?;
     Ok(field)
 }

@@ -8,7 +8,7 @@ use arrow::array::{
     RecordBatch, StringArray, TimestampMicrosecondArray,
 };
 use arrow_schema::extension::{ExtensionType, Json, Uuid};
-use arrow_schema::{DataType as ArrowType, Field, IntervalUnit, Schema, TimeUnit};
+use arrow_schema::{DataType as ArrowType, Field as ArrowField, IntervalUnit, Schema, TimeUnit};
 use postgres_protocol::escape::escape_identifier;
 use tokio_postgres::types::{ToSql, Type as PgType};
 use transferred_core::{Result, TransferredError};
@@ -37,14 +37,19 @@ struct PgColumn {
 
 impl PgColumn {
     /// Builder for a column whose DDL names the bare type, like `int4`, as most types do.
-    fn bare(field: &Field, pg_type: PgType, arrow_to_pg: ArrowToPgFn) -> Self {
+    fn bare(field: &ArrowField, pg_type: PgType, arrow_to_pg: ArrowToPgFn) -> Self {
         let name = pg_type.name().to_owned();
         Self::typed(field, &name, pg_type, arrow_to_pg)
     }
 
     /// Builder for a column whose DDL either includes a modifier, like `numeric(38,9)`,
     /// or names a type with its own OID in every database, like `geometry(Geometry,4326)`.
-    fn typed(field: &Field, sql_type: &str, pg_type: PgType, arrow_to_pg: ArrowToPgFn) -> Self {
+    fn typed(
+        field: &ArrowField,
+        sql_type: &str,
+        pg_type: PgType,
+        arrow_to_pg: ArrowToPgFn,
+    ) -> Self {
         Self {
             pg_type,
             // Names go straight into DDL, and a Parquet field or dict key need not be an identifier.
@@ -127,7 +132,7 @@ trait ToPgColumn {
     fn to_pg_column(&self) -> Result<PgColumn>;
 }
 
-impl ToPgColumn for Field {
+impl ToPgColumn for ArrowField {
     #[allow(clippy::too_many_lines)]
     fn to_pg_column(&self) -> Result<PgColumn> {
         let extension = self.extension_type_name();
@@ -277,7 +282,7 @@ impl ToPgColumn for Field {
 
 /// SQL type for a `geoarrow.wkb` field, constrained to its coordinate system but not to a geometry
 /// subtype, which the tag says nothing about. E.g. `geography(Geometry,4326)`, or bare `geometry`.
-fn geo_sql_type(field: &Field) -> Result<String> {
+fn geo_sql_type(field: &ArrowField) -> Result<String> {
     let wkb = field
         .try_extension_type::<Wkb>()
         .map_err(TransferredError::destination)?;
@@ -321,29 +326,29 @@ mod tests {
     /// Every type `pg_to_arrow` produces, in fixture order, so the pair stays symmetric.
     fn source_schema() -> Schema {
         Schema::new(vec![
-            Field::new("b", ArrowType::Boolean, true),
-            Field::new("i2", ArrowType::Int16, true),
-            Field::new("i4", ArrowType::Int32, true),
-            Field::new("i8", ArrowType::Int64, true),
-            Field::new("f4", ArrowType::Float32, true),
-            Field::new("f8", ArrowType::Float64, true),
-            Field::new("t", ArrowType::Utf8, true),
-            Field::new("bin", ArrowType::Binary, true),
-            Field::new("d", ArrowType::Date32, true),
-            Field::new(
+            ArrowField::new("b", ArrowType::Boolean, true),
+            ArrowField::new("i2", ArrowType::Int16, true),
+            ArrowField::new("i4", ArrowType::Int32, true),
+            ArrowField::new("i8", ArrowType::Int64, true),
+            ArrowField::new("f4", ArrowType::Float32, true),
+            ArrowField::new("f8", ArrowType::Float64, true),
+            ArrowField::new("t", ArrowType::Utf8, true),
+            ArrowField::new("bin", ArrowType::Binary, true),
+            ArrowField::new("d", ArrowType::Date32, true),
+            ArrowField::new(
                 "ts",
                 ArrowType::Timestamp(TimeUnit::Microsecond, None),
                 true,
             ),
-            Field::new(
+            ArrowField::new(
                 "tstz",
                 ArrowType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
                 true,
             ),
-            Field::new("iv", ArrowType::Interval(IntervalUnit::MonthDayNano), true),
-            Field::new("n", ArrowType::Decimal128(38, 9), true),
-            Field::new("u", ArrowType::FixedSizeBinary(16), true).with_extension_type(Uuid),
-            Field::new("j", ArrowType::Utf8, true).with_extension_type(Json::default()),
+            ArrowField::new("iv", ArrowType::Interval(IntervalUnit::MonthDayNano), true),
+            ArrowField::new("n", ArrowType::Decimal128(38, 9), true),
+            ArrowField::new("u", ArrowType::FixedSizeBinary(16), true).with_extension_type(Uuid),
+            ArrowField::new("j", ArrowType::Utf8, true).with_extension_type(Json::default()),
         ])
     }
 
@@ -369,7 +374,7 @@ mod tests {
     /// Extension metadata is the only thing separating `json` from `text`; without it, plain wins.
     #[test]
     fn extension_metadata_picks_the_semantic_pg_type() {
-        let plain = Schema::new(vec![Field::new("j", ArrowType::Utf8, true)]);
+        let plain = Schema::new(vec![ArrowField::new("j", ArrowType::Utf8, true)]);
         assert_eq!(
             ArrowToPg::derive(&plain).unwrap().declarations(),
             r#""j" text"#
@@ -381,12 +386,14 @@ mod tests {
     #[test]
     fn declares_postgis_columns_from_the_wkb_tag() {
         let schema = Schema::new(vec![
-            Field::new("geom", ArrowType::Binary, true).with_extension_type(Wkb::planar(None)),
-            Field::new("pt", ArrowType::Binary, true).with_extension_type(Wkb::planar(Some(4326))),
-            Field::new("geog", ArrowType::Binary, true)
+            ArrowField::new("geom", ArrowType::Binary, true).with_extension_type(Wkb::planar(None)),
+            ArrowField::new("pt", ArrowType::Binary, true)
+                .with_extension_type(Wkb::planar(Some(4326))),
+            ArrowField::new("geog", ArrowType::Binary, true)
                 .with_extension_type(Wkb::spherical(Some(4326))),
             // Bare `geography` is not implicitly 4326: PG takes any SRID into such a column.
-            Field::new("bare", ArrowType::Binary, true).with_extension_type(Wkb::spherical(None)),
+            ArrowField::new("bare", ArrowType::Binary, true)
+                .with_extension_type(Wkb::spherical(None)),
         ]);
         let arrow_to_pg = ArrowToPg::derive(&schema).unwrap();
 
@@ -402,23 +409,35 @@ mod tests {
     /// PG has no fixed-width binary, so 16 bytes only mean a uuid when the field says so.
     #[test]
     fn rejects_fixed_size_binary_without_the_uuid_extension() {
-        let schema = Schema::new(vec![Field::new("u", ArrowType::FixedSizeBinary(16), true)]);
+        let schema = Schema::new(vec![ArrowField::new(
+            "u",
+            ArrowType::FixedSizeBinary(16),
+            true,
+        )]);
         assert!(ArrowToPg::derive(&schema).is_err());
     }
 
     #[test]
     fn rejects_unsupported_arrow_type() {
-        let schema = Schema::new(vec![Field::new("u16", ArrowType::UInt16, true)]);
+        let schema = Schema::new(vec![ArrowField::new("u16", ArrowType::UInt16, true)]);
         assert!(ArrowToPg::derive(&schema).is_err());
     }
 
     /// The table is created from the first batch, so a later partition may not fit it.
     #[test]
     fn rejects_a_batch_that_does_not_match_the_derived_schema() {
-        let arrow_to_pg =
-            ArrowToPg::derive(&Schema::new(vec![Field::new("a", ArrowType::Int32, true)])).unwrap();
+        let arrow_to_pg = ArrowToPg::derive(&Schema::new(vec![ArrowField::new(
+            "a",
+            ArrowType::Int32,
+            true,
+        )]))
+        .unwrap();
 
-        let widened = Arc::new(Schema::new(vec![Field::new("a", ArrowType::Int64, true)]));
+        let widened = Arc::new(Schema::new(vec![ArrowField::new(
+            "a",
+            ArrowType::Int64,
+            true,
+        )]));
         let batch =
             RecordBatch::try_new(widened, vec![Arc::new(Int64Array::from(vec![1]))]).unwrap();
 
@@ -428,7 +447,7 @@ mod tests {
     /// Only fields drive the mapping, so writer metadata on the schema must not reject a batch.
     #[test]
     fn accepts_a_batch_differing_only_in_schema_metadata() {
-        let schema = Schema::new(vec![Field::new("a", ArrowType::Int32, true)]);
+        let schema = Schema::new(vec![ArrowField::new("a", ArrowType::Int32, true)]);
         let arrow_to_pg = ArrowToPg::derive(&schema).unwrap();
 
         let tagged = Arc::new(
@@ -445,8 +464,8 @@ mod tests {
     #[test]
     fn quotes_column_names_in_declarations() {
         let awkward = Schema::new(vec![
-            Field::new("Total Sales", ArrowType::Int32, true),
-            Field::new("user.id", ArrowType::Utf8, true),
+            ArrowField::new("Total Sales", ArrowType::Int32, true),
+            ArrowField::new("user.id", ArrowType::Utf8, true),
         ]);
         assert_eq!(
             ArrowToPg::derive(&awkward).unwrap().declarations(),
