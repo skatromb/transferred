@@ -1,37 +1,43 @@
 """`ArrowSource` — the Python-side Arrow seam into Rust.
 
-Accepts a pyarrow `RecordBatchReader` and exposes it as a `transferred` source.
-Requires pyarrow — install via `pip install transferred[arrow]`.
+Accepts any object exposing the Arrow PyCapsule interface and hands its stream to Rust.
 """
 
-from typing import TYPE_CHECKING
+from typing import Protocol
 
 from transferred._base import Source
 from transferred._native import _ArrowSource
 
-if TYPE_CHECKING:
-    import pyarrow as pa
+
+class ArrowStream(Protocol):
+    """Arrow data reachable through the Arrow PyCapsule interface."""
+
+    def __arrow_c_stream__(self, requested_schema: object | None = None) -> object: ...
 
 
 class ArrowSource(Source):
-    """Make a `transferred.Source` from a `pyarrow.RecordBatchReader`.
+    """Make a `transferred.Source` from Arrow data.
 
-    Requires pyarrow — install via `pip install transferred[arrow]`.
+    Takes anything implementing the [Arrow PyCapsule interface][1] — a `pyarrow.Table`,
+    `RecordBatch` or `RecordBatchReader`, a `polars.DataFrame`, a duckdb result. A table
+    is already whole in memory; a reader streams, so prefer one for data larger than RAM.
+
+    [1]: https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html
+
+    Args:
+        data: Arrow data exposing `__arrow_c_stream__`.
 
     Raises:
-        ImportError: pyarrow not installed. Install `transferred[arrow]`.
-        TypeError: `reader` is not a `pyarrow.RecordBatchReader`.
+        TypeError: `data` does not implement the Arrow PyCapsule interface.
 
     Example:
         >>> import pyarrow as pa
         >>> from transferred import ArrowSource, FilesDestination, Transfer
         >>>
-        >>> schema = pa.schema([("id", pa.int64())])
-        >>> batch = pa.record_batch([pa.array([1, 2, 3])], schema=schema)
-        >>> reader = pa.RecordBatchReader.from_batches(schema, [batch])
+        >>> table = pa.table({"id": [1, 2, 3]})
         >>>
         >>> report = Transfer(
-        ...     source=ArrowSource(reader),
+        ...     source=ArrowSource(table),
         ...     destination=FilesDestination("output_directory"),
         ... ).run()
         >>>
@@ -46,19 +52,12 @@ class ArrowSource(Source):
 
     _native_source: _ArrowSource
 
-    def __init__(self, reader: pa.RecordBatchReader) -> None:
-        try:
-            import pyarrow as pa
-        except ImportError as e:
-            raise ImportError(
-                "ArrowSource requires `pyarrow`. "
-                "Install with: `pip install transferred[arrow]`"
-            ) from e
-
-        if not isinstance(reader, pa.RecordBatchReader):
+    def __init__(self, data: ArrowStream) -> None:
+        if not hasattr(data, "__arrow_c_stream__"):
             raise TypeError(
-                f"reader must be a pyarrow.RecordBatchReader, "
-                f"got {type(reader).__name__!r}"
+                f"{type(data).__name__!r} does not implement the Arrow `PyCapsule` "
+                "interface — pass a pyarrow `Table`, `RecordBatch` or `RecordBatchReader`, "
+                "or any object exposing `__arrow_c_stream__`"
             )
 
-        self._native_source = _ArrowSource(reader)
+        self._native_source = _ArrowSource(data)

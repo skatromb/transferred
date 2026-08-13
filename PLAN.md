@@ -223,6 +223,17 @@ Goal: Atomic full load PG → PG and PG → Parquet. Direct type mapping only; f
   - macOS and Windows had shipped nothing but a free-threaded wheel since 0.0.3, so every install there built from the sdist. `--find-interpreter` stops at the first `python3.14` on PATH, and `PythonT.framework` ships an executable of that exact name; those two platforms now name their interpreter outright, one job per ABI. Linux keeps discovery — a manylinux container cannot see host interpreters, and walks `/opt/python/*` where the names do not collide.
   - Both misses shipped because neither failed a build. The post-release smoke test in the release skill is what catches an incomplete set; nothing in CI asserts one.
 
+## 0.1.1 — Arrow data in, not one pyarrow class
+
+Goal: stop `ArrowSource` from being narrower than the seam beneath it.
+
+**Scope:**
+
+- [x] `ArrowSource` takes anything exposing `__arrow_c_stream__` — `pa.Table`, `pa.RecordBatch`, `pa.RecordBatchReader`, a `polars.DataFrame`, a duckdb result. Making a reader out of a table one already holds is ceremony, not a design.
+  - Nothing to add in Rust: `arrow-pyarrow`'s `FromPyArrow for ArrowArrayStreamReader` tries the [PyCapsule interface](https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html) first and only then falls back to pyarrow's private `_export_to_c` (`arrow-pyarrow-59.1.0/src/lib.rs:375`). The `isinstance` check in Python was the only thing narrowing it.
+  - The pyarrow import goes with it, so `ArrowSource` no longer raises `ImportError`: on the capsule path pyarrow is never touched. The `transferred[arrow]` extra still covers `_iterable_to_arrow`, which really does build `pa.RecordBatch`es, and that path keeps its own hint.
+  - Typed as an `ArrowStream` protocol rather than a union of three pyarrow classes — the union would lie about polars and duckdb the same way `RecordBatchReader` lied about `Table`.
+
 ## 0.2.0 — BigQuery source + destination
 
 Goal: add BigQuery source + destination. Atomic full load PG ↔ BQ. Direct type mapping; formal schema/coercion still deferred to 0.4.
