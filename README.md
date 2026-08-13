@@ -21,7 +21,7 @@ Requires Python 3.14.
 from transferred import FilesDestination, Parquet, PostgresSource, Transfer
 
 source = PostgresSource("postgres://user:pass@localhost:5432/db", table="public.cities")
-destination = FilesDestination("cities", format=Parquet(compression="zstd"))
+destination = FilesDestination("cities/", format=Parquet(compression="zstd"))
 
 report = Transfer(source, destination).run()
 
