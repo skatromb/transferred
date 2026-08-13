@@ -3612,6 +3612,7 @@ dependencies = [
  "rust_decimal",
  "rustls",
  "serde_json",
+ "tempfile",
  "testcontainers-modules",
  "tokio",
  "tokio-postgres",
@@ -3619,6 +3620,7 @@ dependencies = [
  "tokio-stream",
  "tracing",
  "transferred-core",
+ "transferred-files",
  "url",
  "uuid",
 ]

@@ -109,10 +109,12 @@ pub async fn table_exists(table: &str) -> bool {
 pub async fn read_table(table: &str) -> RecordBatch {
     let dsn = start_seeded_postgres().await;
 
-    let partitions = Box::new(PostgresSource::new(dsn, table.to_owned()))
-        .stream_partitions()
-        .await
-        .expect("stream partitions");
+    collect(Box::new(PostgresSource::new(dsn, table.to_owned()))).await
+}
+
+/// Drains every partition of `source` into one `RecordBatch`.
+pub async fn collect(source: Box<dyn Source + Send>) -> RecordBatch {
+    let partitions = source.stream_partitions().await.expect("stream partitions");
 
     // `flatten` keeps partitions sequential, so row order stays deterministic.
     let batches: Vec<RecordBatch> = stream::iter(partitions)
