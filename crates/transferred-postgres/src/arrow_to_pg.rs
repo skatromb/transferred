@@ -5,18 +5,22 @@ use std::any::type_name;
 use arrow::array::{
     Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, Decimal128Array, FixedSizeBinaryArray,
     Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, IntervalMonthDayNanoArray,
-    RecordBatch, StringArray, TimestampMicrosecondArray,
+    RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
 };
 use arrow_schema::extension::{ExtensionType, Json, Uuid};
 use arrow_schema::{DataType as ArrowType, Field as ArrowField, IntervalUnit, Schema, TimeUnit};
+use bytes::BytesMut;
+use postgres_protocol::IsNull as ProtocolIsNull;
 use postgres_protocol::escape::escape_identifier;
-use tokio_postgres::types::{ToSql, Type as PgType};
+use postgres_protocol::types::{RangeBound, empty_range_to_sql, range_to_sql};
+use tokio_postgres::types::{IsNull, Kind, ToSql, Type as PgType, to_sql_checked};
 use transferred_core::{Result, TransferredError};
 
 use crate::convert::{
     GEOGRAPHY, GEOMETRY, pg_date, pg_interval, pg_json, pg_numeric, pg_timestamp, pg_uuid,
 };
 use crate::geoarrow::Wkb;
+use crate::pg_range::{LOWER, PgRange};
 
 /// One Postgres value, borrowed from the Arrow column it came from.
 pub type PgValue<'a> = Box<dyn ToSql + Sync + Send + 'a>;
@@ -271,6 +275,19 @@ impl ToPgColumn for ArrowField {
                     Ok(values(decimals.into_iter()))
                 }),
             ),
+            // A range is its bounds plus a tag byte, so each bound reuses its own type's encoder.
+            ArrowType::Struct(_) if extension == Some(PgRange::NAME) => {
+                let bounds_type =
+                    PgRange::type_of(self.data_type()).map_err(TransferredError::destination)?;
+                let pg_column = ArrowField::new(LOWER, bounds_type.clone(), true).to_pg_column()?;
+                let pg_type = to_range_type(&pg_column.pg_type)?;
+
+                PgColumn::bare(
+                    self,
+                    pg_type,
+                    Box::new(move |array| range_values(array, &pg_column.arrow_to_pg)),
+                )
+            }
             other => {
                 return Err(TransferredError::destination(format!(
                     "Arrow type `{other}` is not supported by the Postgres destination in 0.1"
@@ -297,6 +314,116 @@ fn geo_sql_type(field: &ArrowField) -> Result<String> {
     Ok(match wkb.epsg() {
         Some(epsg) => format!("{name}(Geometry,{epsg})"),
         None => name.to_owned(),
+    })
+}
+
+/// Converts `pg_type` to the Postgres range over it; a range outside these six is per database.
+fn to_range_type(pg_type: &PgType) -> Result<PgType> {
+    Ok(match *pg_type {
+        PgType::INT4 => PgType::INT4_RANGE,
+        PgType::INT8 => PgType::INT8_RANGE,
+        PgType::NUMERIC => PgType::NUM_RANGE,
+        PgType::DATE => PgType::DATE_RANGE,
+        PgType::TIMESTAMP => PgType::TS_RANGE,
+        PgType::TIMESTAMPTZ => PgType::TSTZ_RANGE,
+        ref other => {
+            return Err(TransferredError::destination(format!(
+                "Postgres has no built-in range over `{}`",
+                other.name()
+            )));
+        }
+    })
+}
+
+/// Encodes the struct as one range per row, each bound written by the encoder of its own type.
+fn range_values<'a>(array: &'a ArrayRef, bound_to_pg: &ArrowToPgFn) -> Result<Vec<PgValue<'a>>> {
+    let ranges = cast::<StructArray>(array)?;
+    // In the order `PgRange::fields` declares them, as `PgRange::type_of` has already checked.
+    let [lower, upper, lower_inc, upper_inc, empty] = ranges.columns() else {
+        return Err(TransferredError::destination(format!(
+            "a `{}` column holds five children, not {}",
+            PgRange::NAME,
+            ranges.num_columns()
+        )));
+    };
+
+    let bounds = bound_to_pg(lower)?.into_iter().zip(bound_to_pg(upper)?);
+    let tags = flags(lower_inc)?.zip(flags(upper_inc)?.zip(flags(empty)?));
+
+    let rows = bounds.zip(tags).enumerate().map(
+        |(i, ((lower, upper), (lower_inc, (upper_inc, empty))))| {
+            ranges.is_valid(i).then(|| PgRangeValue {
+                lower,
+                upper,
+                lower_inc,
+                upper_inc,
+                empty,
+            })
+        },
+    );
+
+    Ok(values(rows))
+}
+
+/// Reads a tag column as plain bools, as the non-nullable field a range's struct declares for it.
+fn flags(array: &ArrayRef) -> Result<impl Iterator<Item = bool> + '_> {
+    Ok(cast::<BooleanArray>(array)?
+        .iter()
+        .map(|flag| flag.unwrap_or(false)))
+}
+
+/// One range on its way to Postgres: the tag byte, then whichever bounds are not infinite.
+#[derive(Debug)]
+struct PgRangeValue<'a> {
+    lower: PgValue<'a>,
+    upper: PgValue<'a>,
+    lower_inc: bool,
+    upper_inc: bool,
+    empty: bool,
+}
+
+impl ToSql for PgRangeValue<'_> {
+    fn to_sql(
+        &self,
+        ty: &PgType,
+        out: &mut BytesMut,
+    ) -> std::result::Result<IsNull, Box<dyn std::error::Error + Sync + Send>> {
+        let Kind::Range(bound_type) = ty.kind() else {
+            return Err(format!("`{}` is not a range type", ty.name()).into());
+        };
+
+        if self.empty {
+            empty_range_to_sql(out);
+        } else {
+            range_to_sql(
+                |buf| bound_to_sql(&self.lower, self.lower_inc, bound_type, buf),
+                |buf| bound_to_sql(&self.upper, self.upper_inc, bound_type, buf),
+                out,
+            )?;
+        }
+
+        Ok(IsNull::No)
+    }
+
+    fn accepts(ty: &PgType) -> bool {
+        matches!(ty.kind(), Kind::Range(_))
+    }
+
+    to_sql_checked!();
+}
+
+/// Writes a bound, reporting it infinite when its value is null: Postgres allows no NULL bound.
+fn bound_to_sql(
+    value: &PgValue,
+    inclusive: bool,
+    pg_type: &PgType,
+    buf: &mut BytesMut,
+) -> std::result::Result<RangeBound<ProtocolIsNull>, Box<dyn std::error::Error + Sync + Send>> {
+    // The two `IsNull`s belong to different crates; only a bound we did write reaches the protocol's.
+    Ok(match value.to_sql_checked(pg_type, buf)? {
+        IsNull::Yes => RangeBound::Unbounded,
+        IsNull::No if inclusive => RangeBound::Inclusive(ProtocolIsNull::No),
+        IsNull::No => RangeBound::Exclusive(ProtocolIsNull::No),
     })
 }
 
@@ -369,6 +496,40 @@ mod tests {
         assert_eq!(types.first(), Some(&PgType::BOOL));
         assert_eq!(types.last(), Some(&PgType::JSON));
         assert_eq!(types.len(), source_schema().fields().len());
+    }
+
+    fn range(name: &str, arrow_type: ArrowType) -> ArrowField {
+        ArrowField::new(name, ArrowType::Struct(PgRange::fields(arrow_type)), true)
+            .with_extension_type(PgRange)
+    }
+
+    /// Six ranges told apart by the type of their bounds alone, the tag itself carrying nothing.
+    #[test]
+    fn declares_range_columns_from_the_type_of_their_bounds() {
+        let schema = Schema::new(vec![
+            range("i4", ArrowType::Int32),
+            range("i8", ArrowType::Int64),
+            range("n", ArrowType::Decimal128(38, 9)),
+            range("d", ArrowType::Date32),
+            range("ts", ArrowType::Timestamp(TimeUnit::Microsecond, None)),
+            range(
+                "tstz",
+                ArrowType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
+            ),
+        ]);
+
+        assert_eq!(
+            ArrowToPg::derive(&schema).unwrap().declarations(),
+            r#""i4" int4range, "i8" int8range, "n" numrange, "d" daterange, "#.to_owned()
+                + r#""ts" tsrange, "tstz" tstzrange"#
+        );
+    }
+
+    /// A range over anything else is defined per database, so no fixed OID could announce it.
+    #[test]
+    fn rejects_a_range_postgres_has_no_built_in_for() {
+        let schema = Schema::new(vec![range("t", ArrowType::Utf8)]);
+        assert!(ArrowToPg::derive(&schema).is_err());
     }
 
     /// Extension metadata is the only thing separating `json` from `text`; without it, plain wins.

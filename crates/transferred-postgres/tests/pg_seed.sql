@@ -43,7 +43,7 @@ insert into it_semantic values
 
 create extension if not exists citext;
 
--- Two types whose wire form already is their text. `citext` has no fixed OID, so goes by name.
+-- Two types whose binary form already is their text. `citext` has no fixed OID, so goes by name.
 create type it_mood as enum ('glad', 'sad');
 create table it_text (mood it_mood, email citext);
 
@@ -51,6 +51,24 @@ insert into it_text values
     ('glad', 'Foo@Example.COM'),
     ('sad', ''),
     (null, null);
+
+-- All six built-in ranges. PG canonicalises a discrete range to `[)`, so `[1,5]` arrives as `[1,6)`
+-- and the inclusivity flags never vary; only the continuous types keep the bounds as written.
+create table it_range (
+    i4 int4range, i8 int8range, n numrange,
+    d daterange, ts tsrange, tstz tstzrange
+);
+
+-- Row 2 leaves one side infinite, which is a null bound rather than a NULL range. Row 3 is `empty`,
+-- the one state no pair of bounds can stand in for.
+insert into it_range values
+    ('[1,5]', '[1,5]', '(1.5,2.5]', '[2024-01-15,2024-01-20]',
+     '[2024-01-15 12:34:56.789012,2024-01-16 00:00:00)',
+     '[2024-01-15 12:34:56.789012+00,2024-01-16 00:00:00+00)'),
+    ('(,7)', '[7,)', '(,2.5)', '[2024-01-15,)',
+     '(,2024-01-16 00:00:00)', '(,2024-01-16 00:00:00+00)'),
+    ('empty', 'empty', 'empty', 'empty', 'empty', 'empty'),
+    (null, null, null, null, null, null);
 
 create extension if not exists postgis;
 
@@ -82,7 +100,7 @@ insert into it_geo values
 create type it_point as (x int4, y int4);
 create table it_opaque (mac macaddr, point it_point);
 
--- macaddr goes on the wire as its six bytes; a composite as PG's record framing.
+-- macaddr arrives as its six bytes; a composite as PG's record framing.
 insert into it_opaque values
     ('08:00:2b:01:02:03', '(1,2)'),
     ('ff:ff:ff:ff:ff:ff', '(3,)'),

@@ -5,8 +5,9 @@ use std::sync::Arc;
 use arrow::array::{
     ArrayRef, BinaryArray, BooleanArray, Date32Array, Decimal128Array, FixedSizeBinaryArray,
     Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, IntervalMonthDayNanoArray,
-    RecordBatch, StringArray, TimestampMicrosecondArray,
+    RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
 };
+use arrow::buffer::NullBuffer;
 use arrow::datatypes::Date32Type;
 use arrow_schema::extension::{ExtensionType, Json, Opaque, Uuid};
 use arrow_schema::{DataType as ArrowType, Field as ArrowField, IntervalUnit, Schema, TimeUnit};
@@ -25,6 +26,7 @@ use crate::convert::{
     numeric_precision_scale,
 };
 use crate::geoarrow::Wkb;
+use crate::pg_range::{Bounds, PgRange};
 
 /// Builds one Arrow column from column `i` of a chunk of PG binary rows.
 type PgToArrowFn = Box<dyn Fn(&[BinaryCopyOutRow], usize) -> Result<ArrayRef> + Send + Sync>;
@@ -83,11 +85,11 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(ArrowField, PgToArro
         ),
         PgType::INT4 => (
             ArrowField::new(name, ArrowType::Int32, true),
-            Box::new(|rows, i| Ok(Arc::new(Int32Array::from(col::<i32>(rows, i)?)))),
+            Box::new(|rows, i| Ok(int32_array(col(rows, i)?))),
         ),
         PgType::INT8 => (
             ArrowField::new(name, ArrowType::Int64, true),
-            Box::new(|rows, i| Ok(Arc::new(Int64Array::from(col::<i64>(rows, i)?)))),
+            Box::new(|rows, i| Ok(int64_array(col(rows, i)?))),
         ),
         PgType::FLOAT4 => (
             ArrowField::new(name, ArrowType::Float32, true),
@@ -107,12 +109,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(ArrowField, PgToArro
         ),
         PgType::DATE => (
             ArrowField::new(name, ArrowType::Date32, true),
-            Box::new(|rows, i| {
-                let days = col::<NaiveDate>(rows, i)?
-                    .into_iter()
-                    .map(|date| date.map(Date32Type::from_naive_date));
-                Ok(Arc::new(days.collect::<Date32Array>()))
-            }),
+            Box::new(|rows, i| Ok(date32_array(col(rows, i)?))),
         ),
         PgType::TIMESTAMP => (
             ArrowField::new(
@@ -120,12 +117,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(ArrowField, PgToArro
                 ArrowType::Timestamp(TimeUnit::Microsecond, None),
                 true,
             ),
-            Box::new(|rows, i| {
-                let micros = col::<NaiveDateTime>(rows, i)?
-                    .into_iter()
-                    .map(|ts| ts.map(|ts| ts.and_utc().timestamp_micros()));
-                Ok(Arc::new(micros.collect::<TimestampMicrosecondArray>()))
-            }),
+            Box::new(|rows, i| Ok(timestamp_array(col(rows, i)?))),
         ),
         PgType::TIMESTAMPTZ => (
             ArrowField::new(
@@ -133,16 +125,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(ArrowField, PgToArro
                 ArrowType::Timestamp(TimeUnit::Microsecond, Some(UTC.into())),
                 true,
             ),
-            Box::new(|rows, i| {
-                let micros = col::<DateTime<Utc>>(rows, i)?
-                    .into_iter()
-                    .map(|ts| ts.map(|ts| ts.timestamp_micros()));
-                Ok(Arc::new(
-                    micros
-                        .collect::<TimestampMicrosecondArray>()
-                        .with_timezone(UTC),
-                ))
-            }),
+            Box::new(|rows, i| Ok(timestamptz_array(col(rows, i)?))),
         ),
         PgType::INTERVAL => (
             ArrowField::new(name, ArrowType::Interval(IntervalUnit::MonthDayNano), true),
@@ -166,17 +149,7 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(ArrowField, PgToArro
             }
             (
                 ArrowField::new(name, ArrowType::Decimal128(precision, scale), true),
-                Box::new(move |rows, i| {
-                    let units = col::<Decimal>(rows, i)?
-                        .into_iter()
-                        .map(|decimal| decimal.map(|decimal| decimal_units(decimal, scale)))
-                        .map(Option::transpose)
-                        .collect::<Result<Vec<_>>>()?;
-
-                    Ok(Arc::new(
-                        Decimal128Array::from(units).with_precision_and_scale(precision, scale)?,
-                    ))
-                }),
+                Box::new(move |rows, i| decimal128_array(col(rows, i)?, precision, scale)),
             )
         }
         PgType::UUID => (
@@ -199,6 +172,45 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(ArrowField, PgToArro
                 Ok(Arc::new(text.collect::<StringArray>()))
             }),
         ),
+        // The six built-in ranges, each a pair of bounds over one of the scalars above. Postgres
+        // canonicalises a discrete range to `[)`, so their inclusivity flags never vary.
+        PgType::INT4_RANGE => range_column(name, PgType::INT4, ArrowType::Int32, |bounds| {
+            Ok(int32_array(bounds))
+        })?,
+        PgType::INT8_RANGE => range_column(name, PgType::INT8, ArrowType::Int64, |bounds| {
+            Ok(int64_array(bounds))
+        })?,
+        PgType::DATE_RANGE => range_column(name, PgType::DATE, ArrowType::Date32, |bounds| {
+            Ok(date32_array(bounds))
+        })?,
+        PgType::TS_RANGE => range_column(
+            name,
+            PgType::TIMESTAMP,
+            ArrowType::Timestamp(TimeUnit::Microsecond, None),
+            |bounds| Ok(timestamp_array(bounds)),
+        )?,
+        PgType::TSTZ_RANGE => range_column(
+            name,
+            PgType::TIMESTAMPTZ,
+            ArrowType::Timestamp(TimeUnit::Microsecond, Some(UTC.into())),
+            |bounds| Ok(timestamptz_array(bounds)),
+        )?,
+        PgType::NUM_RANGE => {
+            let (precision, scale) = numeric_precision_scale(BARE_NUMERIC_TYPMOD)?;
+            // A range constrains no precision on its bounds, so they can only be bare `numeric`s.
+            warn!(
+                target: "postgres::source",
+                column = name,
+                "`numrange` bounds carry no declared precision; mapping to \
+                 Decimal128({precision}, {scale}) and rounding beyond {scale} decimals"
+            );
+            range_column(
+                name,
+                PgType::NUMERIC,
+                ArrowType::Decimal128(precision, scale),
+                move |bounds| decimal128_array(bounds, precision, scale),
+            )?
+        }
         // PG sends both as their own UTF-8 text. `citext` has no fixed OID, so goes by name.
         ref text if matches!(text.kind(), Kind::Enum(_)) || text.name() == CITEXT => (
             ArrowField::new(name, ArrowType::Utf8, true),
@@ -244,6 +256,120 @@ fn pg_arrow_field_and_builder(column: &PgColumn) -> Result<(ArrowField, PgToArro
             )
         }
     })
+}
+
+/// The array builders a scalar column shares with the range over it, one per range Postgres has.
+fn int32_array(values: Vec<Option<i32>>) -> ArrayRef {
+    Arc::new(Int32Array::from(values))
+}
+
+fn int64_array(values: Vec<Option<i64>>) -> ArrayRef {
+    Arc::new(Int64Array::from(values))
+}
+
+fn date32_array(dates: Vec<Option<NaiveDate>>) -> ArrayRef {
+    let days = dates
+        .into_iter()
+        .map(|date| date.map(Date32Type::from_naive_date));
+    Arc::new(days.collect::<Date32Array>())
+}
+
+fn timestamp_array(timestamps: Vec<Option<NaiveDateTime>>) -> ArrayRef {
+    let micros = timestamps
+        .into_iter()
+        .map(|ts| ts.map(|ts| ts.and_utc().timestamp_micros()));
+    Arc::new(micros.collect::<TimestampMicrosecondArray>())
+}
+
+fn timestamptz_array(timestamps: Vec<Option<DateTime<Utc>>>) -> ArrayRef {
+    let micros = timestamps
+        .into_iter()
+        .map(|ts| ts.map(|ts| ts.timestamp_micros()));
+    Arc::new(
+        micros
+            .collect::<TimestampMicrosecondArray>()
+            .with_timezone(UTC),
+    )
+}
+
+/// Each value carries its own scale on the wire, so all of them are restated at the column's.
+fn decimal128_array(decimals: Vec<Option<Decimal>>, precision: u8, scale: i8) -> Result<ArrayRef> {
+    let units = decimals
+        .into_iter()
+        .map(|decimal| decimal.map(|decimal| decimal_units(decimal, scale)))
+        .map(Option::transpose)
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(Arc::new(
+        Decimal128Array::from(units).with_precision_and_scale(precision, scale)?,
+    ))
+}
+
+/// Declares a Postgres range column: `PgRange::fields` shapes it, `range_array` fills it.
+fn range_column<T: for<'a> FromSql<'a>>(
+    name: &str,
+    bound_type: PgType,
+    arrow: ArrowType,
+    bounds_to_array: impl Fn(Vec<Option<T>>) -> Result<ArrayRef> + Send + Sync + 'static,
+) -> Result<(ArrowField, PgToArrowFn)> {
+    let field = extended_field(name, ArrowType::Struct(PgRange::fields(arrow)), PgRange)?;
+    let builder = move |rows: &[BinaryCopyOutRow], i| {
+        let ranges = col::<RawBytes>(rows, i)?
+            .into_iter()
+            .map(|raw| {
+                raw.map(|raw| Bounds::from_binary(&bound_type, raw.bytes))
+                    .transpose()
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        range_array(ranges, &bounds_to_array)
+    };
+
+    Ok((field, Box::new(builder)))
+}
+
+/// Builds the five arrays behind a range's struct, clearing a SQL NULL row in every one of them.
+/// Totally non-optimal, makes 7 iterations, but whatever
+fn range_array<T>(
+    ranges: Vec<Option<Bounds<T>>>,
+    bounds_to_array: impl Fn(Vec<Option<T>>) -> Result<ArrayRef>,
+) -> Result<ArrayRef> {
+    let nulls = ranges.iter().map(Option::is_some).collect::<NullBuffer>();
+    let lower_inc = flags(&ranges, |bounds| bounds.lower_inc);
+    let upper_inc = flags(&ranges, |bounds| bounds.upper_inc);
+    let empty = flags(&ranges, |bounds| bounds.empty);
+
+    let (lower, upper): (Vec<_>, Vec<_>) = ranges
+        .into_iter()
+        .map(|bounds| match bounds {
+            Some(bounds) => (bounds.lower, bounds.upper),
+            None => (None, None),
+        })
+        .unzip();
+
+    let (lower, upper) = (bounds_to_array(lower)?, bounds_to_array(upper)?);
+    let fields = PgRange::fields(lower.data_type().clone());
+    let columns: Vec<ArrayRef> = vec![
+        lower,
+        upper,
+        Arc::new(lower_inc),
+        Arc::new(upper_inc),
+        Arc::new(empty),
+    ];
+
+    Ok(Arc::new(StructArray::try_new(
+        fields,
+        columns,
+        Some(nulls),
+    )?))
+}
+
+/// Collects one tag bit as a column; a SQL NULL row carries no tag, so it reads as false.
+fn flags<T>(ranges: &[Option<Bounds<T>>], is_set: impl Fn(&Bounds<T>) -> bool) -> BooleanArray {
+    ranges
+        .iter()
+        .map(|bounds| bounds.as_ref().is_some_and(&is_set))
+        .collect()
 }
 
 /// Column `i` exactly as PG sent it, for the types we pass through rather than decode.

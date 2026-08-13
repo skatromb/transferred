@@ -438,7 +438,7 @@ Never silently coerce to `TEXT` or `BYTES` without a summary entry — that is t
 | `json`/`jsonb`                | `Utf8` + `arrow.json`                | Canonical extension.                                      |
 | `enum`, `citext`              | `Utf8`                               | Native. The wire form already is the text; the variant set and case-folding are not carried. |
 | `geometry`/`geography` (PostGIS) | `Binary` + `geoarrow.wkb` + CRS   | Community extension. EWKB passed through; column CRS from typmod. |
-| `tsrange`/`int4range`/...     | `Struct` + `transferred.pg_range`    | Private extension. Default destination fallback = expand. |
+| `tsrange`/`int4range`/...     | `Struct{lower, upper, lower_inc, upper_inc, empty}` + `transferred.pg_range` | Private extension. Bounds null when infinite; `empty` is a tag bit no pair of bounds can express. Destination fallback = expand (0.2.0). |
 | `hstore`, `ltree`, composites | `arrow.opaque` initially             | Later promotion to structured forms.                      |
 
 ### Tech stack

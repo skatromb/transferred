@@ -148,10 +148,9 @@ Goal: Atomic full load PG → PG and PG → Parquet. Direct type mapping only; f
 
 **Scope:**
 
-- `transferred-postgres` source: `COPY (SELECT ...) TO STDOUT (FORMAT BINARY)` → Arrow `RecordBatch`. Both `table=` and `query=` compile to COPY. Tests self-provision a throwaway PG+PostGIS container via `testcontainers`.
-- Source schema inference via prepared-statement RowDescription (`prepare()` the inner SELECT → column type OID + typmod); uniform across `table=`/`query=`. The COPY binary stream carries no type/name metadata — only length-prefixed field bytes — so types must come from RowDescription, not the stream. PostGIS SRID from typmod.
+- `transferred-postgres` source: `table=` compiled to `COPY (SELECT ...) TO STDOUT (FORMAT BINARY)` → Arrow `RecordBatch`. Tests self-provision a throwaway PG+PostGIS container via `testcontainers`.
+- Source schema inference via prepared-statement RowDescription (`prepare()` the inner SELECT → column type OID + typmod). The COPY binary stream carries no type/name metadata — only length-prefixed field bytes — so types must come from RowDescription, not the stream. PostGIS SRID from typmod.
 - `transferred-postgres` destination: atomic full replace — staging table built from the source-derived schema, `COPY ... FROM STDIN`, then `BEGIN; DROP target IF EXISTS; RENAME staging; COMMIT;` (transactional DDL). Source schema wins, silent overwrite — consistent with Files/BQ. Target readable during load; brief exclusive lock only at swap. Indexes/grants/ownership not preserved (full replace); index-preserving replace strategy deferred to 0.4 `on_schema_change` (cf. dlt `replace_strategy`).
-- Destination table-creation options bag (additive over source-derived DDL): PG `primary_key=`.
 - Direct PG ↔ Arrow ↔ destination type mapping (no canonical vocab, no coercion engine, no user `schema=` — all deferred to 0.4). Coverage: primitives, `arrow.json`, `arrow.uuid`, ranges, PG `geography`/`geometry`. Anything unmapped falls back to `arrow.opaque`.
 - `tracing` → Python `logging` bridge.
 
@@ -207,11 +206,25 @@ Goal: Atomic full load PG → PG and PG → Parquet. Direct type mapping only; f
   - Neither needs decoding — both wire forms *are* the UTF-8 text. Dispatch is `Kind::Enum(_)` for the enum and the name for `citext`, whose OID is per-database like PostGIS's.
   - `postgres-types` declines enum OIDs in `FromSql for &str` (it accepts `citext` by name), so the getter is a permissive `RawText`, sibling to the existing `RawBytes`.
   - `Utf8`, not `Dictionary(_, Utf8)`, though an enum is exactly a dictionary: no destination in 0.1/0.2 reads one, and the variant set has nowhere to live, Arrow having no canonical enum extension. PG → PG therefore lands `text`, dropping the type as PostGIS drops its subtype. Case-insensitivity goes the same way — it belongs to `citext`'s operators, not its bytes, so `email = 'Foo'` stops finding `foo` after a trip.
-- [ ] PG ranges → `Struct{lower, upper, lower_inc, upper_inc, empty}` + `transferred.pg_range`, the private-extension tier DESIGN.md specifies. Covers `int4range`/`int8range`/`numrange`/`daterange`/`tsrange`/`tstzrange`; the destination rebuilds the PG range type from the tag, so PG → PG stays lossless.
-  - Nothing to hand-roll on the wire: `postgres-protocol` 0.6.12, already a direct dependency, ships `range_from_sql`/`range_to_sql` with `Range`/`RangeBound`, and `Type::kind()` reports `Kind::Range(element)` for the subtype. `postgres-types` has no `FromSql` for ranges, so the getter is ours — same shape as the existing `RawBytes`.
-  - The cost is the seam, not the parsing. `range_from_sql` hands each bound back as raw `&[u8]`, while every scalar builder today reads through `col::<T>(rows, i)`. Elements need a second dispatch, keyed on the element OID, that decodes one value from bytes — which the per-column table has no place for as written.
+- [x] PG ranges → `Struct{lower, upper, lower_inc, upper_inc, empty}` + `transferred.pg_range`, the private-extension tier DESIGN.md specifies. Covers `int4range`/`int8range`/`numrange`/`daterange`/`tsrange`/`tstzrange`; the destination rebuilds the PG range type from the bounds, so PG → PG stays lossless.
+  - Nothing to hand-roll on the wire: `postgres-protocol` 0.6.12, already a direct dependency, ships `range_from_sql`/`range_to_sql`/`empty_range_to_sql` with `Range`/`RangeBound`, and `Type::kind()` reports `Kind::Range(element)` for the subtype. `postgres-types` has no `FromSql` for ranges, so the column reads through the existing permissive `RawBytes`.
+  - No second dispatch after all: naming the six built-in range OIDs directly (`Type::INT4_RANGE` and friends) puts the element type in the match arm, so each range is one more row of the per-column table. A user-defined range type falls to `arrow.opaque`, which is also all a per-database OID could support.
+  - The tag carries no metadata: the six differ by the type of their bounds alone (`Int32`/`Int64`/`Decimal128`/`Date32`/`Timestamp(_, None)`/`Timestamp(_, UTC)`), so `range_element` doubles as the destination's dispatch and as the extension's own shape check. A `type_name` slot is what user-defined ranges would need.
+  - `Union` over `Empty | Nonempty` is the honest shape and is unusable: Parquet has no union type at all (`parquet-59.1.0/src/arrow/schema/mod.rs:855` is `unimplemented!()`, a panic in a crate we cannot catch, tracked as ARROW-8817), and an Arrow union carries no validity buffer, so SQL NULL would need a third variant on every path including PG → PG. Any Parquet encoding we invented for it would be a struct with mutually exclusive fields — this struct, minus the standard shape.
+  - Bounds reuse the element's own encoder on the way back: `PgValue` is a boxed `ToSql`, and `to_sql_checked` reporting `IsNull::Yes` is exactly the infinite bound, which `write_bound` then truncates away. So the destination needs no per-element table, only `range_type` mapping six element OIDs to their range.
+  - `numrange` pins its bounds to bare `numeric`'s `Decimal128(38, 9)` and WARNs: a range constrains no precision on its element, so there is no typmod to read and no narrower choice to make.
   - Multiranges (PG 14+, `Kind::Multirange`) stay out: they need `List<Struct>`, and the `arrow.opaque` fallback keeps them transferable meanwhile.
   - Expand (range → five flat columns) is a *destination* coercion and stays out of scope: PG holds ranges natively. It is 0.2.0's problem, and only for part of the family — BQ `RANGE` takes `DATE`/`DATETIME`/`TIMESTAMP` elements only, so `daterange`/`tsrange`/`tstzrange` land natively while `int4range`/`int8range`/`numrange` have to expand.
+- [ ] Deploy 0.1.0.
+
+## 0.1.1 — public API guard
+
+Goal: stop the published surface from drifting by accident, now that connectors export extension types of their own.
+
+**Scope:**
+
+- `cargo-semver-checks` in the Rust gate, beside `cargo-deny`. Nothing watches the public API today, so a `pub` item can vanish in a patch and only a user's build would notice.
+- Settle what is API and what is plumbing before turning the check on, since it snapshots whatever it finds. `Wkb`, `PgRange` and `range_fields` are `pub` so a caller can declare a `PostGIS` or range column in a hand-built Arrow schema — and because `tests/` is a separate crate that can see nothing else. `#[doc(hidden)]` is the alternative, for all of them together: hiding one and not the rest reads as an oversight rather than a decision.
 
 ## 0.2.0 — BigQuery source + destination
 
@@ -222,10 +235,11 @@ Goal: add BigQuery source + destination. Atomic full load PG ↔ BQ. Direct type
 - `transferred-bigquery` destination: Storage Write API in `pending` mode against transient staging table → server-side copy job `WRITE_TRUNCATE` from staging into final → `DROP TABLE staging`. No GCS staging.
 - `transferred-bigquery` source: Storage Read API.
 - BQ schema vocabulary in Python (`"INT64"`, `"NUMERIC(18, 4)"`, `"GEOGRAPHY"`, `bigquery.SchemaField`).
-- Destination table-creation options: BQ `partition_by=`/`cluster_by=` (set-at-create, cost/perf-relevant — higher priority than PG PK). Extends the 0.1.0 options bag.
+- Destination table-creation options bag (additive over the source-derived DDL): BQ `partition_by=`/`cluster_by=`, both set-at-create and cost-relevant. A PG `primary_key=` waits for incremental loads, which is the only thing that reads one.
 - Auth via `gcp_auth` (ADC, service-account JSON, gcloud, workload identity).
 - Direct Arrow ↔ BQ type mapping: `geography(_, 4326)` → BQ `GEOGRAPHY`, `geometry(_, 4326)` no Z/M → BQ `GEOGRAPHY`. Unsupported types error. Tiered coercion (auto/warn/fail) deferred to 0.4.
 - BQ `GEOGRAPHY` exists only in WGS84, so the mapping has to *decide* whether a `geoarrow.wkb` column is WGS84, not merely carry its CRS. `crs: "EPSG:4326"` is a string compare; a PROJJSON or WKT2 CRS needs PROJ, and no geoarrow crate supplies it — `geoarrow-schema` only carries the value and delegates conversion to a `CrsTransform` the caller writes, its own default silently dropping the CRS. So refusing anything but an authority code is the 0.2.0 answer, and `Wkb` moves out of `transferred-postgres` for BQ to read it.
+- Decide there whether `transferred.pg_range` becomes `transferred.range`. BQ `RANGE<DATE|DATETIME|TIMESTAMP>` is always `[lower, upper)` with NULL for an infinite bound and no empty range at all, so a BQ range fits the same five-field struct — at which point the `pg_` in the name is a lie, and `empty` reads as the PG-only field it is. Renaming is one constant plus the metadata every reader compares against, so it is a 0.2.0 decision, not a 0.1.0 hedge.
 - `Timestamp(_, None)` → BQ `DATETIME`, never `TIMESTAMP`. Both Arrow `None` and PG `timestamp` mean wall-clock without a zone, and `TIMESTAMP` is an instant, so reaching for it would invent a zone for the commonest column type in a PG schema. Users who want an instant must name the zone the naive values are read in, which is 0.4's `schema=`.
 
 **Tasks:**
@@ -283,6 +297,7 @@ Implements the source-owned schema direction decided during the Interlude. Repla
 ## Backlog
 
 - Format dispatch — moot while Parquet is the only format, so deferred until a second exists. File source no `format`: inherit source's (path extension, byte-sniff on ambiguity); explicit `format`: convert. Non-file source: default `Parquet()` or convert if explicit.
+- Postgres source `query=` — an arbitrary SELECT in place of `table=`, compiled to the same COPY.
 - Incremental loads. Model decided (see [INCREMENTAL.md](./docs/design/INCREMENTAL.md), D1–D10); scheduling into a version TBD.
 - Cross-connector `batch_size` / byte-based memory budget (`set_max_row_group_bytes` + reader batch). Design against ≥2 connectors (PG in 0.1.0, BQ in 0.2.0); don't pin to one connector's shape.
 - Airflow / Dagster / whatever is popular operators
