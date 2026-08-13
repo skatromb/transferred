@@ -31,7 +31,12 @@ report = Transfer(
 ).run()
 
 print(report)
-# RunReport(rows=3, bytes_written=819, duration_seconds=0.000558)
+# RunReport:
+#   rows: 3
+#   written: 819 B
+#   duration: 2ms
+#   written objects:
+#     compressed/part-00001.parquet
 
 print(pq.read_table(destination))
 # pyarrow.Table

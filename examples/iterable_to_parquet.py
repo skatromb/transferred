@@ -50,7 +50,12 @@ report = Transfer(
 ).run()
 
 print(report)
-# RunReport(rows=1000, bytes_written=..., duration_seconds=...)
+# RunReport:
+#   rows: 1,000
+#   written: 5.18 KiB
+#   duration: 0s
+#   written objects:
+#     from_pydantic/from_pydantic.parquet
 
 print(pq.read_table(report.written_objects[0]).slice(0, 3))
 # pyarrow.Table

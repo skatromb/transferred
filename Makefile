@@ -126,7 +126,7 @@ VERSION := $(shell cargo metadata --no-deps --format-version 1 \
 # Refresh Cargo.lock after manually editing `version = ...` in Cargo.toml.
 .PHONY: bump-lock
 bump-lock:
-	@cargo update -p transferred-core -p transferred-files -p transferred-py
+	@cargo update -p transferred-core -p transferred-files -p transferred-postgres -p transferred-py
 
 # Pre-release validation before the version bump.
 .PHONY: pre-release

@@ -18,37 +18,40 @@ Requires Python 3.14.
 ## Usage
 
 ```python
-from transferred import FilesDestination, FilesSource, Parquet, Transfer
+from transferred import FilesDestination, Parquet, PostgresSource, Transfer
 
 report = Transfer(
-    source=FilesSource("in.parquet"),
+    source=PostgresSource("postgres://user:pass@localhost:5432/db", table="public.cities"),
     destination=FilesDestination(
-        "output_directory",
+        "cities",
         format=Parquet(compression="zstd"),
     ),
 ).run()
 
 print(report)
 # RunReport:
-#   rows: 12,481,902
-#   written: 1.40 GiB
-#   duration: 4s 218ms
+#   rows: 3
+#   written: 1.16 KiB
+#   duration: 2ms
 #   written objects:
-#     output_directory/part-00001.parquet
-#     output_directory/part-00002.parquet
+#     cities/part-00001.parquet
 ```
+
+Swap either end for another source or destination — the middle stays the same. More in [examples/](./examples).
 
 ## Supported
 
 Sources:
 - Parquet file — `FilesSource`
+- Postgres table — `PostgresSource`
 - Arrow `RecordBatchReader` — `ArrowSource` (requires `pip install transferred[arrow]`)
 - Python iterables of `dict` / `@dataclass` / `pydantic.BaseModel` (requires `pip install transferred[iterable]`)
 
 Destinations:
 - Parquet file — `FilesDestination` (zstd / snappy / uncompressed)
+- Postgres table — `PostgresDestination` (full replace, swapped in one transaction)
 
-Postgres + BigQuery land later. See [PLAN.md](./PLAN.md).
+BigQuery lands later. See [PLAN.md](./PLAN.md).
 
 ## Promises
 
