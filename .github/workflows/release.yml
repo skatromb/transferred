@@ -69,7 +69,9 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-  wheels:
+  # `PyO3/maturin-action` builds wheels inside a manylinux container,
+  # `--find-interpreter` picks up every CPython the image ships (3.14/t, 3.15/t)
+  wheels-linux:
     name: Build wheels (${{ matrix.platform.target }})
     runs-on: ${{ matrix.platform.os }}
     needs: verify
@@ -77,25 +79,16 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, manylinux: auto }
-          - { os: ubuntu-latest,    target: x86_64-unknown-linux-gnu,  manylinux: auto }
-          - { os: macos-latest,     target: aarch64-apple-darwin,      manylinux: "" }
-          - { os: windows-latest,   target: x86_64-pc-windows-msvc,    manylinux: "" }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: ubuntu-latest,    target: x86_64-unknown-linux-gnu }
     steps:
       - uses: actions/checkout@v6
-
-      - name: Install Python (3.14 + 3.14t)
-        uses: actions/setup-python@v5
-        with:
-          python-version: |
-            3.14
-            3.14t
 
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
-          manylinux: ${{ matrix.platform.manylinux }}
+          manylinux: auto
           working-directory: crates/transferred-py
           args: --release --out dist --find-interpreter
 
@@ -103,6 +96,40 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.platform.target }}
+          path: crates/transferred-py/dist/*.whl
+
+  # One interpreter per job including free-threaded and GIL versions.
+  wheels-native:
+    name: Build wheel (${{ matrix.platform.target }}, ${{ matrix.python }})
+    runs-on: ${{ matrix.platform.os }}
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { os: macos-latest,   target: aarch64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+        python: ["3.14", "3.14t"]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Python ${{ matrix.python }}
+        id: python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.platform.target }}
+          working-directory: crates/transferred-py
+          args: --release --out dist --interpreter ${{ steps.python.outputs.python-path }}
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.platform.target }}-${{ matrix.python }}
           path: crates/transferred-py/dist/*.whl
 
   sdist:
@@ -128,7 +155,7 @@ jobs:
   pypi-publish:
     name: Publish to PyPI
     runs-on: ubuntu-latest
-    needs: [wheels, sdist]
+    needs: [wheels-linux, wheels-native, sdist]
     environment:
       name: pypi
       url: https://pypi.org/project/transferred/
@@ -146,3 +173,5 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
+          # Topping a release up with a missing wheel must not trip over the files already there.
+          skip-existing: true
