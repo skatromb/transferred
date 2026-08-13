@@ -27,6 +27,7 @@ jobs:
           filters: |
             code:
               - 'crates/**'
+              - 'examples/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'deny.toml'
@@ -37,7 +38,7 @@ jobs:
   # The only required status check. The jobs below stay optional so the path filter can skip them.
   check-all:
     name: Check all
-    needs: [changes, rust, python, integration]
+    needs: [changes, rust, rust-x86_64, python, integration]
     if: always()
     runs-on: ubuntu-24.04-arm
     steps:
@@ -49,7 +50,7 @@ jobs:
           jq -e 'all(.[].result; . == "success" or . == "skipped")' <<<"$NEEDS" >/dev/null
 
   rust:
-    name: Rust
+    name: Rust (aarch64)
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04-arm
@@ -67,6 +68,25 @@ jobs:
 
       - name: make stubs-check
         run: make stubs-check
+
+  # We ship an x86_64 wheel, so tests have to run there too. Tests only: formatting, lints and the
+  # supply-chain audit read the same source whatever the architecture.
+  rust-x86_64:
+    name: Rust tests (x86_64)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: make cargo-test
+        run: make cargo-test
 
   python:
     name: Python

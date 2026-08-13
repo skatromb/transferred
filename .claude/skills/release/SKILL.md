@@ -50,7 +50,7 @@ Fix issues before tagging, even if it means another PR.
 
 ## 2 — Update README
 
-Sync the whole README.md end-to-end with this version's surface, including the code example (it's not covered by test). Output blocks (e.g. `print(report)`) must match actual output verbatim.
+Sync the whole README.md end-to-end with this version's surface, including the code example (it's not covered by test). Output blocks (e.g. `print(report)`) must match actual output verbatim. Code should be styled the same way as our Python code.
 
 ## 3 — Version bump
 
@@ -71,11 +71,11 @@ bump version to X.Y.Z
 
 Stop and ask the user to review the working tree before anything is committed. Everything from steps 1–3 is in it, and a release commit is the last cheap place to change one's mind.
 
-## 5 — Tick PLAN.md, open PR, merge
+## 5 — Tick PLAN.md, open PR, ask for merge
 
 Tick `Deploy 0.0.x` in `PLAN.md` in the same PR (or a follow-up). No ticking-only commits.
 
-Merge to `main`.
+Ask about merging to `main`.
 
 ## 6 — Tag and push
 
