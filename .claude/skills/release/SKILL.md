@@ -9,7 +9,7 @@ description: |
 
 # release — cut a `transferred` version
 
-Ships Rust crates (`transferred-core`, `transferred-files`, `transferred-py`) to crates.io and the `transferred` wheel to PyPI. CI publishes; this skill is the human pre/post work.
+Ships Rust crates (`transferred-core`, `transferred-files`, `transferred-postgres`, `transferred-py`) to crates.io and the `transferred` wheel to PyPI. CI publishes; this skill is the human pre/post work.
 
 Use `make` targets where they exist. If a step has no target, do it by hand or extend the Makefile.
 
@@ -61,19 +61,23 @@ make bump-lock
 make check
 ```
 
-Open PR. Commit message — single-line descriptive imperative, no Conventional Commits prefixes:
+Commit message — single-line descriptive imperative, no Conventional Commits prefixes:
 
 ```
 bump version to X.Y.Z
 ```
 
-## 4 — Tick PLAN.md, merge
+## 4 — Hand the diff over
+
+Stop and ask the user to review the working tree before anything is committed. Everything from steps 1–3 is in it, and a release commit is the last cheap place to change one's mind.
+
+## 5 — Tick PLAN.md, open PR, merge
 
 Tick `Deploy 0.0.x` in `PLAN.md` in the same PR (or a follow-up). No ticking-only commits.
 
 Merge to `main`.
 
-## 5 — Tag and push
+## 6 — Tag and push
 
 ```bash
 git checkout main && git pull
@@ -82,13 +86,13 @@ make release-tag
 
 Triggers `.github/workflows/release.yml`. CI's `verify` job rejects tags not on `main` or with version mismatching `transferred-core`'s `Cargo.toml`.
 
-## 6 — Approve environments
+## 7 — Approve environments
 
 In the Actions tab, approve gates for both environments:
-- `crates-io` — publishes core → files → py
+- `crates-io` — publishes core → files → postgres → py
 - `pypi` — Trusted Publishers / OIDC
 
-## 7 — Post-release smoke test
+## 8 — Post-release smoke test
 
 Green CI proves upload, not install. Replace the local maturin install with the published wheel:
 
@@ -110,7 +114,7 @@ Check:
 
 Restore dev install: `make python-dev-build`.
 
-## 8 — Verify pages
+## 9 — Verify pages
 
 - Check `https://pypi.org/project/transferred/X.Y.Z/` renders
 - Check each crate page on crates.io

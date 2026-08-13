@@ -56,7 +56,7 @@ jobs:
       - name: Publish crates
         run: |
           set -u
-          for pkg in transferred-core transferred-files transferred-py; do
+          for pkg in transferred-core transferred-files transferred-postgres transferred-py; do
             if ! cargo publish -p "$pkg" 2> /tmp/publish.err; then
               if grep -qE "already (uploaded|exists)" /tmp/publish.err; then
                 echo "::notice::$pkg version already on crates.io, skipping"

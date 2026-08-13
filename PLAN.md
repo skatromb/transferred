@@ -218,16 +218,7 @@ Goal: Atomic full load PG → PG and PG → Parquet. Direct type mapping only; f
   - `numrange` pins its bounds to bare `numeric`'s `Decimal128(38, 9)` and WARNs: a range constrains no precision on its element, so there is no typmod to read and no narrower choice to make.
   - Multiranges (PG 14+, `Kind::Multirange`) stay out: they need `List<Struct>`, and the `arrow.opaque` fallback keeps them transferable meanwhile.
   - Expand (range → five flat columns) is a *destination* coercion and stays out of scope: PG holds ranges natively. It is 0.2.0's problem, and only for part of the family — BQ `RANGE` takes `DATE`/`DATETIME`/`TIMESTAMP` elements only, so `daterange`/`tsrange`/`tstzrange` land natively while `int4range`/`int8range`/`numrange` have to expand.
-- [ ] Deploy 0.1.0.
-
-## 0.1.1 — public API guard
-
-Goal: stop the published surface from drifting by accident, now that connectors export extension types of their own.
-
-**Scope:**
-
-- `cargo-semver-checks` in the Rust gate, beside `cargo-deny`. Nothing watches the public API today, so a `pub` item can vanish in a patch and only a user's build would notice.
-- Settle what is API and what is plumbing before turning the check on, since it snapshots whatever it finds. `Wkb`, `PgRange` and `range_fields` are `pub` so a caller can declare a `PostGIS` or range column in a hand-built Arrow schema — and because `tests/` is a separate crate that can see nothing else. `#[doc(hidden)]` is the alternative, for all of them together: hiding one and not the rest reads as an oversight rather than a decision.
+- [x] Deploy 0.1.0. `release.yml` publishes `transferred-postgres` too — it was missing from the loop, and `transferred-py` depends on it, so the tag would have died on `cargo publish -p transferred-py`.
 
 ## 0.2.0 — BigQuery source + destination
 
@@ -273,6 +264,7 @@ Goal: state what the Arrow layer between a source and a destination *is*, so a c
 - Promote the extension tiers from prose to normative: canonical (`arrow.uuid`, `arrow.json`, `arrow.opaque`), community (`geoarrow.wkb`), ours (`transferred.*`, with 0.2.0's `transferred.pg_range` → `transferred.range` decision settled first).
 - Say what a destination owes a tag it does not know. Files writes the metadata verbatim, Postgres refuses and names the type — both are defensible and neither is written down as the rule.
 - Say where a shared extension type lives. `Wkb` and the range type leave `transferred-postgres` in 0.2.0 regardless; the contract decides whether `transferred-core` owns every `transferred.*` tag or connectors keep their own.
+- Decide which of it is public Rust API. `Wkb`, `PgRange` and `range_fields` are `pub` so a caller can declare such a column in a hand-built Arrow schema — and because `tests/` is a separate crate that sees nothing else. `#[doc(hidden)]` is the alternative, for all of them together, and the contract is what makes the choice answerable.
 - Conformance is a shared test corpus — one `RecordBatch` per contract row that a connector crate round-trips through itself. A trait with no behaviour would only restate the type signatures.
 
 After BQ, not now: with one source and two destinations there is a single call site per rule, so rule and code are indistinguishable. BQ brings a second source, a third destination, and the first mappings (`GEOGRAPHY`, `RANGE`) that must read tags another connector wrote.
