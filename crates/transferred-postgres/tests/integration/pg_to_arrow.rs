@@ -6,12 +6,13 @@ use std::sync::Arc;
 use arrow::array::{
     ArrayRef, BinaryArray, BooleanArray, Date32Array, Decimal128Array, FixedSizeBinaryArray,
     Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, IntervalMonthDayNanoArray,
-    RecordBatch, StringArray, TimestampMicrosecondArray,
+    RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
 };
+use arrow::buffer::NullBuffer;
 use arrow::datatypes::IntervalMonthDayNano;
 use arrow_schema::extension::{Json, Opaque, Uuid};
 use arrow_schema::{DataType, Field, IntervalUnit, Schema, TimeUnit};
-use transferred_postgres::Wkb;
+use transferred_postgres::{PgRange, Wkb};
 
 use crate::common::read_table;
 
@@ -188,6 +189,121 @@ async fn text_extensions() {
     assert_eq!(read_table("it_text").await, expected);
 }
 
+/// Builds a nullable `transferred.pg_range` field, as the mapping tags a range column.
+fn pg_range(name: &str, bound_type: DataType) -> Field {
+    nullable(name, DataType::Struct(PgRange::fields(bound_type))).with_extension_type(PgRange)
+}
+
+/// Builds one range column of the fixture: its bounds and their inclusivity, then the two rows
+/// that read the same in every column — row 3 is `empty`, row 4 is the SQL NULL.
+fn ranges(
+    bound_type: DataType,
+    lower: ArrayRef,
+    upper: ArrayRef,
+    lower_inc: [bool; 4],
+    upper_inc: [bool; 4],
+) -> ArrayRef {
+    let columns: Vec<ArrayRef> = vec![
+        lower,
+        upper,
+        Arc::new(BooleanArray::from(lower_inc.to_vec())),
+        Arc::new(BooleanArray::from(upper_inc.to_vec())),
+        Arc::new(BooleanArray::from(vec![false, false, true, false])),
+    ];
+    let nulls = NullBuffer::from(vec![true, true, true, false]);
+
+    Arc::new(StructArray::try_new(PgRange::fields(bound_type), columns, Some(nulls)).unwrap())
+}
+
+/// Bounds plus a tag is the only Arrow shape that tells an infinite bound, an `empty` range and a
+/// SQL NULL apart. A discrete range reaches us canonicalised, so its flags say `[)` whatever we
+/// wrote; only `numrange`, `tsrange` and `tstzrange` keep the inclusivity of the literal.
+#[tokio::test]
+async fn ranges_carry_their_bounds_and_tag() {
+    // 2024-01-15 and 2024-01-21, the `[)` form of `[2024-01-15,2024-01-20]`.
+    let days = (
+        vec![Some(19737), Some(19737), None, None],
+        vec![Some(19743), None, None, None],
+    );
+    // 2024-01-15 12:34:56.789012 and 2024-01-16 00:00:00, both counted from the epoch.
+    let micros = (
+        vec![Some(1_705_322_096_789_012), None, None, None],
+        vec![
+            Some(1_705_363_200_000_000),
+            Some(1_705_363_200_000_000),
+            None,
+            None,
+        ],
+    );
+    let decimals = |units: Vec<Option<i128>>| {
+        Arc::new(
+            Decimal128Array::from(units)
+                .with_precision_and_scale(38, 9)
+                .unwrap(),
+        ) as ArrayRef
+    };
+
+    let expected = expected(
+        vec![
+            pg_range("i4", DataType::Int32),
+            pg_range("i8", DataType::Int64),
+            pg_range("n", DataType::Decimal128(38, 9)),
+            pg_range("d", DataType::Date32),
+            pg_range("ts", DataType::Timestamp(TimeUnit::Microsecond, None)),
+            pg_range(
+                "tstz",
+                DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
+            ),
+        ],
+        vec![
+            ranges(
+                DataType::Int32,
+                Arc::new(Int32Array::from(vec![Some(1), None, None, None])),
+                Arc::new(Int32Array::from(vec![Some(6), Some(7), None, None])),
+                [true, false, false, false],
+                [false; 4],
+            ),
+            ranges(
+                DataType::Int64,
+                Arc::new(Int64Array::from(vec![Some(1), Some(7), None, None])),
+                Arc::new(Int64Array::from(vec![Some(6), None, None, None])),
+                [true, true, false, false],
+                [false; 4],
+            ),
+            ranges(
+                DataType::Decimal128(38, 9),
+                decimals(vec![Some(1_500_000_000), None, None, None]),
+                decimals(vec![Some(2_500_000_000), Some(2_500_000_000), None, None]),
+                [false; 4],
+                [true, false, false, false],
+            ),
+            ranges(
+                DataType::Date32,
+                Arc::new(Date32Array::from(days.0)),
+                Arc::new(Date32Array::from(days.1)),
+                [true, true, false, false],
+                [false; 4],
+            ),
+            ranges(
+                DataType::Timestamp(TimeUnit::Microsecond, None),
+                Arc::new(TimestampMicrosecondArray::from(micros.0.clone())),
+                Arc::new(TimestampMicrosecondArray::from(micros.1.clone())),
+                [true, false, false, false],
+                [false; 4],
+            ),
+            ranges(
+                DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
+                Arc::new(TimestampMicrosecondArray::from(micros.0).with_timezone("UTC")),
+                Arc::new(TimestampMicrosecondArray::from(micros.1).with_timezone("UTC")),
+                [true, false, false, false],
+                [false; 4],
+            ),
+        ],
+    );
+
+    assert_eq!(read_table("it_range").await, expected);
+}
+
 /// Decodes a hex byte string, so expectations read as the hex PG itself prints.
 fn hex_bytes(hex: &str) -> Vec<u8> {
     hex.as_bytes()
@@ -204,7 +320,7 @@ fn wkb(name: &str, wkb: Wkb) -> Field {
     nullable(name, DataType::Binary).with_extension_type(wkb)
 }
 
-/// `PostGIS` goes on the wire as EWKB, which `geoarrow.wkb` accepts verbatim, so the coordinate
+/// `PostGIS` sends EWKB, which `geoarrow.wkb` accepts verbatim, so the coordinate
 /// system rides along in every value even where the column declares none.
 #[tokio::test]
 async fn geometry() {
@@ -261,7 +377,7 @@ async fn geometry() {
     assert_eq!(read_table("it_geo").await, expected);
 }
 
-/// A type with no mapping keeps its wire bytes and says what it was, instead of failing the read.
+/// A type with no mapping keeps its bytes and says what it was, instead of failing the read.
 #[tokio::test]
 async fn unmapped_types() {
     let one_two = hex_bytes("00000002000000170000000400000001000000170000000400000002");

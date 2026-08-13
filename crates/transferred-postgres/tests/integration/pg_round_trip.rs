@@ -107,6 +107,13 @@ async fn text_extensions_round_trip() {
     assert_round_trips("it_text").await;
 }
 
+/// The destination rebuilds the range type from the bounds alone, and PG canonicalises what comes
+/// back the same way it canonicalised the original, so even a discrete range survives unchanged.
+#[tokio::test]
+async fn ranges_round_trip() {
+    assert_round_trips("it_range").await;
+}
+
 /// The destination rebuilds a `PostGIS` column from the tag alone: `geography` where the edges are
 /// spherical, and the declared coordinate system where the source column had one.
 #[tokio::test]
