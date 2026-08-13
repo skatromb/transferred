@@ -262,6 +262,21 @@ Goal: add BigQuery source + destination. Atomic full load PG ↔ BQ. Direct type
 - [ ] BQ env-gated integration test.
 - [ ] Round-trip integration tests (PG ↔ BQ).
 
+## 0.2.1 — Arrow interchange contract
+
+Goal: state what the Arrow layer between a source and a destination *is*, so a connector author learns it from a document rather than from reading `pg_to_arrow.rs`.
+
+**Scope:**
+
+- The contract is implicit today. DESIGN.md §Type system records what 0.1 happens to do; the rules themselves live in each connector's match arms, so a new connector cannot tell which Arrow types it must accept, which it may emit, or what the tags oblige it to.
+- Spell out the supported `DataType` set per direction, and what is deliberately outside it (`Union` — no Parquet encoding, `Dictionary`, `Duration`, `Interval` past Parquet's reach).
+- Promote the extension tiers from prose to normative: canonical (`arrow.uuid`, `arrow.json`, `arrow.opaque`), community (`geoarrow.wkb`), ours (`transferred.*`, with 0.2.0's `transferred.pg_range` → `transferred.range` decision settled first).
+- Say what a destination owes a tag it does not know. Files writes the metadata verbatim, Postgres refuses and names the type — both are defensible and neither is written down as the rule.
+- Say where a shared extension type lives. `Wkb` and the range type leave `transferred-postgres` in 0.2.0 regardless; the contract decides whether `transferred-core` owns every `transferred.*` tag or connectors keep their own.
+- Conformance is a shared test corpus — one `RecordBatch` per contract row that a connector crate round-trips through itself. A trait with no behaviour would only restate the type signatures.
+
+After BQ, not now: with one source and two destinations there is a single call site per rule, so rule and code are indistinguishable. BQ brings a second source, a third destination, and the first mappings (`GEOGRAPHY`, `RANGE`) that must read tags another connector wrote.
+
 ## 0.3 — S3 + GCS
 
 - S3 destination (Parquet) via `object_store`.
