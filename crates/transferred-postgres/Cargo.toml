@@ -39,7 +39,9 @@ url = "2.5"
 integration = []
 
 [dev-dependencies]
+transferred-files = { workspace = true }
 testcontainers-modules = { version = "0.15.0", features = ["postgres"] }
+tempfile = "3"
 ctor = "0.6"
 
 [[test]]

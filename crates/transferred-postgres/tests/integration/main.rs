@@ -4,3 +4,4 @@ mod common;
 mod pg_round_trip;
 mod pg_tls;
 mod pg_to_arrow;
+mod pg_to_parquet;
