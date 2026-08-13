@@ -41,7 +41,7 @@ Swap either end for another source or destination — the middle stays the same.
 Sources:
 - Parquet file — `FilesSource`
 - Postgres table — `PostgresSource`
-- Arrow `RecordBatchReader` — `ArrowSource` (requires `pip install transferred[arrow]`)
+- Arrow data — `ArrowSource` takes a `pa.Table`, `RecordBatch`, `RecordBatchReader`, or anything else exposing `__arrow_c_stream__`
 - Python iterables of `dict` / `@dataclass` / `pydantic.BaseModel` (requires `pip install transferred[iterable]`)
 
 Destinations:

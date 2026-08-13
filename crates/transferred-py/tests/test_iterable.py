@@ -147,9 +147,9 @@ def test_transfer_rejects_non_destination(tmp_path: Path) -> None:
         )
 
 
-def test_arrow_source_rejects_non_reader() -> None:
-    with pytest.raises(TypeError, match="reader must be a pyarrow.RecordBatchReader"):
-        ArrowSource("not a reader")  # ty: ignore[invalid-argument-type]
+def test_arrow_source_rejects_non_arrow_data() -> None:
+    with pytest.raises(TypeError, match="`PyCapsule` interface"):
+        ArrowSource("not arrow data")  # ty: ignore[invalid-argument-type]
 
 
 def test_arrow_source_accepts_record_batch_reader(tmp_path: Path) -> None:
@@ -158,5 +158,15 @@ def test_arrow_source_accepts_record_batch_reader(tmp_path: Path) -> None:
     out = tmp_path / "out.parquet"
 
     src = ArrowSource(reader)
+    report = Transfer(source=src, destination=FilesDestination(out)).run()
+    assert report.rows == 3
+
+
+def test_arrow_source_accepts_table(tmp_path: Path) -> None:
+    """A table exposes the same capsule interface a reader does, materialised."""
+    table = pa.table({"id": [1, 2, 3]})
+    out = tmp_path / "out.parquet"
+
+    src = ArrowSource(table)
     report = Transfer(source=src, destination=FilesDestination(out)).run()
     assert report.rows == 3

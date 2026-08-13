@@ -78,7 +78,7 @@ Transfer(source=order_iter, destination=FilesDestination("out")).run()
 
 Module layout for the iterable + Arrow path:
 
-- `transferred.arrow.ArrowSource` — accepts a `pa.RecordBatchReader` only. The Arrow seam into Rust. Future overloads (`pa.Table`, `pa.RecordBatch`) drop in here.
+- `transferred.arrow.ArrowSource` — accepts anything exposing `__arrow_c_stream__`. The Arrow seam into Rust: `arrow-pyarrow`'s `FromPyArrow` reads the capsule, so `pa.Table`, `pa.RecordBatch`, `pa.RecordBatchReader` and non-pyarrow producers (polars, duckdb) all arrive the same way and pyarrow itself is never imported here.
 - `transferred.iterable._iterable_to_arrow` — wraps an iterable of `dict` / `@dataclass` / `pydantic.BaseModel` as an `ArrowSource`. The batching itself lives in `_iterable_to_reader`, which builds the `pa.RecordBatchReader` (see Memory model). Depends on `arrow` (one-way), not the other way.
 - `transferred.transfer.Transfer` — Python wrapper around `_native.Transfer`. Coerces iterables on construction.
 
@@ -320,7 +320,7 @@ Python-side memory (iterable path via `_iterable_to_arrow`):
 
 - Generator sources stream one row at a time. The internal `_iterable_to_reader` collects `_BATCH_SIZE` rows (4096) into a tuple via `itertools.batched`, calls `pa.RecordBatch.from_pylist(chunk)`, drops the tuple, hands the batch to Rust via Arrow C Data Interface. One FFI crossing per batch.
 - Peak Python-side memory per batch ≈ `_BATCH_SIZE × avg_row_bytes × 2` (chunk + Arrow buffers briefly co-resident).
-- List sources: caller is responsible for what they materialise — engine cannot help if the user pre-builds a 10 GiB list. Documented in `ArrowSource` docstring as "prefer a generator over a materialized `list` for large inputs".
+- List sources: caller is responsible for what they materialise — engine cannot help if the user pre-builds a 10 GiB list. Same for a `pa.Table`; `ArrowSource`'s docstring asks for a reader once the data outgrows RAM.
 - `memory_budget_mb=` knob (deferred): translated to row count via running average row size, adjusts batch_size adaptively.
 
 **Conversion seam — design intent.** Row-shape normalization (dict / dataclass / pydantic → `dict[str, Any]`) and dict → Arrow batch building both happen on the **Python side**. Rust only ever sees `arrow::RecordBatch` arriving across the C Data Interface, single hot path.
@@ -329,9 +329,9 @@ Rationale:
 - Both paths (Python via pyarrow, or Rust via PyO3) cross the CPython FFI **once per cell** — every read of a `PyLongObject` / `PyUnicodeObject` requires a CPython API call regardless of which language owns the loop. The speed gap is the constant factor (pyarrow ~2x faster than equivalent Rust + PyO3), not an order of magnitude.
 - The decisive factor is **code volume and maintenance**: ~200 lines of unsafe-ish PyO3 conversion + null handling + schema inference + nested-type support on the Rust side, versus a single `pa.RecordBatch.from_pylist()` call.
 - pyarrow has battle-tested type inference, null handling, nested types, and is the de-facto interop currency in the Python data ecosystem (Polars, DuckDB, pandas 2.0+).
-- Cost accepted: pyarrow ships as an **optional dep** via `transferred[arrow]` extra (`transferred[iterable]` aliased) (~30 MB wheel). Base install stays lean for users who only use Rust-native sources/destinations (Parquet, future Postgres, BigQuery). Missing pyarrow at `ArrowSource` construction raises `ImportError` with install hint.
+- Cost accepted: pyarrow ships as an **optional dep** via `transferred[arrow]` extra (`transferred[iterable]` aliased) (~30 MB wheel). Base install stays lean for users who only use Rust-native sources/destinations (Parquet, future Postgres, BigQuery). Missing pyarrow at iterable conversion raises `ImportError` with install hint; `ArrowSource` needs no pyarrow of its own.
 
-Fast path for callers who already have Arrow: `ArrowSource(pa_record_batch_reader)` skips the iterable conversion and goes straight to the C Data Interface. Future overloads (`pa.Table`, `pa.RecordBatch`) extend this fast path.
+Fast path for callers who already have Arrow: `ArrowSource(arrow_data)` skips the iterable conversion and goes straight to the C Data Interface.
 
 ### Runtime contract
 
