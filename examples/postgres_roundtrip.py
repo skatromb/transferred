@@ -30,7 +30,9 @@ from transferred import (
 
 dsn = os.environ.get("TRANSFERRED_PG_DSN")
 if not dsn:
-    print(f"TRANSFERRED_PG_DSN unset, nothing to connect to — see {Path(__file__).name}")
+    print(
+        f"TRANSFERRED_PG_DSN unset, nothing to connect to — see {Path(__file__).name}"
+    )
     raise SystemExit(0)
 
 cities = [

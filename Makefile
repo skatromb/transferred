@@ -87,8 +87,8 @@ python-setup:
 .PHONY: ruff
 ruff: python-setup
 	@cd crates/transferred-py && \
-		uv run --no-sync ruff format && \
-		uv run --no-sync ruff check
+		uv run --no-sync ruff format . ../../examples && \
+		uv run --no-sync ruff check . ../../examples
 	@if [ -n "$$CI" ]; then git diff --exit-code -- '*.py'; fi
 
 # Type-check Python sources against the auto-generated `_native` stubs.
