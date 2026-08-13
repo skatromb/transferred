@@ -219,6 +219,9 @@ Goal: Atomic full load PG → PG and PG → Parquet. Direct type mapping only; f
   - Multiranges (PG 14+, `Kind::Multirange`) stay out: they need `List<Struct>`, and the `arrow.opaque` fallback keeps them transferable meanwhile.
   - Expand (range → five flat columns) is a *destination* coercion and stays out of scope: PG holds ranges natively. It is 0.2.0's problem, and only for part of the family — BQ `RANGE` takes `DATE`/`DATETIME`/`TIMESTAMP` elements only, so `daterange`/`tsrange`/`tstzrange` land natively while `int4range`/`int8range`/`numrange` have to expand.
 - [x] Deploy 0.1.0. `release.yml` publishes `transferred-postgres` too — it was missing from the loop, and `transferred-py` depends on it, so the tag would have died on `cargo publish -p transferred-py`.
+  - The aarch64 wheel is built on `ubuntu-24.04-arm`, not cross-compiled: `transferred-postgres` is the first C dependency in the wheel, and `ring`'s ARM assembly needs a `__ARM_ARCH` the manylinux cross-gcc does not define.
+  - macOS and Windows had shipped nothing but a free-threaded wheel since 0.0.3, so every install there built from the sdist. `--find-interpreter` stops at the first `python3.14` on PATH, and `PythonT.framework` ships an executable of that exact name; those two platforms now name their interpreter outright, one job per ABI. Linux keeps discovery — a manylinux container cannot see host interpreters, and walks `/opt/python/*` where the names do not collide.
+  - Both misses shipped because neither failed a build. The post-release smoke test in the release skill is what catches an incomplete set; nothing in CI asserts one.
 
 ## 0.2.0 — BigQuery source + destination
 
