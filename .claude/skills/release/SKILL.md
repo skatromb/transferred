@@ -98,8 +98,8 @@ Green CI proves upload, not install. Replace the local maturin install with the 
 
 ```bash
 cd crates/transferred-py
-uv pip install --force-reinstall "transferred==X.Y.Z"
-uv pip install --force-reinstall "transferred[arrow]==X.Y.Z"   # extras for 0.0.2+
+uv pip install --refresh --force-reinstall "transferred==X.Y.Z"
+uv pip install --refresh --force-reinstall "transferred[arrow]==X.Y.Z"   # extras for 0.0.2+
 
 uv run python -c "
 import transferred
