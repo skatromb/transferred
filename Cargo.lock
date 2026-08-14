@@ -3568,7 +3568,7 @@ dependencies = [
 
 [[package]]
 name = "transferred-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arrow",
  "arrow-schema",
@@ -3581,7 +3581,7 @@ dependencies = [
 
 [[package]]
 name = "transferred-files"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arrow",
  "arrow-schema",
@@ -3598,7 +3598,7 @@ dependencies = [
 
 [[package]]
 name = "transferred-postgres"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arrow",
  "arrow-schema",
@@ -3627,7 +3627,7 @@ dependencies = [
 
 [[package]]
 name = "transferred-py"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arrow",
  "async-trait",

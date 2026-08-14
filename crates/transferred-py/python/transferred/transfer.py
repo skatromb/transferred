@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Self
 
 from transferred._base import Destination, Source
 from transferred._native import _Transfer
+from transferred.arrow import ArrowSource, ArrowStream
 
 if TYPE_CHECKING:
     import pydantic
@@ -17,8 +18,11 @@ class Transfer(_Transfer):
     """Orchestrate a single source → destination run. Single-shot.
 
     Args:
-        source: A `transferred.Source` or an iterable of
-            `dict` / `@dataclass` / `pydantic.BaseModel` rows.
+        source: Any of the `transferred.Source`,
+            an iterable of `dict` / `@dataclass` / `pydantic.BaseModel` rows,
+            a polars or pandas `DataFrame`,
+            a `pa.Table` / `RecordBatch` / `RecordBatchReader`,
+            a duckdb result.
         destination: A `transferred.Destination`.
 
     Example:
@@ -44,18 +48,21 @@ class Transfer(_Transfer):
     def __new__(
         cls,
         source: Source
+        | ArrowStream
         | Iterable[dict[str, Any] | DataclassInstance | pydantic.BaseModel],
         destination: Destination,
     ) -> Self:
         if isinstance(source, Source):
             pass
+        elif isinstance(source, ArrowStream):
+            source = ArrowSource(source)
         elif isinstance(source, Iterable):
             from transferred.iterable import _iterable_to_arrow
 
             source = _iterable_to_arrow(source)
         else:
             raise TypeError(
-                f"source must be a transferred source or an iterable of rows, "
+                f"source must be a transferred source, Arrow data or an iterable of rows, "
                 f"got {type(source).__name__!r}"
             )
 
