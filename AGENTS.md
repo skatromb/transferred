@@ -49,6 +49,10 @@ Fix the root cause. Don't sprinkle `#[allow(…)]`, `# noqa`, `# type: ignore`, 
 
 Test code is the documented exception — file-level allows are fine in `tests/`, `#[cfg(test)] mod tests`, `conftest.py`.
 
+## Throwaway Postgres
+
+Hand-testing against a database (examples, smoke tests) reuses the image the integration suite already pulls — `imresamu/postgis`
+
 ## Citing library defaults
 
 When asserting a specific numeric default (row group sizes, batch sizes, timeouts, CPU counts), cite the source — file path, doc URL, or `help()` output — in the same message. Don't recall from memory and let the reader push back. Especially load-bearing for perf claims.

@@ -233,6 +233,26 @@ Goal: stop `ArrowSource` from being narrower than the seam beneath it.
   - Nothing to add in Rust: `arrow-pyarrow`'s `FromPyArrow for ArrowArrayStreamReader` tries the [PyCapsule interface](https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html) first and only then falls back to pyarrow's private `_export_to_c` (`arrow-pyarrow-59.1.0/src/lib.rs:375`). The `isinstance` check in Python was the only thing narrowing it.
   - The pyarrow import goes with it, so `ArrowSource` no longer raises `ImportError`: on the capsule path pyarrow is never touched. The `transferred[arrow]` extra still covers `_iterable_to_arrow`, which really does build `pa.RecordBatch`es, and that path keeps its own hint.
   - Typed as an `ArrowStream` protocol rather than a union of three pyarrow classes — the union would lie about polars and duckdb the same way `RecordBatchReader` lied about `Table`.
+- [x] `examples/dataframe_to_parquet.py` — the seam had no example at all, which is how the narrowing survived two releases. Covers a `polars.DataFrame`, a `pa.Table` and a reader, none of them wrapped; the polars column lands as `string_view`, its own layout crossing untouched.
+- [x] Examples are named after the job, not the trip: `postgres_to_parquet.py`, with the load demoted to setup. A round-trip asserts data came back intact — that is what the test suites are for. The Parquet → Parquet one went with its name: recompressing a file is not why anyone reaches for a transfer tool, and `test_parquet_roundtrip.py` already covers `FilesSource`.
+- [x] `Transfer(df, destination)` takes a DataFrame with no wrapper, the way `Transfer([{...}], …)` already takes rows. Dispatch on `__arrow_c_stream__` in `Transfer.__new__`, before the `isinstance(source, Iterable)` branch: a DataFrame *is* iterable, so today it reaches the row converter and dies describing the wrong problem — polars iterates its columns (`unsupported row type 'Series'`), pandas iterates column names (`unsupported row type 'str'`).
+  - This is what makes the seam discoverable, not the class name. A polars user does not search for "Arrow", and `ArrowSource` is undiscoverable for exactly that reason — but the fix is an entry point with nothing to look up, not a rename. `ArrowSource` stays for the explicit path, where the word Arrow is the right one.
+  - `Transfer`'s own docstring is the second half: `Args: source:` names the accepted things by library — a polars or pandas `DataFrame`, a duckdb result, `pa.Table`/`RecordBatch`/`RecordBatchReader` — because IDE hover and `help(Transfer)` are where a user actually looks.
+  - Name the pandas floor wherever pandas is promised. Verified against 3.0.5; `__arrow_c_stream__` arrived in pandas 2.2, so anything older needs `pa.Table.from_pandas` — check its whatsnew before writing the number down.
+- [x] Deploy 0.1.1.
+
+## 0.1.2 — Postgres perf leg
+
+Goal: measure the Postgres legs and let the README quote a number worth reading. `rows: 3, duration: 2ms` proves the API compiles, nothing else — the 0.0.3 findings are the only throughput and RSS figures we have, and they cover Parquet only.
+
+**Scope:**
+
+- [ ] `postgres_to_parquet` and `parquet_to_postgres` workloads in `perf/workloads/`. `perf/run.py` hands each workload a seed Parquet path; a Postgres one needs a DSN instead, so `_measure_workload` grows a second fixture shape.
+- [ ] Container lifecycle in the harness. The Rust suite drives `imresamu/postgis:18-3.6` through testcontainers; the Python side has no such dependency today, and one `docker run` + wait loop may be cheaper than adding it.
+- [ ] Seed server-side (`create table … select from generate_series`) so the read leg measures reading, not our own insert path. The write leg seeds from Parquet instead, keeping the two independent.
+- [ ] A baseline that is fair, since parity is the honest expectation, not a win: `psycopg` + pyarrow, duckdb's `postgres_scanner`, or `COPY … TO STDOUT (FORMAT binary)` piped into pyarrow. Whichever is chosen, say which and why.
+- [ ] Report RSS beside throughput. 0.0.3 found memory to be where transferred actually wins (~2x on Parquet → Parquet, ~6x on iterable → Parquet); a COPY-based read leg should hold the same shape and that is the number to show.
+- [ ] README example at a scale worth showing, output verbatim from a `--release` build. `examples/postgres_to_parquet.py` stays at three cities — an example is read, a benchmark is run.
 
 ## 0.2.0 — BigQuery source + destination
 

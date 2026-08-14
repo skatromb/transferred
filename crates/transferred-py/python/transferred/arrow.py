@@ -3,14 +3,15 @@
 Accepts any object exposing the Arrow PyCapsule interface and hands its stream to Rust.
 """
 
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from transferred._base import Source
 from transferred._native import _ArrowSource
 
 
+@runtime_checkable
 class ArrowStream(Protocol):
-    """Arrow data reachable through the Arrow PyCapsule interface."""
+    """Anything implementing Arrow PyCapsule interface: DataFrame, Arrow.Table, BatchReader."""
 
     def __arrow_c_stream__(self, requested_schema: object | None = None) -> object: ...
 
@@ -53,7 +54,7 @@ class ArrowSource(Source):
     _native_source: _ArrowSource
 
     def __init__(self, data: ArrowStream) -> None:
-        if not hasattr(data, "__arrow_c_stream__"):
+        if not isinstance(data, ArrowStream):
             raise TypeError(
                 f"{type(data).__name__!r} does not implement the Arrow `PyCapsule` "
                 "interface — pass a pyarrow `Table`, `RecordBatch` or `RecordBatchReader`, "

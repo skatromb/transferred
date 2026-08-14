@@ -129,6 +129,22 @@ def test_transfer_passes_through_explicit_arrow_source(tmp_path: Path) -> None:
     assert report.rows == 4
 
 
+def test_transfer_wraps_arrow_data_without_a_source(tmp_path: Path) -> None:
+    """A DataFrame goes straight in — `pa.Table` stands in for polars and pandas here."""
+    table = pa.table({"id": [1, 2, 3]})
+
+    report = Transfer(table, FilesDestination(tmp_path / "out.parquet")).run()
+    assert report.rows == 3
+
+
+def test_transfer_prefers_arrow_data_over_iteration(tmp_path: Path) -> None:
+    """A reader is iterable, over batches — iterating it would reach the row converter."""
+    reader = pa.table({"id": [1, 2, 3]}).to_reader()
+
+    report = Transfer(reader, FilesDestination(tmp_path / "out.parquet")).run()
+    assert report.rows == 3
+
+
 def test_transfer_rejects_non_source_non_iterable(tmp_path: Path) -> None:
     with pytest.raises(TypeError, match="source must be a transferred source"):
         Transfer(

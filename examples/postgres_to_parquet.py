@@ -5,18 +5,16 @@
 #     "pyarrow",
 # ]
 # ///
-"""Rows → Postgres → Parquet with `transferred`.
+"""Extract a Postgres table into Parquet with `transferred`.
 
 Needs a database. A throwaway one:
 
     docker run -d --rm -p 5432:5432 -e POSTGRES_PASSWORD=pw postgres:18-alpine
 
 Run:
-    TRANSFERRED_PG_DSN=postgres://postgres:pw@localhost:5432/postgres \
-        uv run postgres_roundtrip.py
+    uv run postgres_to_parquet.py
 """
 
-import os
 from pathlib import Path
 
 import pyarrow.parquet as pq
@@ -28,12 +26,7 @@ from transferred import (
     Transfer,
 )
 
-dsn = os.environ.get("TRANSFERRED_PG_DSN")
-if not dsn:
-    print(
-        f"TRANSFERRED_PG_DSN unset, nothing to connect to — see {Path(__file__).name}"
-    )
-    raise SystemExit(0)
+dsn = "postgres://postgres:pw@localhost:5432/postgres"
 
 cities = [
     {"id": 1, "city": "Stockholm", "population": 984_748},
@@ -41,26 +34,17 @@ cities = [
     {"id": 3, "city": "Malmö", "population": 362_133},
 ]
 
-# The destination creates the table from the source's schema, replacing any table of that name.
-load = Transfer(
+Transfer(
     source=cities,
     destination=PostgresDestination(dsn, table="public.cities"),
 ).run()
 
-print(load)
-# RunReport:
-#   rows: 3
-#   written: 0 B
-#   duration: 40ms
-#   written objects:
-#     "public"."cities"
-
-extract = Transfer(
+report = Transfer(
     source=PostgresSource(dsn, table="public.cities"),
     destination=FilesDestination(Path("cities/"), format=Parquet(compression="zstd")),
 ).run()
 
-print(extract)
+print(report)
 # RunReport:
 #   rows: 3
 #   written: 1.16 KiB
@@ -68,7 +52,7 @@ print(extract)
 #   written objects:
 #     cities/part-00001.parquet
 
-print(pq.read_table("cities/"))
+print(pq.read_table(Path("cities/")))
 # pyarrow.Table
 # id: int64
 # city: string

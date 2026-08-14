@@ -163,14 +163,19 @@ release-retag: release-check
 	@git push origin "v$(VERSION)"
 	@echo "re-tagged v$(VERSION)"
 
-# Check validity of every examples/*.py against the current build.
+# Check validity of every examples/*.py against the current build. Needs Docker for Postgres.
 .PHONY: examples
 examples: python-setup
-	@set -e; for file in examples/*.py; do \
+	@set -e; \
+	docker run -d --rm --name transferred_examples -p 5432:5432 \
+		-e POSTGRES_PASSWORD=pw imresamu/postgis:18-3.6 >/dev/null; \
+	trap 'docker stop transferred_examples >/dev/null' EXIT; \
+	until docker exec transferred_examples pg_isready -q; do sleep 1; done; \
+	for file in examples/*.py; do \
 		out=$$( (cd examples && \
 			uv run --python ../crates/transferred-py/.venv \
-				--with pyarrow --with pydantic \
+				--with pyarrow --with polars --with pydantic \
 				python "$$(basename $$file)") 2>&1 ) \
-			&& echo "ok   $$file" \
+			&& echo "ok $$file" \
 			|| { echo "fail $$file"; echo "$$out"; exit 1; }; \
 	done

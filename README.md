@@ -18,10 +18,18 @@ Requires Python 3.14.
 ## Usage
 
 ```python
+from pathlib import Path
+
 from transferred import FilesDestination, Parquet, PostgresSource, Transfer
 
-source = PostgresSource("postgres://user:pass@localhost:5432/db", table="public.cities")
-destination = FilesDestination("cities/", format=Parquet(compression="zstd"))
+source = PostgresSource(
+    "postgres://user:pass@localhost:5432/db",
+    table="public.cities",
+)
+destination = FilesDestination(
+    Path("cities/"),
+    format=Parquet(compression="zstd"),
+)
 
 report = Transfer(source, destination).run()
 
@@ -41,7 +49,7 @@ Swap either end for another source or destination — the middle stays the same.
 Sources:
 - Parquet file — `FilesSource`
 - Postgres table — `PostgresSource`
-- Arrow data — `ArrowSource` takes a `pa.Table`, `RecordBatch`, `RecordBatchReader`, or anything else exposing `__arrow_c_stream__`
+- DataFrames — polars or pandas `DataFrame`, a duckdb result, a `pa.Table`, pyarrow's `RecordBatch` or `RecordBatchReader`
 - Python iterables of `dict` / `@dataclass` / `pydantic.BaseModel` (requires `pip install transferred[iterable]`)
 
 Destinations:

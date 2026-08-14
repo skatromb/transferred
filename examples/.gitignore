@@ -1,6 +1,8 @@
 cities/
-compressed/
 from_dicts/
 from_dataclasses/
+from_polars/
 from_pydantic/
+from_reader/
+from_table/
 out/
