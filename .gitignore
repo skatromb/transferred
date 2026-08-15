@@ -5,4 +5,5 @@ __pycache__/
 .venv/
 .DS_Store
 /data/
+/perf/.fixtures/
 /perf/.results/

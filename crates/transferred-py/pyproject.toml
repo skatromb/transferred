@@ -44,6 +44,15 @@ dev = [
     "ruff>=0.15",
     "ty>=0.0.37",
 ]
+# Baselines the perf suite measures `transferred` against. Kept out of `dev`:
+# nothing but `make perf` needs a Postgres driver, a query engine and pandas.
+perf = [
+    "adbc-driver-postgresql>=1.12",
+    "connectorx>=0.4.5",
+    "dlt[filesystem,postgres,sql-database]>=1.30",
+    "duckdb>=1.5",
+    "fastparquet>=2026.5",
+]
 
 [tool.pytest.ini_options]
 addopts = "--doctest-modules"
