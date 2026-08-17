@@ -2,6 +2,7 @@
 mod arrow_to_pg;
 mod connection;
 mod convert;
+mod copy_in;
 mod destination;
 mod geoarrow;
 mod pg_range;

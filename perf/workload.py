@@ -11,6 +11,7 @@ Workload stdout protocol — single JSON object emitted by `run`:
 
 from __future__ import annotations
 
+import filecmp
 import gc
 import json
 import sys
@@ -21,6 +22,9 @@ from typing import TypeVar
 
 T = TypeVar("T")
 
+RELEASE_DIR = Path(__file__).resolve().parents[1] / "target" / "release"
+"""Where the release build of the extension lands; `measure` refuses to time any other."""
+
 
 def measure(thunk: Callable[[], T]) -> tuple[T, float]:
     """Run `thunk`, return (result, wall_seconds).
@@ -28,10 +32,33 @@ def measure(thunk: Callable[[], T]) -> tuple[T, float]:
     `gc.collect()` runs first so a previous workload phase cannot land inside the
     timed region. Memory is measured externally, by the harness sampling RSS.
     """
+    _refuse_debug_build()
     gc.collect()
     wall_start = time.monotonic()
     result = thunk()
     return result, time.monotonic() - wall_start
+
+
+def _refuse_debug_build() -> None:
+    """Refuse to time a debug `transferred`, which is a different program.
+
+    `make python-setup` installs a debug extension over the release one
+    `make python-dev-build` leaves in the same place, so a `make check` between two
+    perf runs swaps the binary being measured with nothing to show it. Baselines
+    that never import `transferred` are left alone.
+    """
+    native = sys.modules.get("transferred._native")
+    if native is None or native.__file__ is None:
+        return
+
+    loaded = Path(native.__file__)
+    # Stat signature, not contents: reading 11 MB here would land in the RSS the harness reports.
+    if any(filecmp.cmp(loaded, built) for built in RELEASE_DIR.glob("lib_native.*")):
+        return
+
+    raise SystemExit(
+        f"{loaded.name} is not the build in {RELEASE_DIR}: run `make python-dev-build`"
+    )
 
 
 def file_bytes(out: Path) -> int:

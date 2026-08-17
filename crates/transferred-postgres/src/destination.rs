@@ -1,20 +1,20 @@
 //! Postgres destination. Arrow `RecordBatch` → binary COPY into a staging table, then atomic swap.
 
 use std::future::ready;
-use std::pin::{Pin, pin};
+use std::pin::pin;
 use std::time::Instant;
 
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt, stream};
-use tokio_postgres::types::ToSql;
-use tokio_postgres::{Client, binary_copy::BinaryCopyInWriter};
+use tokio_postgres::Client;
 use tracing::warn;
 use transferred_core::{BatchStream, Destination, Result, RunReport, TransferredError};
 
 use postgres_protocol::escape::escape_identifier;
 
-use crate::arrow_to_pg::{ArrowToPg, PgValue};
+use crate::arrow_to_pg::Encoder;
 use crate::connection::connect;
+use crate::copy_in::CopyIn;
 
 /// Suffix marking the staging table a load fills before the swap; a leftover one is safe to drop.
 pub const STAGING_SUFFIX: &str = "__transferred_staging";
@@ -48,16 +48,16 @@ impl Destination for PostgresDestination {
             .map_err(TransferredError::destination)?;
         let target = Target::resolve(&client, &self.table).await?;
 
-        let rows = match load_staging(&client, &target, partitions).await {
+        let rows = match target.load(&client, partitions).await {
             Ok(rows) => rows,
             Err(error) => {
-                drop_staging(&client, &target).await;
+                target.drop_staging(&client).await;
                 return Err(error);
             }
         };
 
         if let Err(error) = target.swap(&mut client).await {
-            drop_staging(&client, &target).await;
+            target.drop_staging(&client).await;
             return Err(error);
         }
 
@@ -68,105 +68,6 @@ impl Destination for PostgresDestination {
             duration: start.elapsed(),
             coercions: vec![],
         })
-    }
-}
-
-/// Creates the staging table from the first batch's schema, then COPYs every batch into it.
-async fn load_staging(
-    client: &Client,
-    target: &Target,
-    partitions: Vec<BatchStream>,
-) -> Result<u64> {
-    // Every partition lands in one table, so partition identity carries no meaning here.
-    let mut rest = futures::stream::iter(partitions).flatten().boxed();
-
-    // The staging DDL needs a schema, which only the first batch can supply.
-    let Some(first) = rest.try_next().await? else {
-        return Err(TransferredError::EmptySource);
-    };
-
-    let arrow_to_pg = ArrowToPg::derive(&first.schema())?;
-    client
-        .batch_execute(&format!(
-            "drop table if exists {staging}; create table {staging} ({declarations})",
-            staging = target.staging,
-            declarations = arrow_to_pg.declarations(),
-        ))
-        .await
-        .map_err(TransferredError::destination)?;
-
-    let sink = client
-        .copy_in(&format!(
-            "copy {staging} from stdin (format binary)",
-            staging = target.staging
-        ))
-        .await
-        .map_err(TransferredError::destination)?;
-
-    let mut writer = pin!(BinaryCopyInWriter::new(sink, &arrow_to_pg.pg_types()));
-    let mut batches = pin!(stream::once(ready(Ok(first))).chain(rest));
-
-    while let Some(batch) = batches.try_next().await? {
-        write_rows(writer.as_mut(), &arrow_to_pg.encode(&batch)?).await?;
-    }
-
-    writer.finish().await.map_err(TransferredError::destination)
-}
-
-/// Writes one COPY row per Arrow row, reading the encoded columns in lockstep.
-async fn write_rows(
-    mut writer: Pin<&mut BinaryCopyInWriter>,
-    columns: &[Vec<PgValue<'_>>],
-) -> Result<()> {
-    let num_rows = shared_row_count(columns)?;
-
-    // One cursor per column, advanced in lockstep, so a row costs no allocation.
-    let mut cursors: Vec<_> = columns.iter().map(|values| values.iter()).collect();
-    let mut row: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(columns.len());
-
-    for _ in 0..num_rows {
-        row.clear();
-        for cursor in &mut cursors {
-            // Every column holds `num_rows` values, checked above, so each cursor yields here.
-            if let Some(value) = cursor.next() {
-                row.push(&**value);
-            }
-        }
-
-        writer
-            .as_mut()
-            .write(&row)
-            .await
-            .map_err(TransferredError::destination)?;
-    }
-
-    Ok(())
-}
-
-/// Row count every encoded column agrees on. COPY sends whole rows, so disagreement is fatal.
-fn shared_row_count(columns: &[Vec<PgValue<'_>>]) -> Result<usize> {
-    let num_rows = columns.first().map_or(0, Vec::len);
-
-    if let Some((index, values)) = columns
-        .iter()
-        .enumerate()
-        .find(|(_, values)| values.len() != num_rows)
-    {
-        return Err(TransferredError::destination(format!(
-            "encoded columns disagree on row count: \
-             column {index} has {}, column 0 has {num_rows}",
-            values.len()
-        )));
-    }
-
-    Ok(num_rows)
-}
-
-/// Removes a leftover staging table, logging failures rather than masking the error that got us here.
-async fn drop_staging(client: &Client, target: &Target) {
-    let sql = format!("drop table if exists {}", target.staging);
-    if let Err(error) = client.batch_execute(&sql).await {
-        warn!(target: "postgres::destination", table = %target.staging, %error, "failed to drop staging table");
     }
 }
 
@@ -208,6 +109,27 @@ impl Target {
         })
     }
 
+    /// Creates the staging table from the first batch's schema, then COPYs every batch into it.
+    async fn load(&self, client: &Client, partitions: Vec<BatchStream>) -> Result<u64> {
+        let mut rest = stream::iter(partitions).flatten().boxed();
+
+        let Some(first) = rest.try_next().await? else {
+            return Err(TransferredError::EmptySource);
+        };
+
+        let encoder = Encoder::new(&first.schema())?;
+        self.create_staging(client, &encoder.declarations()).await?;
+
+        let mut batches = pin!(stream::once(ready(Ok(first))).chain(rest));
+        let mut copy = CopyIn::open(client, &self.staging).await?;
+
+        while let Some(batch) = batches.try_next().await? {
+            copy.write_batch(&encoder, &batch).await?;
+        }
+
+        copy.finish().await
+    }
+
     /// Replaces the target with the staging table in one transaction, so the swap is all-or-nothing.
     async fn swap(&self, client: &mut Client) -> Result<()> {
         let transaction = client
@@ -230,6 +152,25 @@ impl Target {
             .commit()
             .await
             .map_err(TransferredError::destination)
+    }
+
+    /// Creates the staging table, replacing whatever an interrupted load left behind.
+    async fn create_staging(&self, client: &Client, declarations: &str) -> Result<()> {
+        client
+            .batch_execute(&format!(
+                "drop table if exists {staging}; create table {staging} ({declarations})",
+                staging = self.staging,
+            ))
+            .await
+            .map_err(TransferredError::destination)
+    }
+
+    /// Removes a leftover staging table, logging failures rather than masking the error that got us here.
+    async fn drop_staging(&self, client: &Client) {
+        let sql = format!("drop table if exists {}", self.staging);
+        if let Err(error) = client.batch_execute(&sql).await {
+            warn!(target: "postgres::destination", table = %self.staging, %error, "failed to drop staging table");
+        }
     }
 }
 
