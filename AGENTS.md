@@ -1,6 +1,7 @@
 # AGENTS.md
 
-Read ./docs/design/DESIGN.md and ./PLAN.md first to get grasp on current state of things.
+@./docs/design/DESIGN.md
+@./PLAN.md
 Use ./Makefile for common development cycle commands.
 Conventions for AI agents (Claude Code, Cursor, Codex, Aider, …) working in this repo.
 
@@ -10,6 +11,7 @@ Record durable conventions and learnings here, not in agent-private memory.
 
 Open-source library read by humans. Optimise for the next reader, make it beautiful, not for closing the task.
 
+- Write a code as a story: start from top-level and end with details.
 - Simple and readable code — best code.
 - Prefer removing a concept over adding a flag. Least code that fully does the job wins.
 - A new abstraction (trait, enum, config knob, helper module) needs ≥2 real call sites *today*. No "we'll need it later".
