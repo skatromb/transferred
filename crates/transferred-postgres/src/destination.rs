@@ -5,15 +5,16 @@ use std::pin::{Pin, pin};
 use std::time::Instant;
 
 use async_trait::async_trait;
-use futures::{StreamExt, TryStreamExt, stream};
-use tokio_postgres::types::ToSql;
-use tokio_postgres::{Client, binary_copy::BinaryCopyInWriter};
+use bytes::{BufMut, Bytes, BytesMut};
+use futures::{SinkExt, StreamExt, TryStreamExt, stream};
+use tokio_postgres::types::IsNull;
+use tokio_postgres::{Client, CopyInSink};
 use tracing::warn;
 use transferred_core::{BatchStream, Destination, Result, RunReport, TransferredError};
 
 use postgres_protocol::escape::escape_identifier;
 
-use crate::arrow_to_pg::{ArrowToPg, PgValue};
+use crate::arrow_to_pg::{ArrowToPg, WriteValue};
 use crate::connection::connect;
 
 /// Suffix marking the staging table a load fills before the swap; a leftover one is safe to drop.
@@ -103,63 +104,15 @@ async fn load_staging(
         .await
         .map_err(TransferredError::destination)?;
 
-    let mut writer = pin!(BinaryCopyInWriter::new(sink, &arrow_to_pg.pg_types()));
+    let mut copy = BinaryCopy::new(sink);
     let mut batches = pin!(stream::once(ready(Ok(first))).chain(rest));
 
     while let Some(batch) = batches.try_next().await? {
-        write_rows(writer.as_mut(), &arrow_to_pg.encode(&batch)?).await?;
+        copy.write_rows(&arrow_to_pg.bind(&batch)?, batch.num_rows())
+            .await?;
     }
 
-    writer.finish().await.map_err(TransferredError::destination)
-}
-
-/// Writes one COPY row per Arrow row, reading the encoded columns in lockstep.
-async fn write_rows(
-    mut writer: Pin<&mut BinaryCopyInWriter>,
-    columns: &[Vec<PgValue<'_>>],
-) -> Result<()> {
-    let num_rows = shared_row_count(columns)?;
-
-    // One cursor per column, advanced in lockstep, so a row costs no allocation.
-    let mut cursors: Vec<_> = columns.iter().map(|values| values.iter()).collect();
-    let mut row: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(columns.len());
-
-    for _ in 0..num_rows {
-        row.clear();
-        for cursor in &mut cursors {
-            // Every column holds `num_rows` values, checked above, so each cursor yields here.
-            if let Some(value) = cursor.next() {
-                row.push(&**value);
-            }
-        }
-
-        writer
-            .as_mut()
-            .write(&row)
-            .await
-            .map_err(TransferredError::destination)?;
-    }
-
-    Ok(())
-}
-
-/// Row count every encoded column agrees on. COPY sends whole rows, so disagreement is fatal.
-fn shared_row_count(columns: &[Vec<PgValue<'_>>]) -> Result<usize> {
-    let num_rows = columns.first().map_or(0, Vec::len);
-
-    if let Some((index, values)) = columns
-        .iter()
-        .enumerate()
-        .find(|(_, values)| values.len() != num_rows)
-    {
-        return Err(TransferredError::destination(format!(
-            "encoded columns disagree on row count: \
-             column {index} has {}, column 0 has {num_rows}",
-            values.len()
-        )));
-    }
-
-    Ok(num_rows)
+    copy.finish().await
 }
 
 /// Removes a leftover staging table, logging failures rather than masking the error that got us here.
@@ -242,4 +195,120 @@ fn qualify(schema: &[String], name: &str) -> String {
         .map(escape_identifier)
         .collect::<Vec<_>>()
         .join(".")
+}
+
+/// Bytes every binary COPY stream starts with, before the flags and header extension.
+const COPY_SIGNATURE: &[u8] = b"PGCOPY\n\xff\r\n\0";
+
+/// Width of the length written before every field.
+const FIELD_LEN_BYTES: usize = size_of::<i32>();
+
+/// Field length that means NULL.
+const NULL_FIELD: i32 = -1;
+
+/// Field count that ends the rows.
+const COPY_TRAILER: i16 = -1;
+
+/// Bytes buffered before a chunk goes out; 4 KB costs a third more client CPU, 64 KB is the plateau.
+const CHUNK_BYTES: usize = 64 << 10;
+
+/// Writes rows into a Postgres binary COPY stream, sending them a chunk at a time.
+/// <https://www.postgresql.org/docs/18/sql-copy.html#id-1.9.3.55.9.4.6>
+/// Replaces `BinaryCopyInWriter` for performance, which boxes every value and flushes every 4 KB.
+/// <https://docs.rs/tokio-postgres/0.7.18/src/tokio_postgres/binary_copy.rs.html>
+struct BinaryCopy {
+    sink: Pin<Box<CopyInSink<Bytes>>>,
+    buf: BytesMut,
+}
+
+impl BinaryCopy {
+    /// Opens the stream. The header goes out with the first chunk.
+    fn new(sink: CopyInSink<Bytes>) -> Self {
+        let mut buf = BytesMut::with_capacity(CHUNK_BYTES);
+        buf.put_slice(COPY_SIGNATURE);
+        buf.put_i32(0); // no flags
+        buf.put_i32(0); // no header extension
+
+        Self {
+            sink: Box::pin(sink),
+            buf,
+        }
+    }
+
+    /// Writes one COPY row per Arrow row, sending whenever the buffer fills.
+    async fn write_rows(&mut self, columns: &[WriteValue], num_rows: usize) -> Result<()> {
+        let fields = i16::try_from(columns.len()).map_err(|_| {
+            TransferredError::destination(format!(
+                "a COPY row holds at most {} columns, not {}",
+                i16::MAX,
+                columns.len()
+            ))
+        })?;
+
+        for row in 0..num_rows {
+            self.push_row(columns, row, fields)?;
+            if self.buf.len() >= CHUNK_BYTES {
+                self.send().await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Appends one row: how many fields it has, then the fields.
+    fn push_row(&mut self, columns: &[WriteValue], row: usize, fields: i16) -> Result<()> {
+        self.buf.put_i16(fields);
+
+        for write in columns {
+            self.push_field(write, row)?;
+        }
+
+        Ok(())
+    }
+
+    /// Appends one field: its length, then its bytes.
+    fn push_field(&mut self, write: &WriteValue, row: usize) -> Result<()> {
+        // The length is only known once the value is written, so leave a hole and come back.
+        let start_at = self.buf.len();
+        self.buf.put_i32(0);
+
+        let len = match write(row, &mut self.buf)? {
+            IsNull::Yes => NULL_FIELD,
+            // Whatever the encoder appended past the hole is the value.
+            IsNull::No => {
+                i32::try_from(self.buf.len() - start_at - FIELD_LEN_BYTES).map_err(|_| {
+                    TransferredError::destination("value is too large for a COPY field")
+                })?
+            }
+        };
+
+        let Some(slot) = self.buf.get_mut(start_at..start_at + FIELD_LEN_BYTES) else {
+            return Err(TransferredError::destination(
+                "COPY field length slot is out of bounds",
+            ));
+        };
+        slot.copy_from_slice(&len.to_be_bytes());
+
+        Ok(())
+    }
+
+    /// Writes the trailer, closes the stream and returns the rows Postgres took.
+    async fn finish(mut self) -> Result<u64> {
+        self.buf.put_i16(COPY_TRAILER);
+        self.send().await?;
+
+        self.sink
+            .as_mut()
+            .finish()
+            .await
+            .map_err(TransferredError::destination)
+    }
+
+    /// Sends the buffered bytes and empties the buffer.
+    async fn send(&mut self) -> Result<()> {
+        self.sink
+            .send(self.buf.split().freeze())
+            .await
+            .map_err(TransferredError::destination)
+    }
 }

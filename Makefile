@@ -119,6 +119,12 @@ perf: PYTHON_GROUPS := --group dev --group perf
 perf: python-dev-build
 	@uv run --project crates/transferred-py --no-sync python -m perf.run
 
+# Profile one workload's on-CPU time. macOS only. `make profile WORKLOAD=parquet_to_postgres`.
+.PHONY: profile
+profile: PYTHON_GROUPS := --group dev --group perf
+profile: python-dev-build
+	@crates/transferred-py/.venv/bin/python -m perf.profile $(WORKLOAD)
+
 # ============================================================================
 # Release
 # ============================================================================
