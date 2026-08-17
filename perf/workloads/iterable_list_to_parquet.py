@@ -6,23 +6,18 @@ the worst-case Python heap ceiling against the generator's streamed ceiling.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from perf.data import iter_dict_rows
-from perf.workload import cli, emit_result, measure
+from perf.workload import emit_result, file_bytes, measure, out_path
 from transferred import FilesDestination, Parquet, Transfer
 
 NAME = "iterable-list→parquet"
 
 
-def setup(seed: Path) -> None:  # noqa: ARG001 — no inputs to write
-    pass
-
-
-def run(seed: Path, out: Path) -> None:
+def run(out: Path) -> None:
     rows = list(iter_dict_rows())
-    report, wall_seconds, peak_arrow_bytes = measure(
+    report, wall_seconds = measure(
         lambda: Transfer(
             source=rows,
             destination=FilesDestination(
@@ -32,11 +27,10 @@ def run(seed: Path, out: Path) -> None:
     )
     emit_result(
         rows=report.rows,
-        out=out,
+        output_bytes=file_bytes(out),
         wall_seconds=wall_seconds,
-        peak_arrow_bytes=peak_arrow_bytes,
     )
 
 
 if __name__ == "__main__":
-    cli(sys.argv, setup=setup, run=run)
+    run(out_path())

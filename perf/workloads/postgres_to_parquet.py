@@ -1,20 +1,21 @@
-"""Parquet → Parquet, single seed file → single output file, via `transferred`."""
+"""Postgres → Parquet via `transferred`, over the shared wide table."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from perf.fixtures import SEED
+from perf.data import TABLE
+from perf.postgres import DSN
 from perf.workload import emit_result, file_bytes, measure, out_path
-from transferred import FilesDestination, FilesSource, Parquet, Transfer
+from transferred import FilesDestination, Parquet, PostgresSource, Transfer
 
-NAME = "parquet→parquet (single)"
+NAME = "postgres→parquet"
 
 
 def run(out: Path) -> None:
     report, wall_seconds = measure(
         lambda: Transfer(
-            source=FilesSource(str(SEED)),
+            source=PostgresSource(DSN, table=TABLE),
             destination=FilesDestination(
                 out, format=Parquet(compression="zstd"), single_file=True
             ),

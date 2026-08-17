@@ -87,8 +87,8 @@ python-setup:
 .PHONY: ruff
 ruff: python-setup
 	@cd crates/transferred-py && \
-		uv run --no-sync ruff format . ../../examples && \
-		uv run --no-sync ruff check . ../../examples
+		uv run --no-sync ruff format . ../../examples ../../perf && \
+		uv run --no-sync ruff check . ../../examples ../../perf
 	@if [ -n "$$CI" ]; then git diff --exit-code -- '*.py'; fi
 
 # Type-check Python sources against the auto-generated `_native` stubs.
@@ -103,15 +103,19 @@ pytest: python-setup
 	@cd crates/transferred-py && \
 	uv run --no-sync pytest
 
+# Dependency groups synced before a Python build. `perf` widens it with its baselines.
+PYTHON_GROUPS := --group dev
+
 # Rebuild extension in release mode. Use for benchmarks / perf testing.
 .PHONY: python-dev-build
 python-dev-build:
 		@cd crates/transferred-py && \
-			uv sync --group dev && \
+			uv sync $(PYTHON_GROUPS) && \
 			uv run --no-sync maturin develop --uv --release
 
-# Run perf workloads. Forces a release-mode build first — debug builds skew numbers.
+# Run perf workloads. Forces a release-mode build first — debug builds skew numbers. Needs Docker.
 .PHONY: perf
+perf: PYTHON_GROUPS := --group dev --group perf
 perf: python-dev-build
 	@uv run --project crates/transferred-py --no-sync python -m perf.run
 

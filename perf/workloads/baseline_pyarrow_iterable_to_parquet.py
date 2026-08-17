@@ -6,24 +6,19 @@ chunks, converts each to a RecordBatch, writes one row group per chunk.
 
 from __future__ import annotations
 
-import sys
 from itertools import batched
 from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from perf.data import ROWS, ROWS_PER_GROUP, iter_dict_rows
-from perf.workload import cli, emit_result, measure
+from perf.data import PYTHON_ROWS, ROWS_PER_GROUP, iter_dict_rows
+from perf.workload import emit_result, file_bytes, measure, out_path
 
 NAME = "baseline pyarrow iterable→parquet"
 
 
-def setup(seed: Path) -> None:  # noqa: ARG001 — no inputs to write
-    pass
-
-
-def run(seed: Path, out: Path) -> None:
+def run(out: Path) -> None:
     def _transfer() -> None:
         chunks = (
             pa.RecordBatch.from_pylist(list(c))
@@ -35,14 +30,13 @@ def run(seed: Path, out: Path) -> None:
             for chunk in chunks:
                 writer.write_batch(chunk)
 
-    _, wall_seconds, peak_arrow_bytes = measure(_transfer)
+    _, wall_seconds = measure(_transfer)
     emit_result(
-        rows=ROWS,
-        out=out,
+        rows=PYTHON_ROWS,
+        output_bytes=file_bytes(out),
         wall_seconds=wall_seconds,
-        peak_arrow_bytes=peak_arrow_bytes,
     )
 
 
 if __name__ == "__main__":
-    cli(sys.argv, setup=setup, run=run)
+    run(out_path())

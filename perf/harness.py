@@ -7,7 +7,7 @@ Python interpreter baseline.
 
 Workload stdout protocol — single JSON object on stdout:
 
-    {"rows": int, "output_bytes": int, "wall_seconds": float, "peak_arrow_bytes": int}
+    {"rows": int, "output_bytes": int, "wall_seconds": float}
 """
 
 from __future__ import annotations
@@ -47,7 +47,6 @@ class Metrics:
     cpu_user_seconds: float
     cpu_system_seconds: float
     peak_rss_bytes: int
-    peak_arrow_bytes: int
     rows: int
     output_bytes: int
     samples: list[Sample] = field(default_factory=list)
@@ -148,7 +147,6 @@ def run_subprocess(name: str, cmd: list[str]) -> Metrics:
         cpu_user_seconds=rusage.ru_utime,
         cpu_system_seconds=rusage.ru_stime,
         peak_rss_bytes=rusage.ru_maxrss * _RUSAGE_RSS_MULT,
-        peak_arrow_bytes=int(result.get("peak_arrow_bytes", 0)),
         rows=int(result["rows"]),
         output_bytes=int(result["output_bytes"]),
         samples=sampler.samples,
@@ -168,26 +166,53 @@ def _drain_in_background(stream) -> tuple[threading.Thread, list[bytes]]:
 
 
 @dataclass(slots=True)
+class Repeated:
+    """Every timed run of one workload, reported through its fastest.
+
+    The first run doubles as the warm-up — it pays for a cold page cache and for
+    imports — and taking the minimum discards it without a separate concept.
+    """
+
+    runs: list[Metrics]
+
+    @property
+    def best(self) -> Metrics:
+        """The fastest run, which is the closest estimate of the real cost.
+
+        Noise on a shared machine is one-sided: the scheduler, another process or
+        thermal throttling can only add time, never hand any back. Everything above
+        the minimum is someone else's work, so the minimum is the engine's own cost.
+        """
+        return min(self.runs, key=lambda run: run.wall_seconds)
+
+    @property
+    def spread(self) -> float:
+        """Slowest wall over fastest. Near 1.0 means the repeat count was enough."""
+        walls = [run.wall_seconds for run in self.runs]
+        return max(walls) / min(walls) if min(walls) else 0.0
+
+
+@dataclass(slots=True)
 class _Column:
     header: str
-    render: Callable[[Metrics], str]
+    render: Callable[[Repeated], str]
 
 
 _COLUMNS: tuple[_Column, ...] = (
-    _Column("workload", lambda m: m.workload),
-    _Column("wall s", lambda m: f"{m.wall_seconds:.2f}"),
-    _Column("peak RSS MB", lambda m: f"{m.peak_rss_bytes / 2**20:.1f}"),
-    _Column("peak arrow MB", lambda m: f"{m.peak_arrow_bytes / 2**20:.1f}"),
-    _Column("CPU/wall", lambda m: f"{m.cpu_wall_ratio:.2f}"),
-    _Column("rows", lambda m: f"{m.rows:,}"),
-    _Column("rows/s", lambda m: f"{m.throughput_rows_per_s:,.0f}"),
-    _Column("MB/s out", lambda m: f"{m.throughput_mb_per_s:.1f}"),
-    _Column("out MB", lambda m: f"{m.output_bytes / 2**20:.1f}"),
+    _Column("workload", lambda r: r.best.workload),
+    _Column("wall s", lambda r: f"{r.best.wall_seconds:.2f}"),
+    _Column("spread", lambda r: f"{r.spread:.2f}x"),
+    _Column("peak RSS MB", lambda r: f"{r.best.peak_rss_bytes / 2**20:.1f}"),
+    _Column("CPU/wall", lambda r: f"{r.best.cpu_wall_ratio:.2f}"),
+    _Column("rows", lambda r: f"{r.best.rows:,}"),
+    _Column("rows/s", lambda r: f"{r.best.throughput_rows_per_s:,.0f}"),
+    _Column("MB/s out", lambda r: f"{r.best.throughput_mb_per_s:.1f}"),
+    _Column("out MB", lambda r: f"{r.best.output_bytes / 2**20:.1f}"),
 )
 
 
-def format_table(metrics: list[Metrics]) -> str:
-    """Render `metrics` as a fixed-width ASCII table."""
+def format_table(metrics: list[Repeated]) -> str:
+    """Render `metrics` as a fixed-width ASCII table, one row per workload."""
     header = [c.header for c in _COLUMNS]
     body = [[c.render(m) for c in _COLUMNS] for m in metrics]
     rows = [header, *body]

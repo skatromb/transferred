@@ -1,13 +1,12 @@
 """Shared scaffolding for workload subprocess scripts.
 
-Each workload exposes two callables: `setup(seed)` writes any inputs, `run(seed, out)`
-performs the measured work and emits a JSON result line. The harness invokes
-each script twice as a subprocess: once with `setup` (not measured), once with
-`run` (measured externally via psutil + `os.wait4`).
+Each workload exposes `run(out)`: it performs the measured work against the
+shared fixtures and emits a JSON result line. The harness invokes it as a
+subprocess and measures it externally via psutil + `os.wait4`.
 
 Workload stdout protocol — single JSON object emitted by `run`:
 
-    {"rows": int, "output_bytes": int, "wall_seconds": float, "peak_arrow_bytes": int}
+    {"rows": int, "output_bytes": int, "wall_seconds": float}
 """
 
 from __future__ import annotations
@@ -20,64 +19,36 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TypeVar
 
-import pyarrow as pa
-
 T = TypeVar("T")
 
 
-def measure(thunk: Callable[[], T]) -> tuple[T, float, int]:
-    """Run `thunk`, return (result, wall_seconds, peak_arrow_bytes).
+def measure(thunk: Callable[[], T]) -> tuple[T, float]:
+    """Run `thunk`, return (result, wall_seconds).
 
-    `gc.collect()` runs first to keep prior allocations out of the arrow-side
-    peak. `pa.total_allocated_bytes()` is sampled before + after; the max is
-    a lower bound on the in-flight Arrow buffer high-water mark.
+    `gc.collect()` runs first so a previous workload phase cannot land inside the
+    timed region. Memory is measured externally, by the harness sampling RSS.
     """
     gc.collect()
-    arrow_before = pa.total_allocated_bytes()
     wall_start = time.monotonic()
     result = thunk()
-    wall_seconds = time.monotonic() - wall_start
-    arrow_after = pa.total_allocated_bytes()
-    return result, wall_seconds, max(arrow_before, arrow_after)
+    return result, time.monotonic() - wall_start
 
 
-def _output_bytes(out: Path) -> int:
-    """Total bytes written: sum part files when `out` is a directory, else its size."""
+def file_bytes(out: Path) -> int:
+    """Bytes a file destination wrote: sum part files when `out` is a directory."""
     if out.is_dir():
         return sum(p.stat().st_size for p in out.rglob("*") if p.is_file())
     return out.stat().st_size
 
 
-def emit_result(
-    *,
-    rows: int,
-    out: Path,
-    wall_seconds: float,
-    peak_arrow_bytes: int,
-) -> None:
+def emit_result(*, rows: int, output_bytes: int, wall_seconds: float) -> None:
     """Emit the harness's expected JSON result line on stdout."""
     json.dump(
-        {
-            "rows": rows,
-            "output_bytes": _output_bytes(out),
-            "wall_seconds": wall_seconds,
-            "peak_arrow_bytes": peak_arrow_bytes,
-        },
+        {"rows": rows, "output_bytes": output_bytes, "wall_seconds": wall_seconds},
         sys.stdout,
     )
 
 
-def cli(
-    argv: list[str],
-    *,
-    setup: Callable[[Path], None],
-    run: Callable[[Path, Path], None],
-) -> None:
-    """Dispatch the standard `setup <seed>` / `run <seed> <out>` subcommand interface."""
-    match argv[1:]:
-        case ["setup", seed]:
-            setup(Path(seed))
-        case ["run", seed, out]:
-            run(Path(seed), Path(out))
-        case _:
-            raise SystemExit(f"usage: {argv[0]} (setup <seed> | run <seed> <out>)")
+def out_path() -> Path:
+    """The output path the harness passed on the command line."""
+    return Path(sys.argv[1])
