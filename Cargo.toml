@@ -37,3 +37,6 @@ indexing_slicing = "deny"
 [workspace.lints.rust]
 unsafe_code = "deny"
 missing_docs = "deny"
+
+[profile.release]
+lto = "thin"
