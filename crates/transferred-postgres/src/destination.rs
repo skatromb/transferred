@@ -1,21 +1,20 @@
 //! Postgres destination. Arrow `RecordBatch` → binary COPY into a staging table, then atomic swap.
 
 use std::future::ready;
-use std::pin::{Pin, pin};
+use std::pin::pin;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use bytes::{BufMut, Bytes, BytesMut};
-use futures::{SinkExt, StreamExt, TryStreamExt, stream};
-use tokio_postgres::types::IsNull;
-use tokio_postgres::{Client, CopyInSink};
+use futures::{StreamExt, TryStreamExt, stream};
+use tokio_postgres::Client;
 use tracing::warn;
 use transferred_core::{BatchStream, Destination, Result, RunReport, TransferredError};
 
 use postgres_protocol::escape::escape_identifier;
 
-use crate::arrow_to_pg::{ArrowToPg, WriteValue};
+use crate::arrow_to_pg::Encoder;
 use crate::connection::connect;
+use crate::copy_in::CopyIn;
 
 /// Suffix marking the staging table a load fills before the swap; a leftover one is safe to drop.
 pub const STAGING_SUFFIX: &str = "__transferred_staging";
@@ -49,16 +48,16 @@ impl Destination for PostgresDestination {
             .map_err(TransferredError::destination)?;
         let target = Target::resolve(&client, &self.table).await?;
 
-        let rows = match load_staging(&client, &target, partitions).await {
+        let rows = match target.load(&client, partitions).await {
             Ok(rows) => rows,
             Err(error) => {
-                drop_staging(&client, &target).await;
+                target.drop_staging(&client).await;
                 return Err(error);
             }
         };
 
         if let Err(error) = target.swap(&mut client).await {
-            drop_staging(&client, &target).await;
+            target.drop_staging(&client).await;
             return Err(error);
         }
 
@@ -69,57 +68,6 @@ impl Destination for PostgresDestination {
             duration: start.elapsed(),
             coercions: vec![],
         })
-    }
-}
-
-/// Creates the staging table from the first batch's schema, then COPYs every batch into it.
-async fn load_staging(
-    client: &Client,
-    target: &Target,
-    partitions: Vec<BatchStream>,
-) -> Result<u64> {
-    // Every partition lands in one table, so partition identity carries no meaning here.
-    let mut rest = futures::stream::iter(partitions).flatten().boxed();
-
-    // The staging DDL needs a schema, which only the first batch can supply.
-    let Some(first) = rest.try_next().await? else {
-        return Err(TransferredError::EmptySource);
-    };
-
-    let arrow_to_pg = ArrowToPg::derive(&first.schema())?;
-    client
-        .batch_execute(&format!(
-            "drop table if exists {staging}; create table {staging} ({declarations})",
-            staging = target.staging,
-            declarations = arrow_to_pg.declarations(),
-        ))
-        .await
-        .map_err(TransferredError::destination)?;
-
-    let sink = client
-        .copy_in(&format!(
-            "copy {staging} from stdin (format binary)",
-            staging = target.staging
-        ))
-        .await
-        .map_err(TransferredError::destination)?;
-
-    let mut copy = BinaryCopy::new(sink);
-    let mut batches = pin!(stream::once(ready(Ok(first))).chain(rest));
-
-    while let Some(batch) = batches.try_next().await? {
-        copy.write_rows(&arrow_to_pg.bind(&batch)?, batch.num_rows())
-            .await?;
-    }
-
-    copy.finish().await
-}
-
-/// Removes a leftover staging table, logging failures rather than masking the error that got us here.
-async fn drop_staging(client: &Client, target: &Target) {
-    let sql = format!("drop table if exists {}", target.staging);
-    if let Err(error) = client.batch_execute(&sql).await {
-        warn!(target: "postgres::destination", table = %target.staging, %error, "failed to drop staging table");
     }
 }
 
@@ -161,6 +109,27 @@ impl Target {
         })
     }
 
+    /// Creates the staging table from the first batch's schema, then COPYs every batch into it.
+    async fn load(&self, client: &Client, partitions: Vec<BatchStream>) -> Result<u64> {
+        let mut rest = stream::iter(partitions).flatten().boxed();
+
+        let Some(first) = rest.try_next().await? else {
+            return Err(TransferredError::EmptySource);
+        };
+
+        let encoder = Encoder::new(&first.schema())?;
+        self.create_staging(client, &encoder.declarations()).await?;
+
+        let mut batches = pin!(stream::once(ready(Ok(first))).chain(rest));
+        let mut copy = CopyIn::open(client, &self.staging).await?;
+
+        while let Some(batch) = batches.try_next().await? {
+            copy.write_batch(&encoder, &batch).await?;
+        }
+
+        copy.finish().await
+    }
+
     /// Replaces the target with the staging table in one transaction, so the swap is all-or-nothing.
     async fn swap(&self, client: &mut Client) -> Result<()> {
         let transaction = client
@@ -184,6 +153,25 @@ impl Target {
             .await
             .map_err(TransferredError::destination)
     }
+
+    /// Creates the staging table, replacing whatever an interrupted load left behind.
+    async fn create_staging(&self, client: &Client, declarations: &str) -> Result<()> {
+        client
+            .batch_execute(&format!(
+                "drop table if exists {staging}; create table {staging} ({declarations})",
+                staging = self.staging,
+            ))
+            .await
+            .map_err(TransferredError::destination)
+    }
+
+    /// Removes a leftover staging table, logging failures rather than masking the error that got us here.
+    async fn drop_staging(&self, client: &Client) {
+        let sql = format!("drop table if exists {}", self.staging);
+        if let Err(error) = client.batch_execute(&sql).await {
+            warn!(target: "postgres::destination", table = %self.staging, %error, "failed to drop staging table");
+        }
+    }
 }
 
 /// Joins identifier parts into one quoted, dotted table reference.
@@ -195,120 +183,4 @@ fn qualify(schema: &[String], name: &str) -> String {
         .map(escape_identifier)
         .collect::<Vec<_>>()
         .join(".")
-}
-
-/// Bytes every binary COPY stream starts with, before the flags and header extension.
-const COPY_SIGNATURE: &[u8] = b"PGCOPY\n\xff\r\n\0";
-
-/// Width of the length written before every field.
-const FIELD_LEN_BYTES: usize = size_of::<i32>();
-
-/// Field length that means NULL.
-const NULL_FIELD: i32 = -1;
-
-/// Field count that ends the rows.
-const COPY_TRAILER: i16 = -1;
-
-/// Bytes buffered before a chunk goes out; 4 KB costs a third more client CPU, 64 KB is the plateau.
-const CHUNK_BYTES: usize = 64 << 10;
-
-/// Writes rows into a Postgres binary COPY stream, sending them a chunk at a time.
-/// <https://www.postgresql.org/docs/18/sql-copy.html#id-1.9.3.55.9.4.6>
-/// Replaces `BinaryCopyInWriter` for performance, which boxes every value and flushes every 4 KB.
-/// <https://docs.rs/tokio-postgres/0.7.18/src/tokio_postgres/binary_copy.rs.html>
-struct BinaryCopy {
-    sink: Pin<Box<CopyInSink<Bytes>>>,
-    buf: BytesMut,
-}
-
-impl BinaryCopy {
-    /// Opens the stream. The header goes out with the first chunk.
-    fn new(sink: CopyInSink<Bytes>) -> Self {
-        let mut buf = BytesMut::with_capacity(CHUNK_BYTES);
-        buf.put_slice(COPY_SIGNATURE);
-        buf.put_i32(0); // no flags
-        buf.put_i32(0); // no header extension
-
-        Self {
-            sink: Box::pin(sink),
-            buf,
-        }
-    }
-
-    /// Writes one COPY row per Arrow row, sending whenever the buffer fills.
-    async fn write_rows(&mut self, columns: &[WriteValue], num_rows: usize) -> Result<()> {
-        let fields = i16::try_from(columns.len()).map_err(|_| {
-            TransferredError::destination(format!(
-                "a COPY row holds at most {} columns, not {}",
-                i16::MAX,
-                columns.len()
-            ))
-        })?;
-
-        for row in 0..num_rows {
-            self.push_row(columns, row, fields)?;
-            if self.buf.len() >= CHUNK_BYTES {
-                self.send().await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Appends one row: how many fields it has, then the fields.
-    fn push_row(&mut self, columns: &[WriteValue], row: usize, fields: i16) -> Result<()> {
-        self.buf.put_i16(fields);
-
-        for write in columns {
-            self.push_field(write, row)?;
-        }
-
-        Ok(())
-    }
-
-    /// Appends one field: its length, then its bytes.
-    fn push_field(&mut self, write: &WriteValue, row: usize) -> Result<()> {
-        // The length is only known once the value is written, so leave a hole and come back.
-        let start_at = self.buf.len();
-        self.buf.put_i32(0);
-
-        let len = match write(row, &mut self.buf)? {
-            IsNull::Yes => NULL_FIELD,
-            // Whatever the encoder appended past the hole is the value.
-            IsNull::No => {
-                i32::try_from(self.buf.len() - start_at - FIELD_LEN_BYTES).map_err(|_| {
-                    TransferredError::destination("value is too large for a COPY field")
-                })?
-            }
-        };
-
-        let Some(slot) = self.buf.get_mut(start_at..start_at + FIELD_LEN_BYTES) else {
-            return Err(TransferredError::destination(
-                "COPY field length slot is out of bounds",
-            ));
-        };
-        slot.copy_from_slice(&len.to_be_bytes());
-
-        Ok(())
-    }
-
-    /// Writes the trailer, closes the stream and returns the rows Postgres took.
-    async fn finish(mut self) -> Result<u64> {
-        self.buf.put_i16(COPY_TRAILER);
-        self.send().await?;
-
-        self.sink
-            .as_mut()
-            .finish()
-            .await
-            .map_err(TransferredError::destination)
-    }
-
-    /// Sends the buffered bytes and empties the buffer.
-    async fn send(&mut self) -> Result<()> {
-        self.sink
-            .send(self.buf.split().freeze())
-            .await
-            .map_err(TransferredError::destination)
-    }
 }
