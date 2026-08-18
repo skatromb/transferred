@@ -74,7 +74,7 @@ jobs:
         run: make stubs-check
 
   rust-x86_64:
-    name: Rust tests (x86_64)
+    name: Rust (x86_64)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
