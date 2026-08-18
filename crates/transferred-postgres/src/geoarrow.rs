@@ -4,7 +4,7 @@
 //! `arrow-schema` 58: its `ExtensionType` impls would be for a different crate than our `Field`.
 
 // TODO(0.2.0): drop this module for `geoarrow-schema` once it releases against `arrow-schema` 59.
-// PLAN.md records what the swap costs and why the release buys no capability of its own.
+// DONE.md records what the swap costs and why the release buys no capability of its own.
 
 use arrow_schema::extension::ExtensionType;
 use arrow_schema::{ArrowError, DataType as ArrowType};
