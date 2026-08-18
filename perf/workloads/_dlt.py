@@ -102,13 +102,18 @@ def reset(target: str) -> None:
         drop_table(table)
 
 
-def main_table_rows(bucket: Path, table: str) -> int:
-    """Rows dlt wrote for `table` itself, ignoring child tables it split nested data into.
+def main_table(out: Path, table: str) -> Path:
+    """Directory holding the Parquet files dlt wrote for `table` itself.
 
-    The JSON normalizer turns a nested jsonb value into a child table, so counting
-    every Parquet file under `bucket` would count rows the source never had.
+    The JSON normalizer turns a nested jsonb value into a child table of its own, so
+    the whole dataset directory holds more tables than the source had.
     """
-    files = (bucket / DATASET / table).rglob("*.parquet")
+    return bucket(out) / DATASET / table
+
+
+def main_table_rows(out: Path, table: str) -> int:
+    """Rows dlt wrote for `table` itself, ignoring the child tables beside it."""
+    files = main_table(out, table).rglob("*.parquet")
     return sum(pq.ParquetFile(path).metadata.num_rows for path in files)
 
 
@@ -126,17 +131,18 @@ def tune() -> None:
     os.environ.update(TUNING)
 
 
-def parquet_pipeline(name: str, out: Path) -> tuple[dlt.Pipeline, Path]:
-    """Build a Parquet-writing pipeline under `out`. Returns it and its output directory."""
-    bucket = out / "data"
-    return (
-        dlt.pipeline(
-            name,
-            destination=filesystem(str(bucket)),
-            dataset_name=DATASET,
-            pipelines_dir=str(out / "pipelines"),
-        ),
-        bucket,
+def bucket(out: Path) -> Path:
+    """Where a Parquet pipeline rooted at `out` writes its data files."""
+    return out / "data"
+
+
+def parquet_pipeline(name: str, out: Path) -> dlt.Pipeline:
+    """Build a Parquet-writing pipeline rooted at `out`."""
+    return dlt.pipeline(
+        name,
+        destination=filesystem(str(bucket(out))),
+        dataset_name=DATASET,
+        pipelines_dir=str(out / "pipelines"),
     )
 
 

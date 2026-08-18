@@ -51,7 +51,9 @@ def check_disk(rows: int) -> None:
     # Peak holds two table copies: the seed, plus the write target a leg is filling
     # (our destination stages a full copy before swapping). Two and not more only
     # because the harness drops each target as it finishes — see `drop_table`.
-    needed = rows * (2 * _TABLE_BYTES_PER_ROW + 2 * _PARQUET_BYTES_PER_ROW) + _WAL_BYTES
+    # Three Parquet copies: our seed, plus the dump each baseline whose write leg
+    # loads back its own extract needs — duckdb's and dlt's tuned one.
+    needed = rows * (2 * _TABLE_BYTES_PER_ROW + 3 * _PARQUET_BYTES_PER_ROW) + _WAL_BYTES
     free = shutil.disk_usage(Path(__file__).parent).free
     if free < needed:
         raise RuntimeError(
@@ -66,7 +68,7 @@ def check_disk(rows: int) -> None:
 
 
 def up() -> str:
-    """Bring the container up, restarting or creating it as needed. Returns the DSN.
+    """Bring the container up, starting or creating it as needed. Returns the DSN.
 
     A stopped container is restarted rather than replaced, so a seed survives a
     reboot — recreating one costs minutes.

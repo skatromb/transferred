@@ -17,11 +17,16 @@ from perf.workloads import _dlt
 NAME = "baseline dlt postgres→parquet (tuned)"
 
 
-def run(out: Path) -> None:
+def dump(out: Path) -> int:
+    """Write the wide table under `out` as Parquet. Returns rows written.
+
+    Split out of `run` so the paired write leg reads a dump dlt itself wrote, with
+    the range and PostGIS columns as the text this read cast them to.
+    """
     _dlt.tune()
     from dlt.sources.sql_database import sql_table
 
-    pipeline, bucket = _dlt.parquet_pipeline("dlt_pg_to_pq_tuned", out)
+    pipeline = _dlt.parquet_pipeline("dlt_pg_to_pq_tuned", out)
     table = sql_table(
         _dlt.dsn(),
         TABLE,
@@ -32,10 +37,15 @@ def run(out: Path) -> None:
     )
 
     # `loader_file_format` is not optional: the filesystem destination prefers jsonl.
-    _, wall_seconds = measure(lambda: pipeline.run(table, loader_file_format="parquet"))
+    pipeline.run(table, loader_file_format="parquet")
+    return _dlt.main_table_rows(out, TABLE)
+
+
+def run(out: Path) -> None:
+    rows, wall_seconds = measure(lambda: dump(out))
     emit_result(
-        rows=_dlt.main_table_rows(bucket, TABLE),
-        output_bytes=file_bytes(bucket),
+        rows=rows,
+        output_bytes=file_bytes(_dlt.bucket(out)),
         wall_seconds=wall_seconds,
     )
 

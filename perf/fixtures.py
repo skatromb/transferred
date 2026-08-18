@@ -1,8 +1,8 @@
-"""Parquet fixtures dumped from the shared Postgres table.
+"""The Parquet seed dumped from the shared Postgres table.
 
-Dumping rather than generating keeps one schema definition in `perf.data`: the
-Parquet legs read exactly the columns the Postgres legs produce, extension types
-and all. Fixtures survive between runs, since rebuilding them costs a minute.
+Dumping rather than generating keeps one schema definition in `perf.data`: the write
+leg loads exactly the columns the read leg produces, extension types and all. The
+seed survives between runs, since rebuilding it costs a minute.
 """
 
 from __future__ import annotations
@@ -12,69 +12,42 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 
-from perf.data import CAPPED, ROWS_PER_GROUP, TABLE, UNSUPPORTED, view
-from perf.postgres import DSN
-from transferred import FilesDestination, Parquet, PostgresSource, Transfer
+from perf.data import TABLE
+from perf.workloads import postgres_to_parquet
 
 ROOT = Path(__file__).resolve().parent / ".fixtures"
 SEED = ROOT / "seed.parquet"
-PARTS = ROOT / "parts"
-PARTS_GLOB = str(PARTS / "*.parquet")
-PROJECTIONS = ROOT / "projections"
-
-
-def projection(relation: str) -> Path:
-    """Seed holding only what `relation` selects, for a baseline that cannot read the rest."""
-    return PROJECTIONS / f"{relation}.parquet"
 
 
 def build(rows: int) -> None:
-    """Dump the wide table to a seed, its parts, and a projection per narrowed view."""
+    """Dump the wide table to the seed our own write leg loads back.
+
+    Written by our own read leg, which is the property every write leg needs — see
+    `perf.dumps` for the baselines' side of it.
+    """
     if _seed_rows() == rows:
-        print(f"fixtures: reusing {ROOT} at {rows:,} rows", flush=True)
+        print(f"fixtures: reusing {SEED} at {rows:,} rows", flush=True)
         return
 
-    print(f"fixtures: dumping {TABLE} to {ROOT}", flush=True)
+    print(f"fixtures: dumping {TABLE} to {SEED}", flush=True)
     ROOT.mkdir(exist_ok=True)
-    _dump(TABLE, SEED)
-    _split_into_parts()
-
-    PROJECTIONS.mkdir(exist_ok=True)
-    for relation in (CAPPED, *map(view, UNSUPPORTED)):
-        _dump(relation, projection(relation))
+    _dump(SEED)
 
 
-def _dump(relation: str, dest: Path) -> None:
-    """Dump `relation` into one Parquet file at `dest`.
+def _dump(dest: Path) -> None:
+    """Dump the wide table into one Parquet file at `dest`, through our own read leg.
 
     `FilesDestination` names the parts inside its output directory, so the single
-    part it writes here is lifted out to a path the workloads can spell.
+    part it writes there is lifted out to a path the workloads can spell.
     """
     staging = ROOT / "staging"
     shutil.rmtree(staging, ignore_errors=True)
-    Transfer(
-        source=PostgresSource(DSN, table=relation),
-        destination=FilesDestination(
-            staging, format=Parquet(compression="zstd"), single_file=True
-        ),
-    ).run()
+    postgres_to_parquet.dump(staging)
 
     (part,) = staging.glob("*.parquet")
     dest.unlink(missing_ok=True)
     part.rename(dest)
     shutil.rmtree(staging)
-
-
-def _split_into_parts() -> None:
-    """Rewrite the seed as one `ROWS_PER_GROUP`-row file per partition."""
-    shutil.rmtree(PARTS, ignore_errors=True)
-    PARTS.mkdir()
-
-    reader = pq.ParquetFile(SEED)
-    for index, batch in enumerate(reader.iter_batches(batch_size=ROWS_PER_GROUP)):
-        part = PARTS / f"part-{index:05}.parquet"
-        with pq.ParquetWriter(part, reader.schema_arrow, compression="zstd") as writer:
-            writer.write_batch(batch)
 
 
 def _seed_rows() -> int:
