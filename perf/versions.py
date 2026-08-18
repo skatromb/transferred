@@ -106,3 +106,5 @@ def _measure_all(pythons: dict[str, str], workdir: Path) -> list[Repeated]:
 
 if __name__ == "__main__":
     main()
+
+# proof: a perf-only change must reach the Python job.
