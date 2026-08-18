@@ -73,7 +73,7 @@ def main() -> None:
         metrics = _measure_all(Path(tmp))
 
     print(format_table(metrics))
-    print(f"\nfull results → {_results_path()}")
+    print(f"\nfull results → {results_path()}")
     print(postgres.teardown_hint())
 
 
@@ -102,7 +102,7 @@ def _measure_all(workdir: Path) -> list[Repeated]:
         for mod in WORKLOADS:
             print(f"pass {index + 1}/{REPEATS}: {mod.NAME}", flush=True)
             runs[mod.NAME].append(measure_once(mod.NAME, mod, workdir))
-            _dump_results(runs)
+            dump_results(runs)
     return [Repeated(runs[mod.NAME]) for mod in WORKLOADS]
 
 
@@ -139,18 +139,19 @@ def _reclaim(out: Path, target: str | None) -> None:
         postgres.drop_table(target)
 
 
-def _dump_results(runs: dict[str, list[Metrics]]) -> None:
+def dump_results(runs: dict[str, list[Metrics]]) -> None:
     """Rewrite this run's JSON with every measurement taken so far.
 
-    After each run rather than at the end: a suite is 45 subprocesses over an hour, and
-    one failing used to take every earlier measurement with it.
+    After each run rather than at the end: a suite is dozens of subprocesses over an
+    hour, and one failing used to take every earlier measurement with it — which is
+    also how `perf.versions` lost eight runs to a ninth that hung.
     """
     measured = [Repeated(r) for r in runs.values() if r]
-    _results_path().write_text(json.dumps([asdict(m) for m in measured], indent=2))
+    results_path().write_text(json.dumps([asdict(m) for m in measured], indent=2))
 
 
 @cache
-def _results_path() -> Path:
+def results_path() -> Path:
     """This run's JSON file, named once so every rewrite lands in the same place."""
     RESULTS_DIR.mkdir(exist_ok=True)
     return RESULTS_DIR / f"{datetime.now().isoformat(timespec='seconds')}.json"

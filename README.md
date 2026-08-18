@@ -3,7 +3,7 @@
 <img src="https://raw.githubusercontent.com/skatromb/transferred/main/logo.png" alt="transferred" width="240">
 
 
-The most convenient batch data transfer tool.
+The most convenient batch data transfer tool. Inspired by [dlt](https://dlthub.com).
 
 `transferred` moves table data between systems. Blazing fast, no transformations supported — hand them over to your Data Warehouse.
 
@@ -42,9 +42,9 @@ print(report)
 #     orders/part-00001.parquet
 ```
 
-That output is a real run: 10M rows of five columns out of a local Postgres, in one
-process, peaking at 137 MiB resident — interpreter included. `docs/DLT_COMPARISON.md`
-measures the same legs against duckdb and dlt on a wider table.
+10M rows of five columns out of a local Postgres, in one thread, peaking at 137 MiB RAM interpreter included.
+
+Look at [docs/DLT_COMPARISON.md](docs/DLT_COMPARISON.md) for more performance insights.
 
 More in [examples/](./examples).
 

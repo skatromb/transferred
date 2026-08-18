@@ -322,6 +322,9 @@ Goal: measure the Postgres legs and let the README quote a number worth reading.
   - `--only-binary :all:`, so a missing wheel fails the run rather than silently compiling an sdist here — which would measure this toolchain and this `[profile.release]`, the local build wearing an old version number.
   - The venv takes the suite's own Python series: `uv venv` otherwise picks the first interpreter it finds, a 3.12 on this machine, and no wheel of ours fits it.
   - `measure()`'s guard now names the debug build it refuses instead of demanding the one in `target/release`. Same strength — a debug install is `maturin develop`'s copy of `target/debug`, byte-identical down to mtime — and it stops refusing a released wheel, which is a release build living in a venv.
+  - Control first, 0.1.0 against 0.1.1: their Postgres paths are identical code and they land inside noise (read 15.63s / 14.70s, write 15.38s / 15.75s, spread ≤ 1.07x). So a difference under ~7% is not readable here, and that is the bar the real A/B had to clear.
+  - 0.1.1 against 0.1.2 at 10M rows, on a container created for it: **the write leg is the one that moved, 15.32s → 13.33s**, 652k → 750k rows/s, peak RSS 136 → 132 MB. `CPU/wall` fell 0.84 → 0.43, which is what says the win is ours rather than the machine's — the hand-rolled encoder spends half the client CPU, so the leg now plainly waits on one Postgres backend. The read leg's 15.34s → 14.81s is inside the control's noise, as it should be: nothing on that path changed but thin LTO.
+  - A ninth run hung for 40 minutes and took the eight before it down with it, so `dump_results` runs per-run here too — the lesson `perf.run` had already learnt. The hang itself is ours: `Transfer.run()` sat parked in tokio's IO driver on an `ESTABLISHED` socket whose Postgres backend was gone, and nothing times that out. Backlogged.
 - [x] Deploy 0.1.2.
 
 ## 0.2.0 — BigQuery source + destination
@@ -416,6 +419,7 @@ Implements the source-owned schema direction decided during the Interlude. Repla
 - Cross-connector `batch_size` / byte-based memory budget (`set_max_row_group_bytes` + reader batch). Design against ≥2 connectors (PG in 0.1.0, BQ in 0.2.0); don't pin to one connector's shape.
 - Airflow / Dagster / whatever is popular operators
 - `sslrootcert=` DSN parameter — pin a CA file instead of the platform store, for `verify-full` against RDS or Cloud SQL. Needs stripping the key before `tokio_postgres::Config` sees it.
+- Time out a dead Postgres connection. A perf leg was seen parked in tokio's IO driver on a socket the server had already let go — client `ESTABLISHED`, no backend left — and it waited 40 minutes until killed. `tokio-postgres` defaults `keepalives_idle` to 2 hours and we set no read timeout, so a half-open connection hangs a transfer instead of failing it. Wants an idle in the tens of seconds, and a decision on whether a stalled server counts as one.
 - CRS reprojection (`proj` FFI), `ST_MakeValid`, Z/M handling.
 - Hstore / ltree / composite promotion from `arrow.opaque` to structured Arrow forms.
 - `strict_mode` flag.
