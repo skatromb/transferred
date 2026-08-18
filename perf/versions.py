@@ -23,7 +23,7 @@ from types import ModuleType
 from perf import fixtures, postgres
 from perf.data import ROWS
 from perf.harness import Metrics, Repeated, format_table
-from perf.run import REPEATS, measure_once
+from perf.run import REPEATS, dump_results, measure_once, results_path
 from perf.workloads import parquet_to_postgres, postgres_to_parquet
 
 LEGS: tuple[ModuleType, ...] = (postgres_to_parquet, parquet_to_postgres)
@@ -45,6 +45,7 @@ def main() -> None:
         metrics = _measure_all(pythons, Path(tmp))
 
     print(format_table(metrics))
+    print(f"\nfull results → {results_path()}")
     print(postgres.teardown_hint())
 
 
@@ -99,6 +100,7 @@ def _measure_all(pythons: dict[str, str], workdir: Path) -> list[Repeated]:
                 runs.setdefault(label, []).append(
                     measure_once(label, mod, workdir, python)
                 )
+                dump_results(runs)
     return [Repeated(r) for r in runs.values()]
 
 
