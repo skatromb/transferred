@@ -1,13 +1,9 @@
 """Baseline: Parquet → Postgres via duckdb's `postgres_scanner`, no `transferred`.
 
-Shadows `parquet_to_postgres`, and the mirror of `baseline_duckdb_postgres_to_parquet`
-— the same one-statement attach, with the `read_only` dropped so the attached
-database is a destination.
-
-It reads the projection duckdb can manage: creating a column for its own STRUCT
-needs a named composite type in Postgres, which duckdb will not invent, so the
-range columns are out of reach. Everything else lands with its type intact, down
-to `uuid` and `bytea`.
+The mirror of `baseline_duckdb_postgres_to_parquet` — the same one-statement attach
+with `read_only` dropped, loading back that leg's own dump. Round-tripping its own
+file is what makes the two legs comparable: duckdb cannot read our range structs,
+and its dump carries the ranges as the text it read them into.
 
 `create or replace table` is the closest duckdb comes to the staging-table swap
 `PostgresDestination` performs.
@@ -15,20 +11,29 @@ to `uuid` and `bytea`.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import duckdb
 
-from perf.data import view
-from perf.fixtures import projection
+from perf import dumps
+from perf.data import ROWS
 from perf.postgres import DSN, row_count, table_bytes
-from perf.workload import emit_result, measure
+from perf.workload import emit_result, measure, out_path
+from perf.workloads import baseline_duckdb_postgres_to_parquet as read_leg
 
-NAME = "baseline duckdb parquet→postgres (duckdb projection)"
+NAME = "baseline duckdb parquet→postgres"
 TARGET = "perf_load_duckdb"
 
 
-def run() -> None:
+def prepare() -> Path:
+    """The dump this leg loads, written by duckdb's own read leg unless already cached."""
+    return dumps.ensure("duckdb", read_leg.dump, ROWS)
+
+
+def run(_out: Path) -> None:
+    source = prepare()
+
     def _transfer() -> None:
-        source = projection(view("duckdb"))
         con = duckdb.connect()
         con.execute(f"attach '{DSN}' as pg (type postgres)")
         con.execute(
@@ -45,4 +50,4 @@ def run() -> None:
 
 
 if __name__ == "__main__":
-    run()
+    run(out_path())

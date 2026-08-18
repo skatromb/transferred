@@ -9,24 +9,15 @@ temporals, uuid, json, ranges and PostGIS geometry.
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
-from typing import Any
 
 ROWS = int(os.environ.get("PERF_ROWS", "50_000_000").replace("_", ""))
 """Rows in the shared wide dataset. Override via `PERF_ROWS=N`."""
 
-PYTHON_ROWS = int(os.environ.get("PERF_PYTHON_ROWS", "4_000_000").replace("_", ""))
-"""Rows for the iterable workloads, which build every row in Python.
-
-An order of magnitude below `ROWS` on purpose: the row converter runs at Python
-speed, so matching `ROWS` would make these workloads the whole suite's wall clock.
-"""
-
 ROWS_PER_GROUP = 1_000_000
-"""Row-group size used for the Parquet fixtures and matched baselines.
+"""Row-group size handed to the baselines, to match what our own writer produces.
 
-Matches parquet-rs's `DEFAULT_MAX_ROW_GROUP_ROW_COUNT = 1024*1024`. pyarrow's
-`iter_batches` default of 65536 would produce ~16x more (smaller) row groups,
+parquet-rs uses `DEFAULT_MAX_ROW_GROUP_ROW_COUNT = 1024*1024`, so a baseline left on
+its own default — 5000 rows for dlt's writer — emits far more, smaller row groups,
 which compress worse with zstd and confound output-size comparisons.
 """
 
@@ -80,74 +71,36 @@ Carries no `interval` column: Arrow maps it to `Interval(MonthDayNano)`, which
 parquet-rs cannot write, so a table holding one never reaches Parquet.
 """
 
-RANGE_COLUMNS = ("valid_days", "span")
-"""Columns Arrow models as `struct`. No engine but ours writes them to Postgres."""
-
-POSTGIS_COLUMNS = ("location", "region")
-"""Columns holding PostGIS types, which most drivers know nothing about."""
-
-EXTENSION_COLUMNS = ("session_id", "attrs")
-"""Columns Arrow models as canonical extension types — `arrow.uuid` and `arrow.json`."""
-
 BINARY_COLUMNS = ("payload",)
 """Columns holding `bytea`, which no text-protocol `COPY` can carry as-is."""
 
-CAST_TO_TEXT = RANGE_COLUMNS + POSTGIS_COLUMNS
-"""Columns dlt reads only once Postgres has cast them to text.
+CAST_TO_TEXT = ("valid_days", "span", "location", "region")
+"""Columns dlt reads only once Postgres has cast them to text — two ranges, two PostGIS.
 
 connectorx panics in Rust on each of these before dlt sees a row, and no dlt
 setting reaches that far. Casting in the query is the documented way out, and it
 costs nothing at run time because the server does the work.
 """
 
-UNSUPPORTED: dict[str, tuple[str, ...]] = {
-    "adbc": RANGE_COLUMNS,
-    "duckdb": RANGE_COLUMNS,
-}
-"""Columns a baseline cannot carry at all, keyed by the system that cannot carry them.
-
-Both entries fall over the same wall from opposite sides: ADBC has no mapping from
-an Arrow struct to a Postgres type, and duckdb refuses to create a column of the
-unnamed composite type its own STRUCT would need. Neither offers a hook to supply
-one. dlt used to be listed here, until every one of its gaps turned out to have a
-documented workaround — see `CAST_TO_TEXT` and `perf.workloads._dlt`.
-
-Two systems sharing a list today is a coincidence worth keeping separate: the
-views are named after the system that reads them, so a list can move on its own.
-"""
-
 CAPPED = f"{TABLE}_capped"
 """`TABLE` capped at `SLOW_ROWS`, for baselines that move every row through Python."""
 
 
-def view(system: str) -> str:
-    """Name of the view prepared for `system`, holding every column it can carry."""
-    return f"{TABLE}_{system}"
-
-
 def views_sql() -> str:
-    """SQL creating `CAPPED` plus one view per system in `UNSUPPORTED`.
+    """SQL creating `CAPPED`.
 
-    `CAPPED` exists for baselines that move every row through Python at tens of
+    It exists for baselines that move every row through Python at tens of
     microseconds each: at `ROWS` one would outlast the rest of the suite combined.
     Capping keeps them in the run and comparable on `rows/s`, the trade the
     iterable workloads already make.
 
-    Views are dropped rather than replaced: `create or replace view` refuses to
-    change a column list, and these lists move as a baseline turns out to reject
-    one more type.
+    Dropped rather than replaced: `create or replace view` refuses to change a
+    column list, and this one follows `COLUMNS`.
     """
-    statements = [
-        f"drop view if exists {CAPPED};"
+    return (
+        f"drop view if exists {CAPPED} cascade;"
         f"create view {CAPPED} as select * from {TABLE} limit {SLOW_ROWS};"
-    ]
-    for system, dropped in UNSUPPORTED.items():
-        kept = ", ".join(name for name, _ in COLUMNS if name not in dropped)
-        statements.append(
-            f"drop view if exists {view(system)} cascade;"
-            f"create view {view(system)} as select {kept} from {TABLE};"
-        )
-    return "".join(statements)
+    )
 
 
 def seed_sql(rows: int) -> str:
@@ -167,9 +120,3 @@ def seed_sql(rows: int) -> str:
         {selected}
     from generate_series(0, {rows - 1}) as i;
     """
-
-
-def iter_dict_rows() -> Iterator[dict[str, Any]]:
-    """Yield `PYTHON_ROWS` narrow dict rows, the shape the row converter sees."""
-    for i in range(PYTHON_ROWS):
-        yield {"i64": i, "f64": i * 1.5, "str": f"row-{i}"}

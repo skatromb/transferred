@@ -21,16 +21,24 @@ from perf.workloads import _dlt
 NAME = "baseline dlt postgres→parquet (defaults, capped)"
 
 
-def run(out: Path) -> None:
+def dump(out: Path) -> int:
+    """Write `CAPPED` under `out` as Parquet. Returns rows written.
+
+    Split out of `run` so the paired write leg reads a dump this backend wrote, with
+    each range flattened into the four columns it turns one into.
+    """
     from dlt.sources.sql_database import sql_table
 
-    pipeline, bucket = _dlt.parquet_pipeline("dlt_pg_to_pq", out)
-    table = sql_table(_dlt.dsn(), CAPPED, "public")
+    pipeline = _dlt.parquet_pipeline("dlt_pg_to_pq", out)
+    pipeline.run(sql_table(_dlt.dsn(), CAPPED, "public"), loader_file_format="parquet")
+    return _dlt.main_table_rows(out, CAPPED)
 
-    _, wall_seconds = measure(lambda: pipeline.run(table, loader_file_format="parquet"))
+
+def run(out: Path) -> None:
+    rows, wall_seconds = measure(lambda: dump(out))
     emit_result(
-        rows=_dlt.main_table_rows(bucket, CAPPED),
-        output_bytes=file_bytes(bucket),
+        rows=rows,
+        output_bytes=file_bytes(_dlt.bucket(out)),
         wall_seconds=wall_seconds,
     )
 

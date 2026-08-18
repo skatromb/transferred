@@ -9,20 +9,31 @@ from perf.postgres import DSN
 from perf.workload import emit_result, file_bytes, measure, out_path
 from transferred import FilesDestination, Parquet, PostgresSource, Transfer
 
-NAME = "postgres→parquet"
+NAME = "transferred postgres→parquet"
 
 
-def run(out: Path) -> None:
-    report, wall_seconds = measure(
-        lambda: Transfer(
+def dump(out: Path) -> int:
+    """Write the wide table to `out` as one Parquet file. Returns rows written.
+
+    Split out of `run` so the write leg can load back a dump we wrote ourselves,
+    rather than one whose types some other engine chose.
+    """
+    return (
+        Transfer(
             source=PostgresSource(DSN, table=TABLE),
             destination=FilesDestination(
                 out, format=Parquet(compression="zstd"), single_file=True
             ),
-        ).run()
+        )
+        .run()
+        .rows
     )
+
+
+def run(out: Path) -> None:
+    rows, wall_seconds = measure(lambda: dump(out))
     emit_result(
-        rows=report.rows,
+        rows=rows,
         output_bytes=file_bytes(out),
         wall_seconds=wall_seconds,
     )

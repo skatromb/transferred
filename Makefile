@@ -8,6 +8,7 @@ check-integration:
 	@cargo test -p transferred-postgres --features integration
 
 
+
 # ============================================================================
 # Rust
 # ============================================================================
@@ -43,6 +44,7 @@ deny-install:
 .PHONY: deny
 deny: deny-install
 	@cargo deny --locked check
+
 
 
 # ============================================================================
@@ -113,17 +115,36 @@ python-dev-build:
 			uv sync $(PYTHON_GROUPS) && \
 			uv run --no-sync maturin develop --uv --release
 
-# Run perf workloads. Forces a release-mode build first — debug builds skew numbers. Needs Docker.
+
+
+# ============================================================================
+# Performance
+# ============================================================================
+
+# Run perf workloads against duckdb. Forces a release-mode build — debug builds skew numbers. Needs Docker.
 .PHONY: perf
 perf: PYTHON_GROUPS := --group dev --group perf
 perf: python-dev-build
 	@uv run --project crates/transferred-py --no-sync python -m perf.run
+
+# Same, with dlt's four legs. Minutes each, so they stay out of the quick loop.
+.PHONY: perf-full
+perf-full: export PERF_DLT := 1
+perf-full: perf
+
+# Types each engine's Postgres target lands. Scale-independent — `PERF_ROWS=100000 make fidelity`.
+.PHONY: fidelity
+fidelity: PYTHON_GROUPS := --group dev --group perf
+fidelity: python-dev-build
+	@uv run --project crates/transferred-py --no-sync python -m perf.fidelity
 
 # Profile one workload's on-CPU time. macOS only. `make profile WORKLOAD=parquet_to_postgres`.
 .PHONY: profile
 profile: PYTHON_GROUPS := --group dev --group perf
 profile: python-dev-build
 	@crates/transferred-py/.venv/bin/python -m perf.profile $(WORKLOAD)
+
+
 
 # ============================================================================
 # Release

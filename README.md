@@ -3,9 +3,9 @@
 <img src="https://raw.githubusercontent.com/skatromb/transferred/main/logo.png" alt="transferred" width="240">
 
 
-The most convenient data transfer tool.
+The most convenient batch data transfer tool.
 
-`transferred` moves table-shaped data between systems. Blazing fast, no transformations supported — hand them over to someone else.
+`transferred` moves table data between systems. Blazing fast, no transformations supported — hand them over to your Data Warehouse.
 
 ## Install
 
@@ -42,7 +42,7 @@ print(report)
 #     cities/part-00001.parquet
 ```
 
-Swap either end for another source or destination — the middle stays the same. More in [examples/](./examples).
+More in [examples/](./examples).
 
 ## Supported
 
@@ -56,7 +56,7 @@ Destinations:
 - Parquet file — `FilesDestination` (zstd / snappy / uncompressed)
 - Postgres table — `PostgresDestination` (full replace, swapped in one transaction)
 
-BigQuery lands later. See [PLAN.md](./PLAN.md).
+BigQuery, S3/GCS and incremental loads land later. See [PLAN.md](./PLAN.md).
 
 ## Promises
 
