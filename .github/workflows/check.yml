@@ -19,13 +19,14 @@ jobs:
     runs-on: ubuntu-24.04-arm
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      python: ${{ steps.filter.outputs.python }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
-            code:
+            code: &code
               - 'crates/**'
               - 'examples/**'
               - 'Cargo.toml'
@@ -34,6 +35,9 @@ jobs:
               - 'rust-toolchain.toml'
               - 'Makefile'
               - '.github/workflows/check.yml'
+            python:
+              - *code
+              - 'perf/**'
 
   # The only required status check. The jobs below stay optional so the path filter can skip them.
   check-all:
@@ -86,10 +90,11 @@ jobs:
       - name: make cargo-test
         run: make cargo-test
 
+  # `make ruff` lints the perf harness too, so it runs on a perf-only change as well.
   python:
     name: Python
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.python == 'true'
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
