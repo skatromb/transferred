@@ -18,7 +18,7 @@ jobs:
     name: Detect code changes
     runs-on: ubuntu-24.04-arm
     outputs:
-      code: ${{ steps.filter.outputs.code }}
+      rust: ${{ steps.filter.outputs.rust }}
       python: ${{ steps.filter.outputs.python }}
     steps:
       - uses: actions/checkout@v7
@@ -26,9 +26,8 @@ jobs:
         id: filter
         with:
           filters: |
-            code: &code
+            rust: &rust
               - 'crates/**'
-              - 'examples/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'deny.toml'
@@ -36,7 +35,8 @@ jobs:
               - 'Makefile'
               - '.github/workflows/check.yml'
             python:
-              - *code
+              - *rust
+              - 'examples/**'
               - 'perf/**'
 
   # The only required status check. The jobs below stay optional so the path filter can skip them.
@@ -56,7 +56,7 @@ jobs:
   rust:
     name: Rust (aarch64)
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
@@ -76,7 +76,7 @@ jobs:
   rust-x86_64:
     name: Rust tests (x86_64)
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -90,7 +90,6 @@ jobs:
       - name: make cargo-test
         run: make cargo-test
 
-  # `make ruff` lints the perf harness too, so it runs on a perf-only change as well.
   python:
     name: Python
     needs: changes
@@ -119,7 +118,7 @@ jobs:
   integration:
     name: Integration
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
