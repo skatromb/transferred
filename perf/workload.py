@@ -22,8 +22,8 @@ from typing import TypeVar
 
 T = TypeVar("T")
 
-RELEASE_DIR = Path(__file__).resolve().parents[1] / "target" / "release"
-"""Where the release build of the extension lands; `measure` refuses to time any other."""
+DEBUG_DIR = Path(__file__).resolve().parents[1] / "target" / "debug"
+"""Where a debug build of the extension lands; `measure` refuses to time that one."""
 
 
 def measure(thunk: Callable[[], T]) -> tuple[T, float]:
@@ -45,7 +45,8 @@ def _refuse_debug_build() -> None:
     `make python-setup` installs a debug extension over the release one
     `make python-dev-build` leaves in the same place, so a `make check` between two
     perf runs swaps the binary being measured with nothing to show it. Baselines
-    that never import `transferred` are left alone.
+    that never import `transferred` are left alone, as is a released wheel — that
+    is what `perf.versions` measures.
     """
     native = sys.modules.get("transferred._native")
     if native is None or native.__file__ is None:
@@ -53,12 +54,10 @@ def _refuse_debug_build() -> None:
 
     loaded = Path(native.__file__)
     # Stat signature, not contents: reading 11 MB here would land in the RSS the harness reports.
-    if any(filecmp.cmp(loaded, built) for built in RELEASE_DIR.glob("lib_native.*")):
-        return
-
-    raise SystemExit(
-        f"{loaded.name} is not the build in {RELEASE_DIR}: run `make python-dev-build`"
-    )
+    if any(filecmp.cmp(loaded, built) for built in DEBUG_DIR.glob("lib_native.*")):
+        raise SystemExit(
+            f"{loaded.name} is the debug build in {DEBUG_DIR}: run `make python-dev-build`"
+        )
 
 
 def file_bytes(out: Path) -> int:

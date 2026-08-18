@@ -101,13 +101,15 @@ def _measure_all(workdir: Path) -> list[Repeated]:
     for index in range(REPEATS):
         for mod in WORKLOADS:
             print(f"pass {index + 1}/{REPEATS}: {mod.NAME}", flush=True)
-            runs[mod.NAME].append(_measure_once(mod, workdir))
+            runs[mod.NAME].append(measure_once(mod.NAME, mod, workdir))
             _dump_results(runs)
     return [Repeated(runs[mod.NAME]) for mod in WORKLOADS]
 
 
-def _measure_once(mod: ModuleType, workdir: Path) -> Metrics:
-    """Run one workload as a subprocess, reclaiming what it wrote afterwards.
+def measure_once(
+    label: str, mod: ModuleType, workdir: Path, python: str = sys.executable
+) -> Metrics:
+    """Run one workload as a subprocess under `python`, reclaiming what it wrote afterwards.
 
     Reclaiming is what keeps the passes independent: a leftover output directory would
     inflate the next pass's reported bytes. It also holds disk at the peak
@@ -116,10 +118,13 @@ def _measure_once(mod: ModuleType, workdir: Path) -> Metrics:
     Nothing is done to the server between runs. Restarting it, prewarming the table and
     checkpointing were all tried and all dropped — see PLAN.md; the drift they were
     written for is the machine's, and running round-robin is what answers that.
+
+    `python` and `label` are what `perf.versions` varies: the same leg under another
+    interpreter, holding another release of the wheel.
     """
     out = workdir / mod.__name__.rsplit(".", 1)[-1]
     try:
-        return run_subprocess(mod.NAME, [sys.executable, "-m", mod.__name__, str(out)])
+        return run_subprocess(label, [python, "-m", mod.__name__, str(out)])
     finally:
         _reclaim(out, getattr(mod, "TARGET", None))
 

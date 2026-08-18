@@ -316,7 +316,13 @@ Goal: measure the Postgres legs and let the README quote a number worth reading.
   - dlt's four legs run only under `PERF_DLT=1`, which `make perf-full` sets: two of them cost minutes each, so the quick loop is us against duckdb in five minutes rather than forty. Without the flag the suite prints `dlt: skipped`, since a table missing half the comparison must not look complete.
   - Results are rewritten after every measured run rather than at the end. A suite is dozens of subprocesses over an hour and one failure used to take every earlier measurement with it — which is exactly what the 50M `ENOSPC` run left behind, a log and nothing else.
   - `dumps.ensure` stamps what its `dump` reported writing, not the row count asked for. Running a workload module by hand at another scale silently left a 100k dump stamped 50M, which the next suite would have loaded as current.
-- [ ] README example at a scale worth showing, output verbatim from a `--release` build. `examples/postgres_to_parquet.py` stays at three cities — an example is read, a benchmark is run.
+- [x] README example at a scale worth showing, output verbatim from a `--release` build: 10M rows of a five-column `public.orders`, 3s 379ms, 137 MiB peak resident, interpreter included. `examples/postgres_to_parquet.py` stays at three cities — an example is read, a benchmark is run.
+- [x] `perf/versions.py` — the same two legs under each published wheel, one venv per version straight from PyPI (`PERF_VERSIONS=0.1.1,0.1.2 make perf-versions`). A release claims a perf win; this is what checks it, and nothing before it could: the baselines don't move between our releases, so `perf.run` measures the wrong axis.
+  - Versions are interleaved *inside* one suite, for the same reason its workloads are. Measuring all of 0.1.1 and then all of 0.1.2 is exactly the two-suite comparison this machine's drift invalidates, and it would credit whichever ran first.
+  - `--only-binary :all:`, so a missing wheel fails the run rather than silently compiling an sdist here — which would measure this toolchain and this `[profile.release]`, the local build wearing an old version number.
+  - The venv takes the suite's own Python series: `uv venv` otherwise picks the first interpreter it finds, a 3.12 on this machine, and no wheel of ours fits it.
+  - `measure()`'s guard now names the debug build it refuses instead of demanding the one in `target/release`. Same strength — a debug install is `maturin develop`'s copy of `target/debug`, byte-identical down to mtime — and it stops refusing a released wheel, which is a release build living in a venv.
+- [ ] Deploy 0.1.2.
 
 ## 0.2.0 — BigQuery source + destination
 

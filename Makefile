@@ -132,6 +132,12 @@ perf: python-dev-build
 perf-full: export PERF_DLT := 1
 perf-full: perf
 
+# A/B our legs across published releases — `PERF_VERSIONS=0.1.1,0.1.2 make perf-versions`.
+.PHONY: perf-versions
+perf-versions: PYTHON_GROUPS := --group dev --group perf
+perf-versions: python-dev-build
+	@uv run --project crates/transferred-py --no-sync python -m perf.versions
+
 # Types each engine's Postgres target lands. Scale-independent — `PERF_ROWS=100000 make fidelity`.
 .PHONY: fidelity
 fidelity: PYTHON_GROUPS := --group dev --group perf

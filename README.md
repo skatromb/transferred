@@ -24,10 +24,10 @@ from transferred import FilesDestination, Parquet, PostgresSource, Transfer
 
 source = PostgresSource(
     "postgres://user:pass@localhost:5432/db",
-    table="public.cities",
+    table="public.orders",
 )
 destination = FilesDestination(
-    Path("cities/"),
+    Path("orders/"),
     format=Parquet(compression="zstd"),
 )
 
@@ -35,12 +35,16 @@ report = Transfer(source, destination).run()
 
 print(report)
 # RunReport:
-#   rows: 3
-#   written: 1.16 KiB
-#   duration: 2ms
+#   rows: 10,000,000
+#   written: 64.98 MiB
+#   duration: 3s 379ms
 #   written objects:
-#     cities/part-00001.parquet
+#     orders/part-00001.parquet
 ```
+
+That output is a real run: 10M rows of five columns out of a local Postgres, in one
+process, peaking at 137 MiB resident — interpreter included. `docs/DLT_COMPARISON.md`
+measures the same legs against duckdb and dlt on a wider table.
 
 More in [examples/](./examples).
 
