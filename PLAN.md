@@ -322,7 +322,7 @@ Goal: measure the Postgres legs and let the README quote a number worth reading.
   - `--only-binary :all:`, so a missing wheel fails the run rather than silently compiling an sdist here — which would measure this toolchain and this `[profile.release]`, the local build wearing an old version number.
   - The venv takes the suite's own Python series: `uv venv` otherwise picks the first interpreter it finds, a 3.12 on this machine, and no wheel of ours fits it.
   - `measure()`'s guard now names the debug build it refuses instead of demanding the one in `target/release`. Same strength — a debug install is `maturin develop`'s copy of `target/debug`, byte-identical down to mtime — and it stops refusing a released wheel, which is a release build living in a venv.
-- [ ] Deploy 0.1.2.
+- [x] Deploy 0.1.2.
 
 ## 0.2.0 — BigQuery source + destination
 
