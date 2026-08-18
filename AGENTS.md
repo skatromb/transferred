@@ -23,7 +23,7 @@ Open-source library read by humans. Optimise for the next reader, make it beauti
 - `///` one-liner describing the *what* and *why*. Skip it where the name already says everything (e.g. `Into<String>` constructors).
 - A function's doc opens with a verb in third person, as std does.
 - Say it plainly. A doc exists to be understood at a glance, not admired: "Field length that means NULL", not "Length standing in for a value Postgres should read as NULL". Prefer the shorter word, the direct clause, the ordinary term. If a sentence needs rereading, rewrite it. This applies to every comment and docstring in the repo, not just `///`.
-- Document the thing you are on, not its neighbour. A constant says what it is and why that value; why the module exists belongs to the module, why we wrote our own belongs in PLAN.md. Development history is not a doc comment.
+- Document the thing you are on, not its neighbour. A constant says what it is and why that value; why the module exists belongs to the module, why we wrote our own belongs in PLAN.md until that version ships and DONE.md after. Development history is not a doc comment.
 - **Exception — Python-visible PyO3 classes/methods in `crates/transferred-py/` (pyclass names not prefixed with `_`):** full docstring with one-line summary, `Args:` block, `Example:` block with runnable `>>> from transferred import …` snippet. Internal underscore-prefixed pyclasses keep the one-liner rule.
 
 ## Python docstrings (public API)
@@ -45,7 +45,9 @@ Internal pyclass docstrings (e.g. `_FilesSource`): one mechanical line. "Interna
 
 ## PLAN.md hygiene
 
-Each `## X.Y.Z` heading holds only items scoped to that version. When moving an item to a later version, fully remove it from the earlier section — no "deferred to" breadcrumbs.
+PLAN.md holds unshipped work only, each `## X.Y.Z` heading scoped to its version. Moving an item to a later version removes it from the earlier one — no "deferred to" breadcrumbs.
+
+A shipped version's section moves verbatim to the end of [DONE.md](./DONE.md), which is not loaded by default. Grep it for why a decision went the way it did.
 
 ## Lints & typechecks
 

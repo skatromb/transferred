@@ -116,7 +116,7 @@ def measure_once(
     `check_disk` estimates, one write target at a time.
 
     Nothing is done to the server between runs. Restarting it, prewarming the table and
-    checkpointing were all tried and all dropped — see PLAN.md; the drift they were
+    checkpointing were all tried and all dropped — see DONE.md; the drift they were
     written for is the machine's, and running round-robin is what answers that.
 
     `python` and `label` are what `perf.versions` varies: the same leg under another

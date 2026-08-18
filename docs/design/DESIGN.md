@@ -468,4 +468,4 @@ Never silently coerce to `TEXT` or `BYTES` without a summary entry — that is t
 
 ## Strategy
 
-Versioned roadmap, milestone scope, and what's currently done live in [PLAN.md](./PLAN.md). DESIGN.md covers architecture and contracts only.
+Versioned roadmap and milestone scope live in [PLAN.md](../../PLAN.md), shipped versions in [DONE.md](../../DONE.md). DESIGN.md covers architecture and contracts only.
