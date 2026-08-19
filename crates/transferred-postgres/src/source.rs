@@ -1,10 +1,14 @@
+//! Postgres source. Binary COPY OUT → Arrow `RecordBatch`.
+
+mod pg_to_arrow;
+
 use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
 use tokio_postgres::binary_copy::BinaryCopyOutStream;
 use transferred_core::{BatchStream, Result, Source, TransferredError};
 
+use self::pg_to_arrow::Decoder;
 use crate::connection::connect;
-use crate::pg_to_arrow::Decoder;
 
 /// Rows per Arrow batch, one of which the transfer holds in flight.
 const BATCH_ROWS: usize = 10_000;

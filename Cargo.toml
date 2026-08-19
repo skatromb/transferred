@@ -33,6 +33,7 @@ panic = "deny"
 todo = "deny"
 unimplemented = "deny"
 indexing_slicing = "deny"
+mod_module_files = "deny"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

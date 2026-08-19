@@ -1,5 +1,8 @@
 //! Postgres destination. Arrow `RecordBatch` → binary COPY into a staging table, then atomic swap.
 
+mod arrow_to_pg;
+mod copy_in;
+
 use std::future::ready;
 use std::pin::pin;
 use std::time::Instant;
@@ -12,9 +15,9 @@ use transferred_core::{BatchStream, Destination, Result, RunReport, TransferredE
 
 use postgres_protocol::escape::escape_identifier;
 
-use crate::arrow_to_pg::Encoder;
+use self::arrow_to_pg::Encoder;
+use self::copy_in::CopyIn;
 use crate::connection::connect;
-use crate::copy_in::CopyIn;
 
 /// Suffix marking the staging table a load fills before the swap; a leftover one is safe to drop.
 pub const STAGING_SUFFIX: &str = "__transferred_staging";

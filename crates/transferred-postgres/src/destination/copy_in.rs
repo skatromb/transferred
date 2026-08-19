@@ -9,7 +9,7 @@ use tokio_postgres::types::IsNull;
 use tokio_postgres::{Client, CopyInSink};
 use transferred_core::{Result, TransferredError};
 
-use crate::arrow_to_pg::{ColumnEncoder, Encoder};
+use super::arrow_to_pg::{ColumnEncoder, Encoder};
 
 /// Bytes every binary COPY stream starts with, before the flags and header extension.
 const COPY_SIGNATURE: &[u8] = b"PGCOPY\n\xff\r\n\0";
