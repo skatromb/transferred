@@ -21,6 +21,9 @@ from importlib import import_module
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from perf import fixtures, postgres
+from perf.data import ROWS
+
 _MODULE = "perf.profile"
 """This module: it spawns itself to be the process it samples."""
 
@@ -64,6 +67,10 @@ def main() -> None:
         raise SystemExit("perf.profile needs `/usr/bin/sample`, which is macOS only")
 
     workload = sys.argv[1]
+    postgres.up()
+    postgres.seed(ROWS)
+    fixtures.build(ROWS)
+
     with TemporaryDirectory() as tmp:
         report = _profile(workload, Path(tmp))
 
@@ -98,10 +105,12 @@ def _work(workload: str) -> None:
     module = import_module(f"perf.workloads.{workload}")
     stdout, sys.stdout = sys.stdout, sys.stderr
 
-    module.run()
-    print(_READY, file=stdout, flush=True)
-    for _ in range(REPEATS - 1):
-        module.run()
+    with TemporaryDirectory() as tmp:
+        out = Path(tmp) / workload
+        module.run(out)
+        print(_READY, file=stdout, flush=True)
+        for _ in range(REPEATS - 1):
+            module.run(out)
 
 
 def _leaves(report: str) -> Counter[str]:
