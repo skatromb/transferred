@@ -44,9 +44,9 @@ print(report)
 
 10M rows of 22 diverse columns including `jsonb` and PostGIS geometry — peaking at 275 MiB RAM interpreter included.
 
-Look at [docs/DLT_COMPARISON.md](docs/DLT_COMPARISON.md) for more performance insights.
+Look at [docs/DLT_COMPARISON.md](https://github.com/skatromb/transferred/blob/main/docs/DLT_COMPARISON.md) for more performance insights.
 
-More in [examples/](./examples).
+More in [examples/](https://github.com/skatromb/transferred/tree/main/examples).
 
 ## Supported
 
@@ -60,7 +60,7 @@ Destinations:
 - Parquet file — `FilesDestination` (zstd / snappy / uncompressed)
 - Postgres table — `PostgresDestination` (full replace, swapped in one transaction)
 
-BigQuery, S3/GCS and incremental loads land later. See [PLAN.md](./PLAN.md).
+BigQuery, S3/GCS and incremental loads land later. See [PLAN.md](https://github.com/skatromb/transferred/blob/main/PLAN.md).
 
 ## Promises
 
@@ -71,4 +71,4 @@ BigQuery, S3/GCS and incremental loads land later. See [PLAN.md](./PLAN.md).
 
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+MIT. See [LICENSE](https://github.com/skatromb/transferred/blob/main/LICENSE).
