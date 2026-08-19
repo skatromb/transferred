@@ -51,12 +51,13 @@ WORKLOADS: tuple[ModuleType, ...] = _CORE + (_DLT if _WITH_DLT else ())
 
 RESULTS_DIR = Path(__file__).resolve().parent / ".results"
 
-REPEATS = int(os.environ.get("PERF_REPEATS", "3"))
+REPEATS = int(os.environ.get("PERF_REPEATS", "4"))
 """Passes over every workload. Override via `PERF_REPEATS=N`.
 
-Three, because a pass is where the comparison lives: every engine is measured once
-inside it, under whatever the machine is doing at the time. More passes buy more
-chances at a quiet one, not a tighter `spread` — that tracks the machine, not us.
+A pass is where the comparison lives: every engine is measured once inside it, under
+whatever the machine is doing at the time. More passes buy more chances at a quiet one,
+not a tighter `spread` — that tracks the machine, not us. Even, because `perf.versions`
+swaps which version of a pair runs first on every other pass.
 """
 
 

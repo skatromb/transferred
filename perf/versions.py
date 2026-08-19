@@ -90,11 +90,23 @@ def _install(version: str) -> str:
 
 
 def _measure_all(pythons: dict[str, str], workdir: Path) -> list[Repeated]:
-    """Run every leg under every version once per pass, `REPEATS` passes."""
+    """Run every leg under every version once per pass, `REPEATS` passes.
+
+    Leg outermost, so the versions of one leg run back to back and share whatever the
+    machine is doing in that minute. Version outermost would put the other leg between
+    them, which is the drift the comparison is trying not to charge to a release.
+
+    The pair also swaps order every pass, so neither version always pays whatever it
+    costs to be the one that runs first.
+    """
     runs: dict[str, list[Metrics]] = {}
     for index in range(REPEATS):
-        for version, python in pythons.items():
-            for mod in LEGS:
+        for mod in LEGS:
+            versions = list(pythons.items())
+            if index % 2:
+                versions.reverse()
+
+            for version, python in versions:
                 label = f"{mod.NAME.removeprefix('transferred ')} {version}"
                 print(f"pass {index + 1}/{REPEATS}: {label}", flush=True)
                 runs.setdefault(label, []).append(
