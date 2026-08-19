@@ -1,11 +1,12 @@
 use async_trait::async_trait;
-use futures::{Stream, StreamExt, TryStreamExt, stream};
-use tokio_postgres::binary_copy::{BinaryCopyOutRow, BinaryCopyOutStream};
+use futures::{StreamExt, TryStreamExt};
+use tokio_postgres::binary_copy::BinaryCopyOutStream;
 use transferred_core::{BatchStream, Result, Source, TransferredError};
 
 use crate::connection::connect;
 use crate::pg_to_arrow::Decoder;
 
+/// Rows per Arrow batch, one of which the transfer holds in flight.
 const BATCH_ROWS: usize = 10_000;
 
 /// A `Source` that reads rows from a Postgres table or query.
@@ -40,12 +41,12 @@ impl Source for PostgresSource {
             .await
             .map_err(TransferredError::source)?;
 
-        let decoder = Decoder::derive(query.columns())?;
-        let pg_types: Vec<_> = query
+        let types: Vec<_> = query
             .columns()
             .iter()
             .map(|column| column.type_().clone())
             .collect();
+        let mut decoder = Decoder::derive(query.columns())?;
 
         let copy = client
             .copy_out(&format!(
@@ -53,41 +54,17 @@ impl Source for PostgresSource {
             ))
             .await
             .map_err(TransferredError::source)?;
-        // The stream is not fused: polled once more after its trailer, it reports the transport
-        // closed rather than ending again.
-        let rows = BinaryCopyOutStream::new(copy, &pg_types)
-            .map_err(TransferredError::source)
-            .fuse();
 
-        // No rows means the stream ended; a last batch short of `BATCH_ROWS` still has some.
-        let batches = stream::try_unfold(
-            (Box::pin(rows), decoder),
-            |(mut rows, mut decoder)| async move {
-                match read_batch(&mut rows, &mut decoder).await? {
-                    0 => Ok(None),
-                    _ => Ok(Some((decoder.finish()?, (rows, decoder)))),
+        let batches = BinaryCopyOutStream::new(copy, &types)
+            .try_chunks(BATCH_ROWS)
+            .map(move |rows| {
+                for row in rows.map_err(|failed| TransferredError::source(failed.1))? {
+                    decoder.append_row(&row)?;
                 }
-            },
-        );
+
+                decoder.finish()
+            });
 
         Ok(vec![batches.boxed()])
     }
-}
-
-/// Fills `decoder` with up to `BATCH_ROWS` rows. Returns how many arrived; zero means the end.
-async fn read_batch(
-    rows: &mut (impl Stream<Item = Result<BinaryCopyOutRow>> + Unpin),
-    decoder: &mut Decoder,
-) -> Result<usize> {
-    let mut read = 0;
-
-    while read < BATCH_ROWS {
-        let Some(row) = rows.try_next().await? else {
-            break;
-        };
-        decoder.append_row(&row)?;
-        read += 1;
-    }
-
-    Ok(read)
 }
