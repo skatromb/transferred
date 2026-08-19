@@ -17,8 +17,8 @@ use transferred_postgres::PostgresSource;
 static RUNNING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// Runs after `main` off the `atexit` chain — the teardown libtest lacks, since `static`s never drop.
-#[ctor::dtor]
-fn reap() {
+#[dtor::dtor]
+unsafe fn reap() {
     let ids = std::mem::take(&mut *RUNNING.lock().expect("reaper lock"));
     if ids.is_empty() {
         return;
