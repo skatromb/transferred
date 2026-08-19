@@ -4,8 +4,9 @@ use tokio_postgres::binary_copy::BinaryCopyOutStream;
 use transferred_core::{BatchStream, Result, Source, TransferredError};
 
 use crate::connection::connect;
-use crate::pg_to_arrow::PgToArrow;
+use crate::pg_to_arrow::Decoder;
 
+/// Rows per Arrow batch, one of which the transfer holds in flight.
 const BATCH_ROWS: usize = 10_000;
 
 /// A `Source` that reads rows from a Postgres table or query.
@@ -40,27 +41,29 @@ impl Source for PostgresSource {
             .await
             .map_err(TransferredError::source)?;
 
-        let columns = query.columns();
-        let pg_types: Vec<_> = columns
+        let types: Vec<_> = query
+            .columns()
             .iter()
             .map(|column| column.type_().clone())
             .collect();
+        let mut decoder = Decoder::derive(query.columns())?;
 
-        let pg_to_arrow = PgToArrow::derive(columns)?;
+        let copy = client
+            .copy_out(&format!(
+                "copy (select * from {verified_table}) to stdout (format binary)"
+            ))
+            .await
+            .map_err(TransferredError::source)?;
 
-        let sql = format!("copy (select * from {verified_table}) to stdout (format binary)");
-        let stream = BinaryCopyOutStream::new(
-            client
-                .copy_out(&sql)
-                .await
-                .map_err(TransferredError::source)?,
-            &pg_types,
-        );
+        let batches = BinaryCopyOutStream::new(copy, &types)
+            .try_chunks(BATCH_ROWS)
+            .map(move |rows| {
+                for row in rows.map_err(|failed| TransferredError::source(failed.1))? {
+                    decoder.append_row(&row)?;
+                }
 
-        let batches = stream.try_chunks(BATCH_ROWS).map(move |chunk| {
-            let chunk = chunk.map_err(TransferredError::source)?;
-            pg_to_arrow.batch(&chunk)
-        });
+                decoder.finish()
+            });
 
         Ok(vec![batches.boxed()])
     }

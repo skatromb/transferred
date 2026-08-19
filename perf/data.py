@@ -10,8 +10,14 @@ from __future__ import annotations
 
 import os
 
-ROWS = int(os.environ.get("PERF_ROWS", "50_000_000").replace("_", ""))
-"""Rows in the shared wide dataset. Override via `PERF_ROWS=N`."""
+ROWS = int(os.environ.get("PERF_ROWS", "10_000_000").replace("_", ""))
+"""Rows in the shared wide dataset. Override via `PERF_ROWS=N`.
+
+Ten million holds a leg above ten seconds, long enough for a build-to-build difference
+to clear the machine's noise. Fifty million measured worse, not better: legs ran over a
+minute each, and the 14 GB they write puts the machine under enough memory pressure that
+`peak_rss_bytes` swings fourfold between passes of one unchanged build.
+"""
 
 ROWS_PER_GROUP = 1_000_000
 """Row-group size handed to the baselines, to match what our own writer produces.

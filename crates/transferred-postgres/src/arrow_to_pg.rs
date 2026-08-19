@@ -10,7 +10,7 @@ use arrow::array::{
     RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
 };
 use arrow_schema::extension::{ExtensionType, Json, Uuid};
-use arrow_schema::{DataType as ArrowType, Field as ArrowField, IntervalUnit, Schema, TimeUnit};
+use arrow_schema::{DataType as ArrowType, Field as ArrowField, IntervalUnit, SchemaRef, TimeUnit};
 use bytes::BytesMut;
 use postgres_protocol::IsNull as ProtocolIsNull;
 use postgres_protocol::escape::escape_identifier;
@@ -26,13 +26,13 @@ use crate::pg_range::{LOWER, PgRange};
 
 /// Postgres column definitions + value encoders, mapped once from an Arrow schema.
 pub struct Encoder {
-    schema: Schema,
+    schema: SchemaRef,
     columns: Vec<ColumnEncoder>,
 }
 
 impl Encoder {
     /// Maps an Arrow schema onto Postgres columns. All columns nullable.
-    pub fn new(schema: &Schema) -> Result<Self> {
+    pub fn new(schema: SchemaRef) -> Result<Self> {
         let columns = schema
             .fields()
             .iter()
@@ -44,10 +44,7 @@ impl Encoder {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(Self {
-            schema: schema.clone(), // todo: if we clone, maybe pass by value then?
-            columns,
-        })
+        Ok(Self { schema, columns })
     }
 
     /// Column-type list for `CREATE TABLE`, quoted and comma-separated.
@@ -90,8 +87,7 @@ impl ColumnEncoder {
     }
 }
 
-/// What a column is in Postgres terms; one decision per column, answering for both its
-/// `CREATE TABLE` type and the binary form of its values, so the two can never disagree.
+/// One decision per column, answering for both its `CREATE TABLE` type and its values' binary form.
 enum Encoding {
     Bool,
     Int2,
@@ -391,6 +387,7 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::array::ArrayRef;
+    use arrow_schema::Schema;
 
     use super::*;
 
@@ -426,7 +423,7 @@ mod tests {
     #[test]
     fn maps_every_source_type_back_to_a_pg_declaration() {
         assert_eq!(
-            Encoder::new(&source_schema()).unwrap().declarations(),
+            Encoder::new(source_schema().into()).unwrap().declarations(),
             r#""b" bool, "i2" int2, "i4" int4, "i8" int8, "f4" float4, "f8" float8, "t" text, "#
                 .to_owned()
                 + r#""bin" bytea, "d" date, "ts" timestamp, "tstz" timestamptz, "iv" interval, "#
@@ -440,7 +437,7 @@ mod tests {
         let batch = RecordBatch::try_new(Arc::new(schema.clone()), vec![array]).unwrap();
         let mut buf = BytesMut::new();
 
-        let encoder = Encoder::new(&schema)?;
+        let encoder = Encoder::new(schema.into())?;
         let column = encoder.columns(&batch)?.first().unwrap();
         column.write(batch.column(0).as_ref(), 0, &mut buf)?;
         Ok(buf)
@@ -475,7 +472,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            Encoder::new(&schema).unwrap().declarations(),
+            Encoder::new(schema.into()).unwrap().declarations(),
             r#""i4" int4range, "i8" int8range, "n" numrange, "d" daterange, "#.to_owned()
                 + r#""ts" tsrange, "tstz" tstzrange"#
         );
@@ -485,14 +482,17 @@ mod tests {
     #[test]
     fn rejects_a_range_postgres_has_no_built_in_for() {
         let schema = Schema::new(vec![range("t", ArrowType::Utf8)]);
-        assert!(Encoder::new(&schema).is_err());
+        assert!(Encoder::new(schema.into()).is_err());
     }
 
     /// Extension metadata is the only thing separating `json` from `text`; without it, plain wins.
     #[test]
     fn extension_metadata_picks_the_semantic_pg_type() {
         let plain = Schema::new(vec![ArrowField::new("j", ArrowType::Utf8, true)]);
-        assert_eq!(Encoder::new(&plain).unwrap().declarations(), r#""j" text"#);
+        assert_eq!(
+            Encoder::new(plain.into()).unwrap().declarations(),
+            r#""j" text"#
+        );
     }
 
     /// `PostGIS` gets its OIDs per database, so only the DDL can name it: edges pick the type and
@@ -511,7 +511,7 @@ mod tests {
         ]);
 
         assert_eq!(
-            Encoder::new(&schema).unwrap().declarations(),
+            Encoder::new(schema.into()).unwrap().declarations(),
             r#""geom" geometry, "pt" geometry(Geometry,4326), "geog" geography(Geometry,4326), "bare" geography"#
         );
     }
@@ -537,23 +537,23 @@ mod tests {
             ArrowType::FixedSizeBinary(16),
             true,
         )]);
-        assert!(Encoder::new(&schema).is_err());
+        assert!(Encoder::new(schema.into()).is_err());
     }
 
     #[test]
     fn rejects_unsupported_arrow_type() {
         let schema = Schema::new(vec![ArrowField::new("u16", ArrowType::UInt16, true)]);
-        assert!(Encoder::new(&schema).is_err());
+        assert!(Encoder::new(schema.into()).is_err());
     }
 
     /// The table is created from the first batch, so a later partition may not fit it.
     #[test]
     fn rejects_a_batch_that_does_not_match_the_mapped_schema() {
-        let encoder = Encoder::new(&Schema::new(vec![ArrowField::new(
+        let encoder = Encoder::new(Arc::new(Schema::new(vec![ArrowField::new(
             "a",
             ArrowType::Int32,
             true,
-        )]))
+        )])))
         .unwrap();
 
         let widened = Arc::new(Schema::new(vec![ArrowField::new(
@@ -571,7 +571,7 @@ mod tests {
     #[test]
     fn accepts_a_batch_differing_only_in_schema_metadata() {
         let schema = Schema::new(vec![ArrowField::new("a", ArrowType::Int32, true)]);
-        let encoder = Encoder::new(&schema).unwrap();
+        let encoder = Encoder::new(schema.clone().into()).unwrap();
 
         let tagged = Arc::new(
             schema.with_metadata(HashMap::from([("writer".to_owned(), "test".to_owned())])),
@@ -590,7 +590,7 @@ mod tests {
             ArrowField::new("user.id", ArrowType::Utf8, true),
         ]);
         assert_eq!(
-            Encoder::new(&awkward).unwrap().declarations(),
+            Encoder::new(awkward.into()).unwrap().declarations(),
             r#""Total Sales" int4, "user.id" text"#
         );
     }

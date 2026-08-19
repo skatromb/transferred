@@ -117,7 +117,7 @@ impl Target {
             return Err(TransferredError::EmptySource);
         };
 
-        let encoder = Encoder::new(&first.schema())?;
+        let encoder = Encoder::new(first.schema())?;
         self.create_staging(client, &encoder.declarations()).await?;
 
         let mut batches = pin!(stream::once(ready(Ok(first))).chain(rest));

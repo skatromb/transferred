@@ -26,10 +26,7 @@ const COPY_TRAILER: i16 = -1;
 /// Bytes buffered before a chunk goes out; 4 KB costs a third more client CPU, 64 KB is the plateau.
 const CHUNK_BYTES: usize = 64 << 10;
 
-/// Writes rows into a Postgres binary COPY stream, sending them a chunk at a time.
-/// <https://www.postgresql.org/docs/18/sql-copy.html#id-1.9.3.55.9.4.6>
-/// Replaces `BinaryCopyInWriter` for performance, which boxes every value and flushes every 4 KB.
-/// <https://docs.rs/tokio-postgres/0.7.18/src/tokio_postgres/binary_copy.rs.html>
+/// Writes rows a chunk at a time, unlike `BinaryCopyInWriter`, which boxes every value.
 pub struct CopyIn {
     sink: Pin<Box<CopyInSink<Bytes>>>,
     buf: BytesMut,

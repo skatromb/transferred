@@ -1,7 +1,7 @@
 //! Scalar conversions between Postgres and Arrow value representations, both directions.
 //! `pg_*` converts towards Postgres; the rest converts towards Arrow.
 
-use arrow::datatypes::{Date32Type, IntervalMonthDayNano};
+use arrow::datatypes::{DECIMAL128_MAX_PRECISION, Date32Type, IntervalMonthDayNano};
 use chrono::{DateTime, NaiveDate, Utc};
 use pg_interval::Interval as PgInterval;
 use rust_decimal::Decimal;
@@ -9,17 +9,13 @@ use serde_json::value::RawValue;
 use tokio_postgres::types::Json as PgJson;
 use transferred_core::{Result, TransferredError};
 
-/// Arrow `Decimal128` holds at most 38 digits; PG `numeric` allows up to 1000.
-const DECIMAL128_MAX_PRECISION: i32 = 38;
-
 /// Precision and scale for bare `numeric`, matching BQ `NUMERIC` so it lands there uncoerced.
-const BARE_NUMERIC: (i32, i32) = (DECIMAL128_MAX_PRECISION, 9);
+const BARE_NUMERIC: (u8, i8) = (DECIMAL128_MAX_PRECISION, 9);
 
 /// Typmod PG reports for a `numeric` declared without precision.
 pub const BARE_NUMERIC_TYPMOD: i32 = -1;
 
-/// Typmod PG reports for a `geometry`/`geography` declared without a coordinate system. Such a
-/// column takes rows with differing SRIDs, so only each value's own EWKB can name one.
+/// PG Typmod for a `geo...` without a coordinate system. Each value's own EWKB can name one.
 const UNCONSTRAINED_GEO_TYPMOD: i32 = -1;
 
 /// `PostGIS` spells "coordinate system unknown" as SRID 0.
@@ -37,25 +33,28 @@ const NANOS_PER_MICRO: i64 = 1_000;
 
 /// Decodes a `numeric` typmod, defaulting bare `numeric` `-1` to (38,9).
 pub fn numeric_precision_scale(typmod: i32) -> Result<(u8, i8)> {
-    let (precision, scale) = match typmod {
-        BARE_NUMERIC_TYPMOD => BARE_NUMERIC,
-        // `numeric_typmod_precision`/`numeric_typmod_scale`, minus `VARHDRSZ`; the XOR sign-extends
-        // the 11-bit scale, which PG 15+ allows to be negative.
-        // https://github.com/postgres/postgres/blob/REL_17_10/src/backend/utils/adt/numeric.c#L925
-        _ => (
-            ((typmod - 4) >> 16) & 0xffff,
-            (((typmod - 4) & 0x7ff) ^ 0x400) - 0x400,
-        ),
-    };
+    if typmod == BARE_NUMERIC_TYPMOD {
+        return Ok(BARE_NUMERIC);
+    }
 
-    // PG 15+ decouples scale from precision, so a narrow column may still carry an i8-busting scale.
+    // `numeric_typmod_precision`/`numeric_typmod_scale`, minus `VARHDRSZ`; the XOR sign-extends the
+    // 11-bit scale, which PG 15+ allows to be negative.
+    // https://github.com/postgres/postgres/blob/REL_17_10/src/backend/utils/adt/numeric.c#L925
+    let precision = ((typmod - 4) >> 16) & 0xffff;
+    let scale = (((typmod - 4) & 0x7ff) ^ 0x400) - 0x400;
+
+    // PG holds 1000 digits to Arrow's 38, and PG 15+ decouples scale from precision, so a narrow
+    // column may still carry a scale that busts an i8 or outruns its own precision.
     match (u8::try_from(precision), i8::try_from(scale)) {
-        (Ok(precision), Ok(scale)) if i32::from(precision) <= DECIMAL128_MAX_PRECISION => {
+        (Ok(precision), Ok(scale))
+            if precision <= DECIMAL128_MAX_PRECISION
+                && i32::from(scale) <= i32::from(precision) =>
+        {
             Ok((precision, scale))
         }
         _ => Err(TransferredError::source(format!(
-            "`numeric({precision},{scale})` is outside Arrow `Decimal128`, \
-             which holds {DECIMAL128_MAX_PRECISION} digits"
+            "`numeric({precision},{scale})` is outside Arrow `Decimal128`, which holds \
+             {DECIMAL128_MAX_PRECISION} digits and no more scale than precision"
         ))),
     }
 }
@@ -168,6 +167,7 @@ mod tests {
     const NUMERIC_5_NEG2: i32 = 329_730;
     const NUMERIC_1000_500: i32 = 65_536_504;
     const NUMERIC_5_200: i32 = 327_884;
+    const NUMERIC_5_10: i32 = 327_694;
     const GEOMETRY_BARE: i32 = -1;
     const GEOMETRY_POINT: i32 = 4;
     const GEOMETRY_POINT_4326: i32 = 1_107_460;
@@ -202,6 +202,12 @@ mod tests {
     #[test]
     fn typmod_rejects_scale_past_i8() {
         assert!(numeric_precision_scale(NUMERIC_5_200).is_err());
+    }
+
+    /// PG takes `numeric(5,10)`; Arrow `Decimal128` does not, and would build a broken array from it.
+    #[test]
+    fn typmod_rejects_scale_wider_than_precision() {
+        assert!(numeric_precision_scale(NUMERIC_5_10).is_err());
     }
 
     /// The SRID sits above the subtype bits, so constraining one must not disturb the other.
