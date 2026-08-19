@@ -5,7 +5,6 @@
 
 use std::any::type_name;
 use std::error::Error as StdError;
-use std::sync::Arc;
 
 use arrow::array::{
     ArrayBuilder, ArrayRef, BinaryBuilder, BooleanBuilder, Date32Builder, Decimal128Builder,
@@ -15,7 +14,9 @@ use arrow::array::{
 };
 use arrow::datatypes::Date32Type;
 use arrow_schema::extension::{Json, Opaque, Uuid};
-use arrow_schema::{DataType as ArrowType, Field as ArrowField, IntervalUnit, Schema, TimeUnit};
+use arrow_schema::{
+    DataType as ArrowType, Field as ArrowField, IntervalUnit, Schema, SchemaRef, TimeUnit,
+};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use pg_interval::Interval as PgInterval;
 use postgres_protocol::types::{Range, RangeBound, range_from_sql};
@@ -45,7 +46,7 @@ const UUID_BYTES: i32 = 16;
 
 /// Arrow schema + per-column decoders, mapped once from PG column metadata.
 pub struct Decoder {
-    schema: Arc<Schema>,
+    schema: SchemaRef,
     columns: Vec<ColumnDecoder>,
 }
 
@@ -59,7 +60,7 @@ impl Decoder {
         let fields: Vec<_> = columns.iter().map(|column| column.field.clone()).collect();
 
         Ok(Self {
-            schema: Arc::new(Schema::new(fields)),
+            schema: Schema::new(fields).into(),
             columns,
         })
     }
@@ -67,8 +68,8 @@ impl Decoder {
     /// Appends one row, each field still exactly as Postgres sent it.
     pub fn append_row(&mut self, row: &BinaryCopyOutRow) -> Result<()> {
         for (at, column) in self.columns.iter_mut().enumerate() {
-            let raw: Raw = row.try_get(at).map_err(TransferredError::source)?;
-            column.append(raw.0)?;
+            let raw: Option<Raw> = row.try_get(at).map_err(TransferredError::source)?;
+            column.append(raw.map(|raw| raw.0))?;
         }
 
         Ok(())
@@ -82,20 +83,15 @@ impl Decoder {
     }
 }
 
-/// A field's bytes exactly as Postgres sent them, whatever its type; `None` is a NULL. Every
-/// `Decoding` reads its own binary form, so the row must hand them over untouched.
-struct Raw<'a>(Option<&'a [u8]>);
+/// A field's bytes untouched, for any type — `&[u8]`'s own `FromSql` accepts `bytea` alone.
+struct Raw<'a>(&'a [u8]);
 
 impl<'a> FromSql<'a> for Raw<'a> {
     fn from_sql(
         _: &PgType,
         raw: &'a [u8],
     ) -> std::result::Result<Self, Box<dyn StdError + Sync + Send>> {
-        Ok(Self(Some(raw)))
-    }
-
-    fn from_sql_null(_: &PgType) -> std::result::Result<Self, Box<dyn StdError + Sync + Send>> {
-        Ok(Self(None))
+        Ok(Self(raw))
     }
 
     fn accepts(_: &PgType) -> bool {
