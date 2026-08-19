@@ -14,7 +14,7 @@ jobs:
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: dependabot/fetch-metadata@v2
+      - uses: dependabot/fetch-metadata@v3
         id: metadata
 
       - run: gh pr merge --auto --squash "$PR_URL"
