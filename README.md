@@ -64,10 +64,10 @@ BigQuery, S3/GCS and incremental loads land later. See [PLAN.md](https://github.
 
 ## Promises
 
-- ✅ Make data transfers as simple as it could be
-- 🚧 Enforce best practices by default
-- 🚧 Blazing fast
-- ✅ No OOMs!
+- Make data transfers as simple as it could be
+- Enforce best practices by default
+- Blazing fast
+- No OOMs!
 
 ## License
 
