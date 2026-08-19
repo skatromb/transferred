@@ -87,8 +87,7 @@ impl ColumnEncoder {
     }
 }
 
-/// What a column is in Postgres terms; one decision per column, answering for both its
-/// `CREATE TABLE` type and the binary form of its values, so the two can never disagree.
+/// One decision per column, answering for both its `CREATE TABLE` type and its values' binary form.
 enum Encoding {
     Bool,
     Int2,

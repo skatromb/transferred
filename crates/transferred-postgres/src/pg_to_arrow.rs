@@ -134,8 +134,7 @@ impl ColumnDecoder {
     }
 }
 
-/// What a column is in Arrow terms; one decision per column, answering for both its Arrow field and
-/// the binary form of its values, so the two can never disagree.
+/// One decision per column, answering for both its Arrow field and its values' binary form.
 enum Decoding {
     Bool,
     Int2,
@@ -145,8 +144,7 @@ enum Decoding {
     Float8,
     /// `text`, `varchar`, `enum` and `citext` alike: PG sends every one of them as its own UTF-8.
     Text,
-    /// `json` and `jsonb` differ on the wire — `jsonb` leads with a version byte — so the decode
-    /// needs the type it came from, not just the shape it lands in.
+    /// `jsonb` leads with a version byte, so the decode needs the type, not just the shape.
     Json(PgType),
     Bytea,
     Uuid,
@@ -392,8 +390,7 @@ fn text(bytes: Option<&[u8]>) -> Result<Option<&str>> {
         .map_err(TransferredError::source)
 }
 
-/// A bound's bytes, `None` when the bound is infinite. Postgres rejects a NULL bound, so a bound
-/// with no value is one it did not send.
+/// A bound's bytes; `None` is an infinite bound, the only kind Postgres sends no value for.
 fn bound<'a>(bound: &RangeBound<Option<&'a [u8]>>) -> Option<&'a [u8]> {
     match bound {
         RangeBound::Inclusive(value) | RangeBound::Exclusive(value) => *value,
