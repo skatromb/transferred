@@ -67,8 +67,8 @@ class Metrics:
         return cpu / self.wall_seconds if self.wall_seconds else 0.0
 
     @property
-    def rss_mb(self) -> tuple[float, float, float]:
-        """RSS min and mean over the samples, and the peak from rusage, in MB.
+    def rss_mb(self) -> tuple[float, float]:
+        """Mean RSS over the samples and the peak from rusage, in MB.
 
         The peak is rusage's because a spike between two samples is missed, and it is
         the peak that decides whether a run fits in RAM. Mixing sources is safe here
@@ -76,18 +76,18 @@ class Metrics:
         a sampled value.
         """
         samples = [s.rss_bytes / 2**20 for s in self.samples] or [0.0]
-        return min(samples), _mean(samples), self.peak_rss_bytes / 2**20
+        return _mean(samples), self.peak_rss_bytes / 2**20
 
     @property
-    def cpu_percent(self) -> tuple[float, float, float]:
-        """CPU min, mean and max over the samples, as a percentage of one core.
+    def cpu_percent(self) -> tuple[float, float]:
+        """Mean and max CPU over the samples, as a percentage of one core.
 
-        All three are sampled, unlike `rss_mb`: rusage's mean is spread over the whole
-        run and can land above every sample a short bursty leg produced, which would
-        print a mean above its own maximum. `cpu_wall_ratio` reports that mean instead.
+        Both are sampled, unlike `rss_mb`: rusage's mean is spread over the whole run
+        and can land above every sample a short bursty leg produced, which would print
+        a mean above its own maximum. `cpu_wall_ratio` reports that mean instead.
         """
         samples = [s.cpu_percent for s in self.samples] or [0.0]
-        return min(samples), _mean(samples), max(samples)
+        return _mean(samples), max(samples)
 
 
 def _mean(values: list[float]) -> float:
@@ -124,7 +124,7 @@ class _Sampler:
 
     def _loop(self) -> None:
         # The first reading only primes `cpu_percent`, which has no earlier call to
-        # measure against and so reports 0.0. Recording it would peg every min to zero.
+        # measure against and so reports 0.0. Recording it would drag every mean down.
         self._read()
         while not self._stop.wait(self._interval):
             sample = self._read()
@@ -260,13 +260,13 @@ _COLUMNS: tuple[_Column, ...] = (
     _Column("rows", lambda r: f"{r.best.rows:,}"),
     _Column("rows/s", lambda r: f"{r.best.throughput_rows_per_s:,.0f}"),
     _Column("out MB", lambda r: f"{r.best.output_bytes / 2**20:.0f}"),
-    _Column("RSS MB min/avg/peak", lambda r: _triple(r.best.rss_mb)),
-    _Column("CPU % min/avg/max", lambda r: _triple(r.best.cpu_percent)),
+    _Column("RSS MB avg/peak", lambda r: _slashed(r.best.rss_mb)),
+    _Column("CPU % avg/max", lambda r: _slashed(r.best.cpu_percent)),
     _Column("CPU/wall", lambda r: f"{r.best.cpu_wall_ratio:.2f}"),
 )
 
 
-def _triple(values: tuple[float, float, float]) -> str:
+def _slashed(values: tuple[float, ...]) -> str:
     return "/".join(f"{value:.0f}" for value in values)
 
 
