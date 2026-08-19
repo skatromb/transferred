@@ -1,12 +1,11 @@
-//! Scalar conversions between Postgres and Arrow value representations, both directions.
-//! `pg_*` converts towards Postgres; the rest converts towards Arrow.
+//! Scalar conversions both directions, plus the typmod decoders reading a column's precision.
+//! `pg_*` converts towards Postgres, the rest towards Arrow;
+//! wire framing and builders stay with whichever module owns them.
 
 use arrow::datatypes::{DECIMAL128_MAX_PRECISION, Date32Type, IntervalMonthDayNano};
 use chrono::{DateTime, NaiveDate, Utc};
 use pg_interval::Interval as PgInterval;
 use rust_decimal::Decimal;
-use serde_json::value::RawValue;
-use tokio_postgres::types::Json as PgJson;
 use transferred_core::{Result, TransferredError};
 
 /// Precision and scale for bare `numeric`, matching BQ `NUMERIC` so it lands there uncoerced.
@@ -144,13 +143,6 @@ pub fn pg_timestamp(micros: i64) -> Result<DateTime<Utc>> {
 /// Reads 16 Arrow bytes as a uuid.
 pub fn pg_uuid(bytes: &[u8]) -> Result<uuid::Uuid> {
     uuid::Uuid::from_slice(bytes).map_err(TransferredError::destination)
-}
-
-/// Borrows JSON text as a pre-serialized document, rejecting anything Postgres would reject anyway.
-pub fn pg_json(text: &str) -> Result<PgJson<&RawValue>> {
-    serde_json::from_str(text)
-        .map(PgJson)
-        .map_err(TransferredError::destination)
 }
 
 #[cfg(test)]
@@ -324,11 +316,5 @@ mod tests {
     #[test]
     fn pg_interval_rejects_sub_microsecond_precision() {
         assert!(pg_interval(IntervalMonthDayNano::new(0, 0, 1)).is_err());
-    }
-
-    #[test]
-    fn pg_json_rejects_malformed_documents() {
-        assert!(pg_json(r#"{"a": 1}"#).is_ok());
-        assert!(pg_json("{").is_err());
     }
 }

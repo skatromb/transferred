@@ -11,7 +11,7 @@ use arrow::array::{
 };
 use arrow_schema::extension::{ExtensionType, Json, Uuid};
 use arrow_schema::{DataType as ArrowType, Field as ArrowField, IntervalUnit, SchemaRef, TimeUnit};
-use bytes::BytesMut;
+use bytes::{BufMut, BytesMut};
 use postgres_protocol::IsNull as ProtocolIsNull;
 use postgres_protocol::escape::escape_identifier;
 use postgres_protocol::types::{RangeBound, empty_range_to_sql, range_to_sql};
@@ -19,7 +19,7 @@ use tokio_postgres::types::{IsNull, ToSql, Type as PgType};
 use transferred_core::{Result, TransferredError};
 
 use crate::convert::{
-    GEOGRAPHY, GEOMETRY, pg_date, pg_interval, pg_json, pg_numeric, pg_timestamp, pg_uuid,
+    GEOGRAPHY, GEOMETRY, pg_date, pg_interval, pg_numeric, pg_timestamp, pg_uuid,
 };
 use crate::geoarrow::Wkb;
 use crate::pg_range::{LOWER, PgRange};
@@ -224,16 +224,11 @@ impl Encoding {
                 &PgType::FLOAT8,
                 buf,
             ),
-            Self::Text => write_sql(
-                &cast::<StringArray>(array)?.value(row_num),
-                &PgType::TEXT,
-                buf,
-            ),
-            Self::Json => write_sql(
-                &pg_json(cast::<StringArray>(array)?.value(row_num))?,
-                &PgType::JSON,
-                buf,
-            ),
+            // `json` takes the same bytes as `text`; PG validates the document as it reads it.
+            Self::Text | Self::Json => {
+                buf.put_slice(cast::<StringArray>(array)?.value(row_num).as_bytes());
+                Ok(IsNull::No)
+            }
             // Binary COPY sends no types of its own, so `bytea` framing reaches `geometry_recv`.
             Self::Bytea | Self::Geo { .. } => write_sql(
                 &cast::<BinaryArray>(array)?.value(row_num),
