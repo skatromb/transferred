@@ -48,14 +48,18 @@ pub fn numeric_precision_scale(typmod: i32) -> Result<(u8, i8)> {
         ),
     };
 
-    // PG 15+ decouples scale from precision, so a narrow column may still carry an i8-busting scale.
+    // PG 15+ decouples scale from precision, so a narrow column may still carry a scale that busts
+    // an i8, or one that outruns its own precision — which Arrow, unlike PG, refuses.
     match (u8::try_from(precision), i8::try_from(scale)) {
-        (Ok(precision), Ok(scale)) if i32::from(precision) <= DECIMAL128_MAX_PRECISION => {
+        (Ok(precision), Ok(scale))
+            if i32::from(precision) <= DECIMAL128_MAX_PRECISION
+                && i32::from(scale) <= i32::from(precision) =>
+        {
             Ok((precision, scale))
         }
         _ => Err(TransferredError::source(format!(
-            "`numeric({precision},{scale})` is outside Arrow `Decimal128`, \
-             which holds {DECIMAL128_MAX_PRECISION} digits"
+            "`numeric({precision},{scale})` is outside Arrow `Decimal128`, which holds \
+             {DECIMAL128_MAX_PRECISION} digits and no more scale than precision"
         ))),
     }
 }
@@ -168,6 +172,7 @@ mod tests {
     const NUMERIC_5_NEG2: i32 = 329_730;
     const NUMERIC_1000_500: i32 = 65_536_504;
     const NUMERIC_5_200: i32 = 327_884;
+    const NUMERIC_5_10: i32 = 327_694;
     const GEOMETRY_BARE: i32 = -1;
     const GEOMETRY_POINT: i32 = 4;
     const GEOMETRY_POINT_4326: i32 = 1_107_460;
@@ -202,6 +207,12 @@ mod tests {
     #[test]
     fn typmod_rejects_scale_past_i8() {
         assert!(numeric_precision_scale(NUMERIC_5_200).is_err());
+    }
+
+    /// PG takes `numeric(5,10)`; Arrow `Decimal128` does not, and would build a broken array from it.
+    #[test]
+    fn typmod_rejects_scale_wider_than_precision() {
+        assert!(numeric_precision_scale(NUMERIC_5_10).is_err());
     }
 
     /// The SRID sits above the subtype bits, so constraining one must not disturb the other.
