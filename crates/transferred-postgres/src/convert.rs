@@ -1,7 +1,7 @@
 //! Scalar conversions between Postgres and Arrow value representations, both directions.
 //! `pg_*` converts towards Postgres; the rest converts towards Arrow.
 
-use arrow::datatypes::{Date32Type, IntervalMonthDayNano};
+use arrow::datatypes::{DECIMAL128_MAX_PRECISION, Date32Type, IntervalMonthDayNano};
 use chrono::{DateTime, NaiveDate, Utc};
 use pg_interval::Interval as PgInterval;
 use rust_decimal::Decimal;
@@ -9,11 +9,12 @@ use serde_json::value::RawValue;
 use tokio_postgres::types::Json as PgJson;
 use transferred_core::{Result, TransferredError};
 
-/// Arrow `Decimal128` holds at most 38 digits; PG `numeric` allows up to 1000.
-const DECIMAL128_MAX_PRECISION: i32 = 38;
+/// Widest `numeric` Arrow can hold, as an `i32` to compare against a typmod's own width.
+/// PG allows a precision up to 1000.
+const MAX_PRECISION: i32 = DECIMAL128_MAX_PRECISION as i32;
 
 /// Precision and scale for bare `numeric`, matching BQ `NUMERIC` so it lands there uncoerced.
-const BARE_NUMERIC: (i32, i32) = (DECIMAL128_MAX_PRECISION, 9);
+const BARE_NUMERIC: (i32, i32) = (MAX_PRECISION, 9);
 
 /// Typmod PG reports for a `numeric` declared without precision.
 pub const BARE_NUMERIC_TYPMOD: i32 = -1;
@@ -52,14 +53,14 @@ pub fn numeric_precision_scale(typmod: i32) -> Result<(u8, i8)> {
     // an i8, or one that outruns its own precision — which Arrow, unlike PG, refuses.
     match (u8::try_from(precision), i8::try_from(scale)) {
         (Ok(precision), Ok(scale))
-            if i32::from(precision) <= DECIMAL128_MAX_PRECISION
+            if i32::from(precision) <= MAX_PRECISION
                 && i32::from(scale) <= i32::from(precision) =>
         {
             Ok((precision, scale))
         }
         _ => Err(TransferredError::source(format!(
             "`numeric({precision},{scale})` is outside Arrow `Decimal128`, which holds \
-             {DECIMAL128_MAX_PRECISION} digits and no more scale than precision"
+             {MAX_PRECISION} digits and no more scale than precision"
         ))),
     }
 }
