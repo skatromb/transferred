@@ -36,13 +36,13 @@ report = Transfer(source, destination).run()
 print(report)
 # RunReport:
 #   rows: 10,000,000
-#   written: 64.98 MiB
-#   duration: 3s 379ms
+#   written: 243.04 MiB
+#   duration: 13s 627ms
 #   written objects:
 #     orders/part-00001.parquet
 ```
 
-10M rows of five columns out of a local Postgres, in one thread, peaking at 137 MiB RAM interpreter included.
+10M rows of 22 diverse columns including `jsonb` and PostGIS geometry — peaking at 275 MiB RAM interpreter included.
 
 Look at [docs/DLT_COMPARISON.md](docs/DLT_COMPARISON.md) for more performance insights.
 
