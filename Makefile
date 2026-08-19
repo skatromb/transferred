@@ -122,6 +122,8 @@ python-dev-build:
 # ============================================================================
 
 # Run perf workloads against duckdb. Forces a release-mode build — debug builds skew numbers. Needs Docker.
+# `check`, `ruff`, `ty` and `pytest` undo that by installing debug, don't run them while perfing: they install a debug build through `python-setup`. Running
+# one against the tree being measured costs an order of magnitude, silently. Re-run this to restore release.
 .PHONY: perf
 perf: PYTHON_GROUPS := --group dev --group perf
 perf: python-dev-build

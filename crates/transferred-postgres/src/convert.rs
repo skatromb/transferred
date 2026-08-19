@@ -9,18 +9,13 @@ use serde_json::value::RawValue;
 use tokio_postgres::types::Json as PgJson;
 use transferred_core::{Result, TransferredError};
 
-/// Widest `numeric` Arrow can hold, as an `i32` to compare against a typmod's own width.
-/// PG allows a precision up to 1000.
-const MAX_PRECISION: i32 = DECIMAL128_MAX_PRECISION as i32;
-
 /// Precision and scale for bare `numeric`, matching BQ `NUMERIC` so it lands there uncoerced.
-const BARE_NUMERIC: (i32, i32) = (MAX_PRECISION, 9);
+const BARE_NUMERIC: (u8, i8) = (DECIMAL128_MAX_PRECISION, 9);
 
 /// Typmod PG reports for a `numeric` declared without precision.
 pub const BARE_NUMERIC_TYPMOD: i32 = -1;
 
-/// Typmod PG reports for a `geometry`/`geography` declared without a coordinate system. Such a
-/// column takes rows with differing SRIDs, so only each value's own EWKB can name one.
+/// PG Typmod for a `geo...` without a coordinate system. Each value's own EWKB can name one.
 const UNCONSTRAINED_GEO_TYPMOD: i32 = -1;
 
 /// `PostGIS` spells "coordinate system unknown" as SRID 0.
@@ -38,29 +33,28 @@ const NANOS_PER_MICRO: i64 = 1_000;
 
 /// Decodes a `numeric` typmod, defaulting bare `numeric` `-1` to (38,9).
 pub fn numeric_precision_scale(typmod: i32) -> Result<(u8, i8)> {
-    let (precision, scale) = match typmod {
-        BARE_NUMERIC_TYPMOD => BARE_NUMERIC,
-        // `numeric_typmod_precision`/`numeric_typmod_scale`, minus `VARHDRSZ`; the XOR sign-extends
-        // the 11-bit scale, which PG 15+ allows to be negative.
-        // https://github.com/postgres/postgres/blob/REL_17_10/src/backend/utils/adt/numeric.c#L925
-        _ => (
-            ((typmod - 4) >> 16) & 0xffff,
-            (((typmod - 4) & 0x7ff) ^ 0x400) - 0x400,
-        ),
-    };
+    if typmod == BARE_NUMERIC_TYPMOD {
+        return Ok(BARE_NUMERIC);
+    }
 
-    // PG 15+ decouples scale from precision, so a narrow column may still carry a scale that busts
-    // an i8, or one that outruns its own precision — which Arrow, unlike PG, refuses.
+    // `numeric_typmod_precision`/`numeric_typmod_scale`, minus `VARHDRSZ`; the XOR sign-extends the
+    // 11-bit scale, which PG 15+ allows to be negative.
+    // https://github.com/postgres/postgres/blob/REL_17_10/src/backend/utils/adt/numeric.c#L925
+    let precision = ((typmod - 4) >> 16) & 0xffff;
+    let scale = (((typmod - 4) & 0x7ff) ^ 0x400) - 0x400;
+
+    // PG holds 1000 digits to Arrow's 38, and PG 15+ decouples scale from precision, so a narrow
+    // column may still carry a scale that busts an i8 or outruns its own precision.
     match (u8::try_from(precision), i8::try_from(scale)) {
         (Ok(precision), Ok(scale))
-            if i32::from(precision) <= MAX_PRECISION
+            if precision <= DECIMAL128_MAX_PRECISION
                 && i32::from(scale) <= i32::from(precision) =>
         {
             Ok((precision, scale))
         }
         _ => Err(TransferredError::source(format!(
             "`numeric({precision},{scale})` is outside Arrow `Decimal128`, which holds \
-             {MAX_PRECISION} digits and no more scale than precision"
+             {DECIMAL128_MAX_PRECISION} digits and no more scale than precision"
         ))),
     }
 }
