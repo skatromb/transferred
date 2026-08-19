@@ -21,10 +21,9 @@ use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use pg_interval::Interval as PgInterval;
 use postgres_protocol::types::{Range, RangeBound, range_from_sql};
 use rust_decimal::Decimal;
-use serde_json::value::RawValue;
 use tokio_postgres::Column as PgColumn;
 use tokio_postgres::binary_copy::BinaryCopyOutRow;
-use tokio_postgres::types::{FromSql, Json as PgJson, Kind, Type as PgType};
+use tokio_postgres::types::{FromSql, Kind, Type as PgType};
 use tracing::warn;
 use transferred_core::{Result, TransferredError};
 
@@ -143,8 +142,10 @@ enum Decoding {
     Float4,
     Float8,
     Text,
-    /// `jsonb` leads with a version byte, so the decode needs the type, not just the shape.
-    Json(PgType),
+    /// `versioned` is `jsonb`, which leads with a format version byte `json` has no room for.
+    Json {
+        versioned: bool,
+    },
     Bytea,
     Uuid,
     Date,
@@ -181,7 +182,8 @@ impl Decoding {
             PgType::TIMESTAMPTZ => Self::Timestamptz,
             PgType::INTERVAL => Self::Interval,
             PgType::UUID => Self::Uuid,
-            ref json @ (PgType::JSON | PgType::JSONB) => Self::Json(json.clone()),
+            PgType::JSON => Self::Json { versioned: false },
+            PgType::JSONB => Self::Json { versioned: true },
             PgType::NUMERIC => Self::numeric(typmod, name)?,
             PgType::INT4_RANGE => Self::Range(Box::new(Self::Int4)),
             PgType::INT8_RANGE => Self::Range(Box::new(Self::Int8)),
@@ -233,7 +235,7 @@ impl Decoding {
             Self::Int8 => ArrowType::Int64,
             Self::Float4 => ArrowType::Float32,
             Self::Float8 => ArrowType::Float64,
-            Self::Text | Self::Json(_) => ArrowType::Utf8,
+            Self::Text | Self::Json { .. } => ArrowType::Utf8,
             Self::Bytea | Self::Geo(_) | Self::Opaque(_) => ArrowType::Binary,
             Self::Uuid => ArrowType::FixedSizeBinary(UUID_BYTES),
             Self::Date => ArrowType::Date32,
@@ -251,7 +253,7 @@ impl Decoding {
 
         match self {
             Self::Uuid => field.try_with_extension_type(Uuid)?,
-            Self::Json(_) => field.try_with_extension_type(Json::default())?,
+            Self::Json { .. } => field.try_with_extension_type(Json::default())?,
             Self::Geo(wkb) => field.try_with_extension_type(wkb.clone())?,
             Self::Opaque(opaque) => field.try_with_extension_type(opaque.clone())?,
             Self::Range(_) => field.try_with_extension_type(PgRange)?,
@@ -283,9 +285,10 @@ impl Decoding {
                 cast::<Float64Builder>(builder)?.append_option(decode(&PgType::FLOAT8, bytes)?);
             }
             Self::Text => cast::<StringBuilder>(builder)?.append_option(text(bytes)?),
-            Self::Json(pg_type) => cast::<StringBuilder>(builder)?.append_option(
-                decode::<PgJson<&RawValue>>(pg_type, bytes)?.map(|json| json.0.get()),
-            ),
+            &Self::Json { versioned } => {
+                let json = bytes.map(|bytes| json(bytes, versioned)).transpose()?;
+                cast::<StringBuilder>(builder)?.append_option(text(json)?);
+            }
             Self::Bytea | Self::Geo(_) | Self::Opaque(_) => {
                 cast::<BinaryBuilder>(builder)?.append_option(bytes);
             }
@@ -375,6 +378,20 @@ fn decode<'a, T: FromSql<'a>>(pg_type: &PgType, bytes: Option<&'a [u8]>) -> Resu
         .map(|bytes| T::from_sql(pg_type, bytes))
         .transpose()
         .map_err(TransferredError::source)
+}
+
+/// Strips the format version byte `jsonb` leads with; `json` sends the document text as it is.
+fn json(bytes: &[u8], versioned: bool) -> Result<&[u8]> {
+    if !versioned {
+        return Ok(bytes);
+    }
+
+    match bytes.split_first() {
+        Some((1, text)) => Ok(text),
+        _ => Err(TransferredError::source(
+            "`jsonb` arrived in an encoding version other than 1",
+        )),
+    }
 }
 
 /// Reads a text value's bytes, which every Postgres text type sends as its own UTF-8.
