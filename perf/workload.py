@@ -18,15 +18,12 @@ import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypeVar
-
-T = TypeVar("T")
 
 DEBUG_DIR = Path(__file__).resolve().parents[1] / "target" / "debug"
 """Where a debug build of the extension lands; `measure` refuses to time that one."""
 
 
-def measure(thunk: Callable[[], T]) -> tuple[T, float]:
+def measure[T](thunk: Callable[[], T]) -> tuple[T, float]:
     """Run `thunk`, return (result, wall_seconds).
 
     `gc.collect()` runs first so a previous workload phase cannot land inside the

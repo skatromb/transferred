@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-
 from transferred import FilesDestination, FilesSource, Parquet, RunReport, Transfer
 
 

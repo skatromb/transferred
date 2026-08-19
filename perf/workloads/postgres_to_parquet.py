@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from transferred import FilesDestination, Parquet, PostgresSource, Transfer
+
 from perf.data import TABLE
 from perf.postgres import DSN
 from perf.workload import emit_result, file_bytes, measure, out_path
-from transferred import FilesDestination, Parquet, PostgresSource, Transfer
 
 NAME = "transferred postgres→parquet"
 

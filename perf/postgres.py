@@ -185,7 +185,7 @@ def _wait_ready() -> None:
         ready = subprocess.run(
             ["docker", "exec", CONTAINER, "pg_isready",
              "-q", "-h", "localhost", "-U", "postgres", "-d", "postgres"],
-            capture_output=True,
+            capture_output=True, check=False,
         )  # fmt: skip
         if ready.returncode == 0:
             return

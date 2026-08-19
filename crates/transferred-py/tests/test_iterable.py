@@ -13,7 +13,6 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 from pydantic import BaseModel
-
 from transferred import ArrowSource, FilesDestination, Transfer
 from transferred.iterable import _iterable_to_arrow
 

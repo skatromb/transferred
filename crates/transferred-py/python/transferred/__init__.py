@@ -5,10 +5,10 @@ from transferred._native import (
     ArrowError,
     DestinationError,
     EmptySourceError,
-    TransferredError,
     IoError,
     RunReport,
     SourceError,
+    TransferredError,
 )
 from transferred.arrow import ArrowSource
 from transferred.files import FilesDestination, FilesSource
@@ -16,7 +16,7 @@ from transferred.formats import Parquet
 from transferred.postgres import PostgresDestination, PostgresSource
 from transferred.transfer import Transfer
 
-__all__ = [
+__all__ = [  # noqa: RUF022
     # Commons
     "Source",
     "Destination",
