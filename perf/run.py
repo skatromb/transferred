@@ -7,7 +7,7 @@ import os
 import shutil
 import sys
 from dataclasses import asdict
-from datetime import datetime
+from datetime import UTC, datetime
 from functools import cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -155,7 +155,7 @@ def dump_results(runs: dict[str, list[Metrics]]) -> None:
 def results_path() -> Path:
     """This run's JSON file, named once so every rewrite lands in the same place."""
     RESULTS_DIR.mkdir(exist_ok=True)
-    return RESULTS_DIR / f"{datetime.now().isoformat(timespec='seconds')}.json"
+    return RESULTS_DIR / f"{datetime.now(UTC).isoformat(timespec='seconds')}.json"
 
 
 if __name__ == "__main__":

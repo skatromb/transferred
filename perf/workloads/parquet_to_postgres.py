@@ -12,10 +12,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from transferred import FilesSource, PostgresDestination, Transfer
+
 from perf.fixtures import SEED
 from perf.postgres import DSN, table_bytes
 from perf.workload import emit_result, measure, out_path
-from transferred import FilesSource, PostgresDestination, Transfer
 
 NAME = "transferred parquet→postgres"
 TARGET = "perf_load"

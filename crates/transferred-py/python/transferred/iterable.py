@@ -7,7 +7,7 @@ Arrow seam. Requires pyarrow — install via `pip install transferred[iterable]`
 import dataclasses
 from collections.abc import Callable, Iterable
 from itertools import batched, chain
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import TYPE_CHECKING, Any
 
 from transferred.arrow import ArrowSource
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from _typeshed import DataclassInstance
     from pydantic import BaseModel
 
-    Row: TypeAlias = dict[str, Any] | DataclassInstance | BaseModel
+    type Row = dict[str, Any] | DataclassInstance | BaseModel
     """A single input row: `dict`, `@dataclass` instance, or `pydantic.BaseModel`."""
 
 _BATCH_SIZE = 4096

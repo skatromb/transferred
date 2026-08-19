@@ -8,6 +8,9 @@ from transferred.formats import Format, Parquet
 
 StrPath = str | os.PathLike[str]
 
+_PARQUET = Parquet()
+"""Default `format=` below. One shared instance; `Format` forbids mutation."""
+
 
 class FilesSource(Source):
     """Local file source. No I/O performed at construction.
@@ -43,7 +46,7 @@ class FilesSource(Source):
     _native_source: _FilesSource
 
     def __init__(
-        self, path: StrPath | list[StrPath], format: Format = Parquet()
+        self, path: StrPath | list[StrPath], format: Format = _PARQUET
     ) -> None:
         self._native_source = _FilesSource(path, format._native_format)
 
@@ -77,7 +80,7 @@ class FilesDestination(Destination):
     def __init__(
         self,
         path: StrPath,
-        format: Format = Parquet(),
+        format: Format = _PARQUET,
         single_file: bool = False,
     ) -> None:
         self._native_destination = _FilesDestination(
