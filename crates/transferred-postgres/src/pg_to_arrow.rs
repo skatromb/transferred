@@ -99,7 +99,7 @@ impl<'a> FromSql<'a> for Raw<'a> {
     }
 }
 
-/// One column of the source: the Arrow field it becomes, what its values are, where they land.
+/// One column of the source: the Arrow field it becomes, how its values are read, where they land.
 struct ColumnDecoder {
     field: ArrowField,
     decoding: Decoding,
@@ -142,7 +142,6 @@ enum Decoding {
     Int8,
     Float4,
     Float8,
-    /// `text`, `varchar`, `enum` and `citext` alike: PG sends every one of them as its own UTF-8.
     Text,
     /// `jsonb` leads with a version byte, so the decode needs the type, not just the shape.
     Json(PgType),
@@ -158,10 +157,10 @@ enum Decoding {
     },
     /// `PostGIS` sends EWKB, which `geoarrow.wkb` takes verbatim; only the field names the geo type.
     Geo(Wkb),
-    /// No mapping: the bytes pass through, tagged with the Postgres type they came from.
-    Opaque(Opaque),
     /// A range arrives as a tag byte plus bounds, each bound through the element's own decoding.
     Range(Box<Decoding>),
+    /// No mapping: the bytes pass through, tagged with the Postgres type they came from.
+    Opaque(Opaque),
 }
 
 impl Decoding {
@@ -184,22 +183,18 @@ impl Decoding {
             PgType::UUID => Self::Uuid,
             ref json @ (PgType::JSON | PgType::JSONB) => Self::Json(json.clone()),
             PgType::NUMERIC => Self::numeric(typmod, name)?,
-            // The six built-in ranges, each a pair of bounds over one of the scalars above. A range
-            // constrains no precision on its bounds, so a `numrange` can only carry bare ones.
             PgType::INT4_RANGE => Self::Range(Box::new(Self::Int4)),
             PgType::INT8_RANGE => Self::Range(Box::new(Self::Int8)),
             PgType::DATE_RANGE => Self::Range(Box::new(Self::Date)),
             PgType::TS_RANGE => Self::Range(Box::new(Self::Timestamp)),
             PgType::TSTZ_RANGE => Self::Range(Box::new(Self::Timestamptz)),
+            // A range constrains no precision on its bounds, so they can only be bare.
             PgType::NUM_RANGE => Self::Range(Box::new(Self::numeric(BARE_NUMERIC_TYPMOD, name)?)),
-            // PG sends both as their own UTF-8 text. `citext` has no fixed OID, so goes by name.
+            // Extension-type OIDs differ per database, so `citext` and `PostGIS` match on a name.
             ref text if matches!(text.kind(), Kind::Enum(_)) || text.name() == CITEXT => Self::Text,
-            // `PostGIS` carries no fixed OID, so its types answer to a name. Their binary form is
-            // EWKB, which `geoarrow.wkb` accepts as-is, SRID per value and all.
+            // `geoarrow.wkb` holds EWKB, so the bytes pass through untouched, SRID per value and all.
             ref geo if geo.name() == GEOMETRY => Self::Geo(Wkb::planar(geo_srid(typmod))),
-            // The same bytes, but `geography` bends its edges around the globe.
             ref geo if geo.name() == GEOGRAPHY => Self::Geo(Wkb::spherical(geo_srid(typmod))),
-            // No mapping: keep the column transferable as self-describing bytes.
             ref other => {
                 warn!(
                     target: "postgres::source",
