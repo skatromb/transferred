@@ -1,0 +1,3 @@
+[flake8]
+# Just for the `wemake-python-styleguide`. `E999` is to fail on unparseable files
+select = WPS, E999

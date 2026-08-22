@@ -26,10 +26,10 @@ class ArrowSource(Source):
     [1]: https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html
 
     Args:
-        data: Arrow data exposing `__arrow_c_stream__`.
+        arrow_stream: Arrow data exposing `__arrow_c_stream__`.
 
     Raises:
-        TypeError: `data` does not implement the Arrow PyCapsule interface.
+        TypeError: `arrow_stream` does not implement the Arrow PyCapsule interface.
 
     Example:
         >>> import pyarrow as pa
@@ -53,12 +53,12 @@ class ArrowSource(Source):
 
     _native_source: _ArrowSource
 
-    def __init__(self, data: ArrowStream) -> None:
-        if not isinstance(data, ArrowStream):
+    def __init__(self, arrow_stream: ArrowStream) -> None:
+        if not isinstance(arrow_stream, ArrowStream):
             raise TypeError(
-                f"{type(data).__name__!r} does not implement the Arrow `PyCapsule` "
+                f"{type(arrow_stream).__name__!r} does not implement the Arrow `PyCapsule` "
                 "interface — pass a pyarrow `Table`, `RecordBatch` or `RecordBatchReader`, "
                 "or any object exposing `__arrow_c_stream__`"
             )
 
-        self._native_source = _ArrowSource(data)
+        self._native_source = _ArrowSource(arrow_stream)

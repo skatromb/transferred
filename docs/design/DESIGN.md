@@ -331,7 +331,7 @@ Rationale:
 - pyarrow has battle-tested type inference, null handling, nested types, and is the de-facto interop currency in the Python data ecosystem (Polars, DuckDB, pandas 2.0+).
 - Cost accepted: pyarrow ships as an **optional dep** via `transferred[arrow]` extra (`transferred[iterable]` aliased) (~30 MB wheel). Base install stays lean for users who only use Rust-native sources/destinations (Parquet, future Postgres, BigQuery). Missing pyarrow at iterable conversion raises `ImportError` with install hint; `ArrowSource` needs no pyarrow of its own.
 
-Fast path for callers who already have Arrow: `ArrowSource(arrow_data)` skips the iterable conversion and goes straight to the C Data Interface.
+Fast path for callers who already have Arrow: `ArrowSource(arrow_stream)` skips the iterable conversion and goes straight to the C Data Interface.
 
 ### Runtime contract
 

@@ -7,7 +7,7 @@ reads them back via `Transfer + FilesSource` and verifies the row count.
 from pathlib import Path
 
 import pyarrow as pa
-import pyarrow.parquet as pq
+from pyarrow import parquet as pq
 from transferred import FilesDestination, FilesSource, Parquet, RunReport, Transfer
 
 
@@ -23,8 +23,9 @@ def _build_input_table() -> pa.Table:
 
 def test_parquet_write_then_read(tmp_path: Path) -> None:
     # Arrange — write a seed Parquet via pyarrow so a FilesSource has something to read.
+    expected = _build_input_table()
     seed = tmp_path / "seed.parquet"
-    pq.write_table(_build_input_table(), seed)
+    pq.write_table(expected, seed)
 
     out = tmp_path / "out"
 
@@ -36,11 +37,10 @@ def test_parquet_write_then_read(tmp_path: Path) -> None:
 
     # Assert.
     assert isinstance(report, RunReport)
-    assert report.rows == 5
+    assert (report.rows, report.written_objects) == (
+        expected.num_rows,
+        [str(out / "part-00001.parquet")],
+    )
     assert report.bytes_written > 0
     assert out.is_dir()
-    assert report.written_objects == [str(out / "part-00001.parquet")]
-
-    read_back = pq.read_table(report.written_objects[0])
-    assert read_back.num_rows == 5
-    assert read_back.column_names == ["i32", "utf8", "f64"]
+    assert pq.read_table(report.written_objects[0]).equals(expected)
