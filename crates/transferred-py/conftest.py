@@ -1,6 +1,7 @@
-"""Run doctests in a temp cwd seeded with `examples/small.parquet`.
+"""Doctest working directory, plus the output paths the tests share.
 
-Gives doctests their input fixture while keeping their output writes out of the repo.
+Doctests get `examples/small.parquet` as input in a temp cwd, so their output
+writes stay out of the repo.
 """
 
 import shutil
@@ -16,3 +17,15 @@ def _doctest_workdir(request, tmp_path, monkeypatch):
     if isinstance(request.node, pytest.DoctestItem):
         shutil.copy(_EXAMPLES / "small.parquet", tmp_path / "small.parquet")
         monkeypatch.chdir(tmp_path)
+
+
+@pytest.fixture
+def out(tmp_path: Path) -> Path:
+    """Parquet file a single-file transfer writes to."""
+    return tmp_path / "out.parquet"
+
+
+@pytest.fixture
+def out_dir(tmp_path: Path) -> Path:
+    """Output directory a transfer writes its parts to."""
+    return tmp_path / "out"

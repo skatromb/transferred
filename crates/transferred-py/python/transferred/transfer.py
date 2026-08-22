@@ -14,6 +14,14 @@ if TYPE_CHECKING:
     from _typeshed import DataclassInstance
 
 
+type SourceLike = (
+    Source
+    | ArrowStream
+    | Iterable[dict[str, Any] | DataclassInstance | pydantic.BaseModel]
+)
+"""Anything `Transfer(source=...)` accepts."""
+
+
 class Transfer(_Transfer):
     """Orchestrate a single source → destination run. Single-shot.
 
@@ -45,26 +53,8 @@ class Transfer(_Transfer):
             output_directory/part-00001.parquet
     """
 
-    def __new__(
-        cls,
-        source: Source
-        | ArrowStream
-        | Iterable[dict[str, Any] | DataclassInstance | pydantic.BaseModel],
-        destination: Destination,
-    ) -> Self:
-        if isinstance(source, Source):
-            pass
-        elif isinstance(source, ArrowStream):
-            source = ArrowSource(source)
-        elif isinstance(source, Iterable):
-            from transferred.iterable import _iterable_to_arrow
-
-            source = _iterable_to_arrow(source)
-        else:
-            raise TypeError(
-                f"source must be a transferred source, Arrow data or an iterable of rows, "
-                f"got {type(source).__name__!r}"
-            )
+    def __new__(cls, source: SourceLike, destination: Destination) -> Self:
+        source = _coerce_source(source)
 
         if not isinstance(destination, Destination):
             raise TypeError(
@@ -73,3 +63,22 @@ class Transfer(_Transfer):
             )
 
         return super().__new__(cls, source, destination)
+
+
+def _coerce_source(source: SourceLike) -> Source:
+    """Normalise anything `Transfer(source=...)` accepts into a `Source`."""
+    if isinstance(source, Source):
+        return source
+
+    if isinstance(source, ArrowStream):
+        return ArrowSource(source)
+
+    if isinstance(source, Iterable):
+        from transferred.iterable import _iterable_to_arrow
+
+        return _iterable_to_arrow(source)
+
+    raise TypeError(
+        f"source must be a transferred source, Arrow data or an iterable of rows, "
+        f"got {type(source).__name__!r}"
+    )

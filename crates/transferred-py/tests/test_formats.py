@@ -4,12 +4,14 @@ import pytest
 from transferred.formats import Parquet
 
 _hint = get_type_hints(Parquet.__init__)["compression"]
-annotated_compressions = next(a for a in get_args(_hint) if get_origin(a) is Literal)
+annotated_compressions = next(
+    arg for arg in get_args(_hint) if get_origin(arg) is Literal
+)
 
 
 def test_every_compression_literal_is_accepted():
-    for c in get_args(annotated_compressions):
-        Parquet(compression=c)  # raises ValueError if Rust rejects
+    for compression in get_args(annotated_compressions):
+        Parquet(compression)  # raises ValueError if Rust rejects
 
 
 def test_none_compression_is_accepted():

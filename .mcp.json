@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "wps": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--project",
+        "crates/transferred-py",
+        "--no-sync",
+        "python",
+        "-c",
+        "from wemake_python_styleguide.mcp import mcp; mcp.run()"
+      ]
+    }
+  }
+}

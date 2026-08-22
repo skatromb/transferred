@@ -76,7 +76,7 @@ stubs:
 
 # Full Python gate: lint, types, tests.
 .PHONY: python-check
-python-check: ruff ty pytest
+python-check: ruff wps ty pytest
 
 # Provision venv + build extension. Other Python targets depend on this.
 .PHONY: python-setup
@@ -92,6 +92,12 @@ ruff: python-setup
 		uv run --no-sync ruff format . ../../examples ../../perf && \
 		uv run --no-sync ruff check . ../../examples ../../perf
 	@if [ -n "$$CI" ]; then git diff --exit-code -- '*.py'; fi
+
+# Lint with wemake-python-styleguide. `WPS` rules only — see `.flake8`.
+.PHONY: wps
+wps: python-setup
+	@cd crates/transferred-py && \
+		uv run --no-sync flake8 python tests conftest.py
 
 # Type-check Python sources against the auto-generated `_native` stubs.
 .PHONY: ty
