@@ -5,6 +5,11 @@ __pycache__/
 .venv/
 .DS_Store
 /data/
+/coverage-*.lcov
+/coverage-*.xml
+.coverage
+# A test binary left over from a coverage run drops these wherever it is next run
+*.profraw
 /perf/.fixtures/
 /perf/.results/
 /perf/.venvs/

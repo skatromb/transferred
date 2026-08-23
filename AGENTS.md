@@ -59,6 +59,17 @@ Python is linted twice: ruff owns formatting, imports and the pycodestyle/pyflak
 `wemake-python-styleguide` owns the `WPS` rules via `make wps` and `.flake8`.
 The `wps` MCP server in `.mcp.json` explains any `WPS###` offline.
 
+## Coverage
+
+`make coverage-rust` and `make coverage-python`, uploaded to Codecov under the `rust` and
+`python` flags on merge to `main`, not on every PR — both re-run the suites instrumented.
+`cargo-llvm-cov` records counters into `.profraw`, so pytest driving the extension module
+covers Rust lines too. Stable toolchain — nothing here needs `#[coverage(off)]`.
+
+Keep the two reports separate. maturin builds the crates with different features than
+`cargo test` does, and one report over both profiles leaves llvm-cov comparing counters
+against the wrong binary. Codecov merges them.
+
 ## Throwaway Postgres
 
 Hand-testing against a database (examples, smoke tests) reuses the image the integration suite already pulls — `imresamu/postgis`

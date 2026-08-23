@@ -1,0 +1,71 @@
+name: Coverage
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'Makefile'
+      - '.github/workflows/coverage.yml'
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: make coverage-rust
+        run: make coverage-rust
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage-rust.lcov
+          flags: rust
+
+  python:
+    name: Python
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.14
+        run: uv python install 3.14
+
+      - name: make coverage-python
+        run: make coverage-python
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage-python.lcov,coverage-python.xml
+          flags: python
