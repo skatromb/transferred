@@ -45,6 +45,8 @@ dev = [
     "ty>=0.0.37",
     "wemake-python-styleguide[mcp]>=1.8",
 ]
+# Only `make coverage-python` measures Python line coverage. Kept out of `dev`.
+coverage = ["pytest-cov>=7.1"]
 # Baselines the perf suite measures `transferred` against. Kept out of `dev`:
 # nothing but `make perf` needs a Postgres driver, a query engine and pandas.
 perf = [

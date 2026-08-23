@@ -123,6 +123,41 @@ python-dev-build:
 
 
 # ============================================================================
+# Coverage
+# ============================================================================
+
+# A stub generator `make stubs` runs and no test does. Its coverage means nothing.
+COVERAGE_IGNORE := --ignore-filename-regex 'stub_gen\.rs'
+
+# Install cargo-llvm-cov, which instruments the workspace crates for coverage.
+.PHONY: llvm-cov-install
+llvm-cov-install:
+	@cargo install cargo-llvm-cov --locked
+
+# Rust coverage from the Rust suites, unit and integration. Needs Docker.
+.PHONY: coverage-rust
+coverage-rust: llvm-cov-install
+	@eval "$$(cargo llvm-cov show-env --sh)" && \
+		cargo llvm-cov clean --profraw-only && \
+		cargo test --workspace --features transferred-core/dev && \
+		cargo test -p transferred-postgres --features integration && \
+		cargo llvm-cov report --lcov --output-path coverage-rust.lcov $(COVERAGE_IGNORE)
+
+# Rust and Python coverage from pytest, which reaches Rust through the extension module.
+.PHONY: coverage-python
+coverage-python: llvm-cov-install
+	@eval "$$(cargo llvm-cov show-env --sh)" && \
+		cargo llvm-cov clean --profraw-only && \
+		cd crates/transferred-py && \
+		uv sync --group dev --group coverage && \
+		uv run --no-sync maturin develop --uv && \
+		uv run --no-sync pytest --cov=transferred --cov-report=xml:../../coverage-python.xml && \
+		cd ../.. && \
+		cargo llvm-cov report --lcov --output-path coverage-python.lcov $(COVERAGE_IGNORE)
+
+
+
+# ============================================================================
 # Performance
 # ============================================================================
 
