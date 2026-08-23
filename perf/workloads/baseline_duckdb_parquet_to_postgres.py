@@ -15,7 +15,7 @@ from pathlib import Path
 
 import duckdb
 
-from perf import dumps
+from perf import baseline_dumps
 from perf.data import ROWS
 from perf.postgres import DSN, row_count, table_bytes
 from perf.workload import emit_result, measure, out_path
@@ -27,21 +27,23 @@ TARGET = "perf_load_duckdb"
 
 def prepare() -> Path:
     """The dump this leg loads, written by duckdb's own read leg unless already cached."""
-    return dumps.ensure("duckdb", read_leg.dump, ROWS)
+    return baseline_dumps.ensure("duckdb", read_leg.dump, ROWS)
+
+
+def load(source: Path) -> None:
+    """Create `TARGET` from `source` in one statement, over the attached Postgres."""
+    con = duckdb.connect()
+    con.execute(f"attach '{DSN}' as pg (type postgres)")
+    con.execute(
+        f"create or replace table pg.public.{TARGET} as "
+        f"select * from read_parquet('{source}')"
+    )
 
 
 def run(_out: Path) -> None:
     source = prepare()
 
-    def _transfer() -> None:
-        con = duckdb.connect()
-        con.execute(f"attach '{DSN}' as pg (type postgres)")
-        con.execute(
-            f"create or replace table pg.public.{TARGET} as "
-            f"select * from read_parquet('{source}')"
-        )
-
-    _, wall_seconds = measure(_transfer)
+    _, wall_seconds = measure(lambda: load(source))
     emit_result(
         rows=row_count(TARGET),
         output_bytes=table_bytes(TARGET),

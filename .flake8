@@ -1,0 +1,10 @@
+[flake8]
+# Just for the `wemake-python-styleguide`. `E999` is to fail on unparseable files
+select = WPS, E999
+
+# flake8 reads no `.gitignore`, and its own defaults miss these two
+extend-exclude = .venv, target
+
+per-file-ignores =
+    # Printing is what a runnable example does, not a debug leftover
+    examples/*.py: WPS421

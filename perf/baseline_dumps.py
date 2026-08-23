@@ -15,6 +15,8 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
+from perf import console
+
 ROOT = Path(__file__).resolve().parent / ".fixtures" / "dumps"
 
 
@@ -30,7 +32,7 @@ def ensure(tag: str, dump: Callable[[Path], int], rows: int) -> Path:
     if stamp.exists() and stamp.read_text() == str(rows):
         return path
 
-    print(f"dumps: writing {tag} at {rows:,} rows", flush=True)
+    console.progress(f"dumps: writing {tag} at {rows:,} rows")
     ROOT.mkdir(parents=True, exist_ok=True)
     stamp.unlink(missing_ok=True)
     shutil.rmtree(path, ignore_errors=True)

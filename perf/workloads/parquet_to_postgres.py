@@ -5,7 +5,7 @@ table and swap into place in one transaction.
 
 The input is the shared seed, which our own read leg produced — so the ranges arrive
 as the `transferred.pg_range` structs they left as, and land as ranges again. Each
-baseline round-trips its own dump for the same reason; see `perf.dumps`.
+baseline round-trips its own dump for the same reason; see `perf.baseline_dumps`.
 """
 
 from __future__ import annotations

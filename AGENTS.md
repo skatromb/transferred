@@ -56,7 +56,7 @@ Fix the root cause. Don't sprinkle `#[allow(…)]`, `# noqa`, `# type: ignore`, 
 Test code is the documented exception — file-level allows are fine in `tests/`, `#[cfg(test)] mod tests`, `conftest.py`.
 
 Python is linted twice: ruff owns formatting, imports and the pycodestyle/pyflakes overlap;
-`wemake-python-styleguide` owns the `WPS` rules via `make wps` and `crates/transferred-py/.flake8`.
+`wemake-python-styleguide` owns the `WPS` rules via `make wps` and `.flake8`.
 The `wps` MCP server in `.mcp.json` explains any `WPS###` offline.
 
 ## Throwaway Postgres

@@ -23,7 +23,7 @@ DEBUG_DIR = Path(__file__).resolve().parents[1] / "target" / "debug"
 """Where a debug build of the extension lands; `measure` refuses to time that one."""
 
 
-def measure[T](thunk: Callable[[], T]) -> tuple[T, float]:
+def measure[Output](thunk: Callable[[], Output]) -> tuple[Output, float]:
     """Run `thunk`, return (result, wall_seconds).
 
     `gc.collect()` runs first so a previous workload phase cannot land inside the
@@ -32,8 +32,8 @@ def measure[T](thunk: Callable[[], T]) -> tuple[T, float]:
     _refuse_debug_build()
     gc.collect()
     wall_start = time.monotonic()
-    result = thunk()
-    return result, time.monotonic() - wall_start
+    measured = thunk()
+    return measured, time.monotonic() - wall_start
 
 
 def _refuse_debug_build() -> None:
@@ -52,16 +52,18 @@ def _refuse_debug_build() -> None:
     loaded = Path(native.__file__)
     # Stat signature, not contents: reading 11 MB here would land in the RSS the harness reports.
     if any(filecmp.cmp(loaded, built) for built in DEBUG_DIR.glob("lib_native.*")):
-        raise SystemExit(
+        sys.exit(
             f"{loaded.name} is the debug build in {DEBUG_DIR}: run `make python-dev-build`"
         )
 
 
 def file_bytes(out: Path) -> int:
     """Bytes a file destination wrote: sum part files when `out` is a directory."""
-    if out.is_dir():
-        return sum(p.stat().st_size for p in out.rglob("*") if p.is_file())
-    return out.stat().st_size
+    if not out.is_dir():
+        return out.stat().st_size
+
+    parts = out.rglob("*")
+    return sum(part.stat().st_size for part in parts if part.is_file())
 
 
 def emit_result(*, rows: int, output_bytes: int, wall_seconds: float) -> None:

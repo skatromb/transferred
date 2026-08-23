@@ -12,7 +12,7 @@ from pathlib import Path
 
 from perf.data import ROWS_PER_GROUP, TABLE
 from perf.workload import emit_result, file_bytes, measure, out_path
-from perf.workloads import _dlt
+from perf.workloads import _dlt, _dlt_types
 
 NAME = "baseline dlt postgres→parquet (tuned)"
 
@@ -28,12 +28,12 @@ def dump(out: Path) -> int:
 
     pipeline = _dlt.parquet_pipeline("dlt_pg_to_pq_tuned", out)
     table = sql_table(
-        _dlt.dsn(),
+        _dlt.SQLALCHEMY_DSN,
         TABLE,
         "public",
         backend="connectorx",
         chunk_size=ROWS_PER_GROUP,
-        query_adapter_callback=_dlt.cast_unmappable_to_text,
+        query_adapter_callback=_dlt_types.cast_unmappable_to_text,
     )
 
     # `loader_file_format` is not optional: the filesystem destination prefers jsonl.

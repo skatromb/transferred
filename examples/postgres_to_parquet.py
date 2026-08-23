@@ -17,7 +17,7 @@ Run:
 
 from pathlib import Path
 
-import pyarrow.parquet as pq
+from pyarrow import parquet as pq
 from transferred import (
     FilesDestination,
     Parquet,

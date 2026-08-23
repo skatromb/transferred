@@ -96,8 +96,7 @@ ruff: python-setup
 # Lint with wemake-python-styleguide. `WPS` rules only — see `.flake8`.
 .PHONY: wps
 wps: python-setup
-	@cd crates/transferred-py && \
-		uv run --no-sync flake8 python tests conftest.py
+	@uv run --project crates/transferred-py --no-sync flake8 .
 
 # Type-check Python sources against the auto-generated `_native` stubs.
 .PHONY: ty

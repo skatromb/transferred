@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import duckdb
-import pyarrow.parquet as pq
+from pyarrow import parquet as pq
 
 from perf.data import ROWS_PER_GROUP, TABLE
 from perf.postgres import DSN

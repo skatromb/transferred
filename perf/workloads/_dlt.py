@@ -9,86 +9,42 @@ path, so each repeat starts from nothing.
 from __future__ import annotations
 
 import os
-from json import dumps
 from pathlib import Path
-from typing import Any
-from uuid import UUID
+from types import MappingProxyType
 
 import dlt
-import pyarrow.parquet as pq
 from dlt.destinations import filesystem
+from pyarrow import parquet as pq
 
-from perf.data import CAST_TO_TEXT, ROWS_PER_GROUP
+from perf.data import ROWS_PER_GROUP
 from perf.postgres import DSN, drop_table
 
 DATASET = "perf"
 
-TUNING: dict[str, str] = {
-    # Without file rotation a single table is one file, and `load.workers` idles.
-    "NORMALIZE__DATA_WRITER__FILE_MAX_ITEMS": str(ROWS_PER_GROUP),
-    # Also the Parquet row-group size, which pyarrow takes from the batch it is given.
-    "DATA_WRITER__BUFFER_MAX_ITEMS": str(ROWS_PER_GROUP),
-    # Matches the fixtures. dlt defaults to snappy, which is the faster codec, so
-    # leaving it would hand dlt a wall-clock edge and charge it for the file size.
-    "DATA_WRITER__COMPRESSION": "zstd",
-    # Skips a round trip to the destination for pipeline state on every run.
-    "RESTORE_FROM_DESTINATION": "false",
-}
+SQLALCHEMY_DSN = DSN.replace("postgres://", "postgresql://", 1)
+"""The shared DSN under the scheme SQLAlchemy accepts.
+
+SQLAlchemy dropped the `postgres://` alias, and dlt builds an engine for schema
+reflection even when the read itself goes through connectorx.
+"""
+
+TUNING = MappingProxyType(
+    {
+        # Without file rotation a single table is one file, and `load.workers` idles.
+        "NORMALIZE__DATA_WRITER__FILE_MAX_ITEMS": str(ROWS_PER_GROUP),
+        # Also the Parquet row-group size, which pyarrow takes from the batch it is given.
+        "DATA_WRITER__BUFFER_MAX_ITEMS": str(ROWS_PER_GROUP),
+        # Matches the fixtures; dlt's snappy default would trade file size for wall time.
+        "DATA_WRITER__COMPRESSION": "zstd",
+        # Skips a round trip to the destination for pipeline state on every run.
+        "RESTORE_FROM_DESTINATION": "false",
+    }
+)
 """Documented performance settings, applied only by the tuned baselines.
 
 From https://dlthub.com/docs/reference/performance. Left at dlt's defaults in the
 untuned baselines, which is the point of measuring both.
 """
-
-
-def cast_unmappable_to_text(query: Any, table: Any) -> Any:
-    """Rewrite `query` so Postgres casts to text what dlt cannot read natively.
-
-    Passed as `query_adapter_callback`. connectorx panics in Rust on range and
-    PostGIS columns before dlt sees a row, so the only reachable fix is in the SQL
-    — and it is free, since the server does the casting.
-    """
-    import sqlalchemy as sa
-
-    columns = [
-        sa.cast(column, sa.Text).label(column.name)
-        if column.name in CAST_TO_TEXT
-        else column
-        for column in table.columns
-    ]
-    return query.with_only_columns(*columns)
-
-
-def to_loadable_arrow(batch: Any) -> Any:
-    """Rewrite `batch` into the Arrow types dlt's Postgres destination accepts.
-
-    Three separate gaps, all of which raise rather than degrade, and none of which
-    any dlt setting covers:
-
-    - canonical extension types (`arrow.uuid`, `arrow.json`) are rejected outright,
-      so each is unwrapped to its storage type;
-    - a `struct` cannot reach Postgres over CSV, so ranges become JSON text;
-    - `bytea` needs the `\\x` hex literal `COPY` expects, while the column keeps its
-      `binary` hint so the destination still creates a `bytea`.
-    """
-    import pyarrow as pa
-
-    for index, field in enumerate(batch.schema):
-        column = batch.column(index)
-        # `BaseExtensionType`, not `ExtensionType`: canonical types like `pa.uuid()`
-        # subclass only the former, so the narrower check silently matches nothing.
-        if isinstance(field.type, pa.BaseExtensionType):
-            column = column.cast(field.type.storage_type)
-        if pa.types.is_fixed_size_binary(column.type):
-            column = pa.array([str(UUID(bytes=v)) for v in column.to_pylist()])
-        elif pa.types.is_struct(column.type):
-            column = pa.array([dumps(v, default=str) for v in column.to_pylist()])
-        elif pa.types.is_binary(column.type) or pa.types.is_large_binary(column.type):
-            column = pa.array([Rf"\x{v.hex()}" for v in column.to_pylist()])
-        if column.type != field.type:
-            replacement = pa.field(field.name, column.type, field.nullable)
-            batch = batch.set_column(index, replacement, column)
-    return batch
 
 
 def reset(target: str) -> None:
@@ -115,15 +71,6 @@ def main_table_rows(out: Path, table: str) -> int:
     """Rows dlt wrote for `table` itself, ignoring the child tables beside it."""
     files = main_table(out, table).rglob("*.parquet")
     return sum(pq.ParquetFile(path).metadata.num_rows for path in files)
-
-
-def dsn() -> str:
-    """The shared DSN under the scheme SQLAlchemy accepts.
-
-    SQLAlchemy dropped the `postgres://` alias, and dlt builds an engine for schema
-    reflection even when the read itself goes through connectorx.
-    """
-    return DSN.replace("postgres://", "postgresql://", 1)
 
 
 def tune() -> None:

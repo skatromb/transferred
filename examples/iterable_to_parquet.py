@@ -14,13 +14,13 @@ Run:
 from dataclasses import dataclass
 from pathlib import Path
 
-import pyarrow.parquet as pq
+from pyarrow import parquet as pq
 from pydantic import BaseModel
 from transferred import FilesDestination, Transfer
 
 # dicts
 Transfer(
-    source=({"id": i, "name": f"row-{i}"} for i in range(1_000)),
+    source=({"id": row_id, "name": f"row-{row_id}"} for row_id in range(1_000)),
     destination=FilesDestination(Path("from_dicts")),
 ).run()
 
@@ -33,7 +33,7 @@ class User:
 
 
 Transfer(
-    source=(User(id=i, name=f"row-{i}") for i in range(1_000)),
+    source=(User(id=row_id, name=f"row-{row_id}") for row_id in range(1_000)),
     destination=FilesDestination(Path("from_dataclasses")),
 ).run()
 
@@ -45,7 +45,7 @@ class UserModel(BaseModel):
 
 
 report = Transfer(
-    source=(UserModel(id=i, name=f"row-{i}") for i in range(1_000)),
+    source=(UserModel(id=row_id, name=f"row-{row_id}") for row_id in range(1_000)),
     destination=FilesDestination(Path("from_pydantic"), single_file=True),
 ).run()
 
