@@ -26,14 +26,14 @@ Bounded by `max_wal_size`, 1 GB in a default `postgresql.conf`; taken 4x over to
 also cover the sparse disk image growing past what Postgres currently holds.
 """
 
-_DRIFT_MIN_ROWS = 1_000_000
+_DRIFT_MIN_ROW_NUM = 1_000_000
 """Smallest seed whose bytes-per-row is worth comparing to `TABLE_BYTES_PER_ROW`."""
 
 _DRIFT_FRACTION = 0.2
 """How far a measurement may sit from `TABLE_BYTES_PER_ROW` before it is called stale."""
 
 
-def check_disk(rows: int) -> None:
+def check_disk(row_num: int) -> None:
     """Fail before seeding if the host cannot hold this run's peak footprint.
 
     Docker keeps its volumes in a sparse image on the host, so host free space
@@ -48,28 +48,30 @@ def check_disk(rows: int) -> None:
     # because the harness drops each target as it finishes — see `drop_table`.
     # Three Parquet copies: our seed, plus the dump each baseline whose write leg
     # loads back its own extract needs — duckdb's and dlt's tuned one.
-    heap_bytes = rows * 2 * TABLE_BYTES_PER_ROW
-    parquet_bytes = rows * 3 * _PARQUET_BYTES_PER_ROW
+    heap_bytes = row_num * 2 * TABLE_BYTES_PER_ROW
+    parquet_bytes = row_num * 3 * _PARQUET_BYTES_PER_ROW
     needed_gb = (heap_bytes + parquet_bytes + _WAL_BYTES) / 10**9
     free_gb = shutil.disk_usage(Path(__file__).parent).free / 10**9
     if free_gb < needed_gb:
         raise RuntimeError(
-            f"{rows:,} rows need ~{needed_gb:.1f} GB, {free_gb:.1f} GB free. "
-            f"Free space or lower the scale with PERF_ROWS=N."
+            f"{row_num:,} rows need ~{needed_gb:.1f} GB, {free_gb:.1f} GB free. "
+            f"Free space or lower the scale with PERF_ROW_NUM=N."
         )
     console.progress(f"disk: ~{needed_gb:.1f} GB needed, {free_gb:.1f} GB free")
 
 
-def report_bytes_per_row(measured: int, rows: int) -> None:
+def report_bytes_per_row(measured: int, row_num: int) -> None:
     """Report the seed's real size per row, warning when `check_disk`'s estimate drifted.
 
     The estimate is schema-specific, so no library can supply it. Reporting the
     measurement next to the assumption keeps a stale constant from lying silently.
 
-    Drift is only judged past `_DRIFT_MIN_ROWS`: below it, page granularity and
+    Drift is only judged past `_DRIFT_MIN_ROW_NUM`: below it, page granularity and
     toast overhead spread over too few rows and every seed looks oversized.
     """
     allowed = TABLE_BYTES_PER_ROW * _DRIFT_FRACTION
-    drifted = rows >= _DRIFT_MIN_ROWS and abs(measured - TABLE_BYTES_PER_ROW) > allowed
+    drifted = (
+        row_num >= _DRIFT_MIN_ROW_NUM and abs(measured - TABLE_BYTES_PER_ROW) > allowed
+    )
     note = f" — update TABLE_BYTES_PER_ROW ({TABLE_BYTES_PER_ROW})" if drifted else ""
     console.progress(f"seed: {TABLE} is {measured} B/row{note}")

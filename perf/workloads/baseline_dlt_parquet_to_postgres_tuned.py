@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from perf import baseline_dumps
-from perf.data import BINARY_COLUMNS, ROWS, ROWS_PER_GROUP, TABLE
+from perf.data import BINARY_COLUMNS, ROW_NUM, ROWS_PER_GROUP, TABLE
 from perf.postgres import row_count, table_bytes
 from perf.workload import emit_result, measure, out_path
 from perf.workloads import _dlt, _dlt_types
@@ -28,7 +28,7 @@ TARGET = "perf_load_dlt_tuned"
 def prepare() -> Path:
     """The dump this leg loads, written by dlt's own tuned read leg unless cached."""
     return _dlt.main_table(
-        baseline_dumps.ensure("dlt_tuned", read_leg.dump, ROWS), TABLE
+        baseline_dumps.ensure("dlt_tuned", read_leg.dump, ROW_NUM), TABLE
     )
 
 
@@ -49,7 +49,7 @@ def run(out: Path) -> None:
 
     _, wall_seconds = measure(lambda: pipeline.run(rows, loader_file_format="csv"))
     emit_result(
-        rows=row_count(TARGET),
+        row_num=row_count(TARGET),
         output_bytes=table_bytes(TARGET),
         wall_seconds=wall_seconds,
     )

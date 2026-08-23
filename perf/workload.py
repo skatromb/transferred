@@ -6,7 +6,7 @@ subprocess and measures it externally via psutil + `os.wait4`.
 
 Workload stdout protocol — single JSON object emitted by `run`:
 
-    {"rows": int, "output_bytes": int, "wall_seconds": float}
+    {"row_num": int, "output_bytes": int, "wall_seconds": float}
 """
 
 from __future__ import annotations
@@ -66,10 +66,14 @@ def file_bytes(out: Path) -> int:
     return sum(part.stat().st_size for part in parts if part.is_file())
 
 
-def emit_result(*, rows: int, output_bytes: int, wall_seconds: float) -> None:
+def emit_result(*, row_num: int, output_bytes: int, wall_seconds: float) -> None:
     """Emit the harness's expected JSON result line on stdout."""
     json.dump(
-        {"rows": rows, "output_bytes": output_bytes, "wall_seconds": wall_seconds},
+        {
+            "row_num": row_num,
+            "output_bytes": output_bytes,
+            "wall_seconds": wall_seconds,
+        },
         sys.stdout,
     )
 

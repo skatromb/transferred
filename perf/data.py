@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import os
 
-ROWS = int(os.environ.get("PERF_ROWS", "10_000_000").replace("_", ""))
-"""Rows in the shared wide dataset. Override via `PERF_ROWS=N`.
+ROW_NUM = int(os.environ.get("PERF_ROW_NUM", "10_000_000").replace("_", ""))
+"""Rows in the shared wide dataset. Override via `PERF_ROW_NUM=N`.
 
 Ten million holds a leg above ten seconds, long enough for a build-to-build difference
 to clear the machine's noise. Fifty million measured worse, not better: legs ran over a
@@ -27,11 +27,11 @@ its own default — 5000 rows for dlt's writer — emits far more, smaller row g
 which compress worse with zstd and confound output-size comparisons.
 """
 
-SLOW_ROWS = int(os.environ.get("PERF_SLOW_ROWS", "1_000_000").replace("_", ""))
-"""Rows for baselines that move every row through Python. Override via `PERF_SLOW_ROWS=N`.
+SLOW_ROW_NUM = int(os.environ.get("PERF_SLOW_ROW_NUM", "1_000_000").replace("_", ""))
+"""Rows for baselines that move every row through Python. Override via `PERF_SLOW_ROW_NUM=N`.
 
-Same bargain as `PYTHON_ROWS`: they are here to show the gap, and the gap is just
-as visible at a million rows as it would be after a quarter-hour at `ROWS`.
+They are here to show the gap, and the gap is just as visible at a million rows as
+it would be after a quarter-hour at `ROW_NUM`.
 """
 
 TABLE = "perf_wide"
@@ -89,14 +89,14 @@ costs nothing at run time because the server does the work.
 """
 
 CAPPED = f"{TABLE}_capped"
-"""`TABLE` capped at `SLOW_ROWS`, for baselines that move every row through Python."""
+"""`TABLE` capped at `SLOW_ROW_NUM`, for baselines that move every row through Python."""
 
 
 def views_sql() -> str:
     """SQL creating `CAPPED`.
 
     It exists for baselines that move every row through Python at tens of
-    microseconds each: at `ROWS` one would outlast the rest of the suite combined.
+    microseconds each: at `ROW_NUM` one would outlast the rest of the suite combined.
     Capping keeps them in the run and comparable on `rows/s`, the trade the
     iterable workloads already make.
 
@@ -105,16 +105,16 @@ def views_sql() -> str:
     """
     return (
         f"drop view if exists {CAPPED} cascade;"
-        f"create view {CAPPED} as select * from {TABLE} limit {SLOW_ROWS};"
+        f"create view {CAPPED} as select * from {TABLE} limit {SLOW_ROW_NUM};"
     )
 
 
-def seed_sql(rows: int) -> str:
-    """SQL recreating `TABLE` with `rows` rows, every value computed server-side."""
+def seed_sql(row_num: int) -> str:
+    """SQL recreating `TABLE` with `row_num` rows, every value computed server-side."""
     selected = ",\n        ".join(
         f"{expression} as {name}" for name, expression in COLUMNS
     )
-    last_row = rows - 1
+    last_row = row_num - 1
     return f"""
     create extension if not exists citext;
     create extension if not exists postgis;

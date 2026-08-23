@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from perf import baseline_dumps
-from perf.data import CAPPED, SLOW_ROWS
+from perf.data import CAPPED, SLOW_ROW_NUM
 from perf.postgres import row_count, table_bytes
 from perf.workload import emit_result, measure, out_path
 from perf.workloads import _dlt
@@ -28,7 +28,7 @@ TARGET = "perf_load_dlt"
 def prepare() -> Path:
     """The dump this leg loads, written by dlt's own default read leg unless cached."""
     return _dlt.main_table(
-        baseline_dumps.ensure("dlt", read_leg.dump, SLOW_ROWS), CAPPED
+        baseline_dumps.ensure("dlt", read_leg.dump, SLOW_ROW_NUM), CAPPED
     )
 
 
@@ -43,7 +43,7 @@ def run(out: Path) -> None:
 
     _, wall_seconds = measure(lambda: pipeline.run(rows))
     emit_result(
-        rows=row_count(TARGET),
+        row_num=row_count(TARGET),
         output_bytes=table_bytes(TARGET),
         wall_seconds=wall_seconds,
     )

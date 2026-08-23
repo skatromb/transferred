@@ -23,7 +23,7 @@ _COLUMNS: tuple[_Column, ...] = (
     _Column("workload", lambda best, _: best.workload),
     _Column("wall s", lambda best, _: f"{best.wall_seconds:.2f}"),
     _Column("spread", lambda _, spread: f"{spread:.2f}x"),
-    _Column("rows", lambda best, _: f"{best.rows:,}"),
+    _Column("rows", lambda best, _: f"{best.row_num:,}"),
     _Column("rows/s", lambda best, _: f"{round(best.throughput_rows_per_s):,}"),
     _Column("out MB", lambda best, _: _megabytes(best.output_bytes)),
     _Column("RSS MB avg/peak", lambda best, _: _slashed(best.rss_mb)),

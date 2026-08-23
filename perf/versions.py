@@ -21,7 +21,7 @@ from tempfile import TemporaryDirectory
 from types import ModuleType
 
 from perf import console, disk, fixtures, render, results, server
-from perf.data import ROWS
+from perf.data import ROW_NUM
 from perf.metrics import Metrics, Repeated
 from perf.run import REPEATS, measure_once
 from perf.workloads import parquet_to_postgres, postgres_to_parquet
@@ -41,10 +41,10 @@ _MIN_VERSIONS = 2
 
 def main() -> None:
     versions = _versions()
-    disk.check_disk(ROWS)
+    disk.check_disk(ROW_NUM)
     server.up()
-    server.seed(ROWS)
-    fixtures.build(ROWS)
+    server.seed(ROW_NUM)
+    fixtures.build(ROW_NUM)
     pythons = {version: _install(version) for version in versions}
 
     with TemporaryDirectory() as workdir:

@@ -8,7 +8,7 @@ figures by construction — these measure the engine, not the server it drives.
 
 Workload stdout protocol — single JSON object on stdout:
 
-    {"rows": int, "output_bytes": int, "wall_seconds": float}
+    {"row_num": int, "output_bytes": int, "wall_seconds": float}
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ def _measured(name: str, sampled: _Sampled, stdout: bytes, stderr: bytes) -> Met
         cpu_user_seconds=sampled.rusage.ru_utime,
         cpu_system_seconds=sampled.rusage.ru_stime,
         peak_rss_bytes=sampled.rusage.ru_maxrss * _RUSAGE_RSS_MULT,
-        rows=int(reported["rows"]),
+        row_num=int(reported["row_num"]),
         output_bytes=int(reported["output_bytes"]),
         samples=sampled.samples,
     )

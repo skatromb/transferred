@@ -30,7 +30,7 @@ def run(_out: Path) -> None:
         ).run()
     )
     emit_result(
-        rows=report.rows,
+        row_num=report.rows,
         output_bytes=table_bytes(TARGET),
         wall_seconds=wall_seconds,
     )

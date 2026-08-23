@@ -18,7 +18,7 @@ NAME = "baseline dlt postgres→parquet (tuned)"
 
 
 def dump(out: Path) -> int:
-    """Write the wide table under `out` as Parquet. Returns rows written.
+    """Write the wide table under `out` as Parquet. Returns the number of rows written.
 
     Split out of `run` so the paired write leg reads a dump dlt itself wrote, with
     the range and PostGIS columns as the text this read cast them to.
@@ -38,13 +38,13 @@ def dump(out: Path) -> int:
 
     # `loader_file_format` is not optional: the filesystem destination prefers jsonl.
     pipeline.run(table, loader_file_format="parquet")
-    return _dlt.main_table_rows(out, TABLE)
+    return _dlt.main_table_row_num(out, TABLE)
 
 
 def run(out: Path) -> None:
-    rows, wall_seconds = measure(lambda: dump(out))
+    row_num, wall_seconds = measure(lambda: dump(out))
     emit_result(
-        rows=rows,
+        row_num=row_num,
         output_bytes=file_bytes(_dlt.bucket(out)),
         wall_seconds=wall_seconds,
     )
