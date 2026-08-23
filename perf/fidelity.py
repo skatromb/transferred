@@ -7,9 +7,9 @@ of them makes.
 
 Scale-independent, so run it small:
 
-    PERF_ROWS=100000 make fidelity
+    PERF_ROW_NUM=100000 make fidelity
 
-That rewrites the per-engine dumps at whatever `PERF_ROWS` says, so the next `make
+That rewrites the per-engine dumps at whatever `PERF_ROW_NUM` says, so the next `make
 perf` rebuilds them at its own scale.
 """
 
@@ -22,7 +22,7 @@ from tempfile import TemporaryDirectory
 from types import ModuleType
 
 from perf import console, fixtures, postgres, render, server
-from perf.data import COLUMNS, ROWS, TABLE
+from perf.data import COLUMNS, ROW_NUM, TABLE
 from perf.workloads import (
     baseline_dlt_parquet_to_postgres_tuned,
     baseline_duckdb_parquet_to_postgres,
@@ -39,8 +39,8 @@ LEGS: tuple[ModuleType, ...] = (
 
 def main() -> None:
     server.up()
-    server.seed(ROWS)
-    fixtures.build(ROWS)
+    server.seed(ROW_NUM)
+    fixtures.build(ROW_NUM)
 
     with TemporaryDirectory() as workdir:
         landed = {leg.NAME: _load(leg, Path(workdir)) for leg in LEGS}

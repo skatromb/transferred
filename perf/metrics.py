@@ -29,13 +29,13 @@ class Metrics:
     cpu_user_seconds: float
     cpu_system_seconds: float
     peak_rss_bytes: int
-    rows: int
+    row_num: int
     output_bytes: int
     samples: list[Sample] = field(default_factory=list)
 
     @property
     def throughput_rows_per_s(self) -> float:
-        return self.rows / self.wall_seconds if self.wall_seconds else 0
+        return self.row_num / self.wall_seconds if self.wall_seconds else 0
 
     @property
     def cpu_wall_ratio(self) -> float:

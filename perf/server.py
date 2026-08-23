@@ -45,15 +45,15 @@ def up() -> str:
     return DSN
 
 
-def seed(rows: int) -> None:
-    """Recreate the wide table unless it already holds exactly `rows` rows, then its views."""
-    if _seeded_rows() == rows:
-        console.progress(f"seed: reusing {TABLE} at {rows:,} rows")
+def seed(row_num: int) -> None:
+    """Recreate the wide table unless it already holds exactly `row_num` rows, then its views."""
+    if _seeded_row_num() == row_num:
+        console.progress(f"seed: reusing {TABLE} at {row_num:,} rows")
     else:
-        console.progress(f"seed: creating {TABLE} with {rows:,} rows")
-        psql(seed_sql(rows))
+        console.progress(f"seed: creating {TABLE} with {row_num:,} rows")
+        psql(seed_sql(row_num))
     psql(views_sql())
-    report_bytes_per_row(table_bytes(TABLE) // rows, rows)
+    report_bytes_per_row(table_bytes(TABLE) // row_num, row_num)
 
 
 def teardown_hint() -> str:
@@ -73,7 +73,7 @@ def _docker_ps(flags: str) -> bool:
     return bool(listed.stdout.strip())
 
 
-def _seeded_rows() -> int:
+def _seeded_row_num() -> int:
     """Rows in the seeded table, or -1 when it or the container is absent."""
     if not _running():
         return -1

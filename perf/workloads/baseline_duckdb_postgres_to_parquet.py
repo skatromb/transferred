@@ -19,7 +19,7 @@ NAME = "baseline duckdb postgres→parquet"
 
 
 def dump(out: Path) -> int:
-    """Write the wide table to `out` as one Parquet file. Returns rows written.
+    """Write the wide table to `out` as one Parquet file. Returns the number of rows written.
 
     Split out of `run` so the paired write leg reads a dump duckdb itself wrote —
     with the ranges as text, which is as much of them as it can carry.
@@ -34,9 +34,9 @@ def dump(out: Path) -> int:
 
 
 def run(out: Path) -> None:
-    rows, wall_seconds = measure(lambda: dump(out))
+    row_num, wall_seconds = measure(lambda: dump(out))
     emit_result(
-        rows=rows,
+        row_num=row_num,
         output_bytes=file_bytes(out),
         wall_seconds=wall_seconds,
     )

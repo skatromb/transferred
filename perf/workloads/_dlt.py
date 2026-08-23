@@ -67,7 +67,7 @@ def main_table(out: Path, table: str) -> Path:
     return bucket(out) / DATASET / table
 
 
-def main_table_rows(out: Path, table: str) -> int:
+def main_table_row_num(out: Path, table: str) -> int:
     """Rows dlt wrote for `table` itself, ignoring the child tables beside it."""
     files = main_table(out, table).rglob("*.parquet")
     return sum(pq.ParquetFile(path).metadata.num_rows for path in files)

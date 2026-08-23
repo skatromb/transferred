@@ -20,7 +20,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from perf import console, fixtures, hotspots, server
-from perf.data import ROWS
+from perf.data import ROW_NUM
 
 _MODULE = "perf.profile"
 """This module: it spawns itself to be the process it samples."""
@@ -42,8 +42,8 @@ def main() -> None:
 
     workload = sys.argv[1]
     server.up()
-    server.seed(ROWS)
-    fixtures.build(ROWS)
+    server.seed(ROW_NUM)
+    fixtures.build(ROW_NUM)
 
     with TemporaryDirectory() as workdir:
         leaves = _profile(workload, Path(workdir))

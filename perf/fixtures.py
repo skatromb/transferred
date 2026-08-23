@@ -20,14 +20,14 @@ ROOT = Path(__file__).resolve().parent / ".fixtures"
 SEED = ROOT / "seed.parquet"
 
 
-def build(rows: int) -> None:
+def build(row_num: int) -> None:
     """Dump the wide table to the seed our own write leg loads back.
 
     Written by our own read leg, which is the property every write leg needs — see
     `perf.baseline_dumps` for the baselines' side of it.
     """
-    if _seed_rows() == rows:
-        console.progress(f"fixtures: reusing {SEED} at {rows:,} rows")
+    if _seed_row_num() == row_num:
+        console.progress(f"fixtures: reusing {SEED} at {row_num:,} rows")
         return
 
     console.progress(f"fixtures: dumping {TABLE} to {SEED}")
@@ -54,7 +54,7 @@ def _dump(dest: Path) -> None:
     shutil.rmtree(staging)
 
 
-def _seed_rows() -> int:
+def _seed_row_num() -> int:
     """Rows in the seed file, or -1 when it is absent or unreadable."""
     if not SEED.exists():
         return -1

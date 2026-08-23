@@ -20,19 +20,19 @@ from perf import console
 ROOT = Path(__file__).resolve().parent / ".fixtures" / "dumps"
 
 
-def ensure(tag: str, dump: Callable[[Path], int], rows: int) -> Path:
-    """Return the dump for `tag`, writing it via `dump` unless one holding `rows` is cached.
+def ensure(tag: str, dump: Callable[[Path], int], row_num: int) -> Path:
+    """Return the dump for `tag`, writing it via `dump` unless one holding `row_num` is cached.
 
     The stamp records what `dump` reported writing, not what was asked for: running a
     workload module by hand at another scale would otherwise leave a dump of the wrong
     size looking current.
     """
     path = ROOT / tag
-    stamp = ROOT / f"{tag}.rows"
-    if stamp.exists() and stamp.read_text() == str(rows):
+    stamp = ROOT / f"{tag}.row_num"
+    if stamp.exists() and stamp.read_text() == str(row_num):
         return path
 
-    console.progress(f"dumps: writing {tag} at {rows:,} rows")
+    console.progress(f"dumps: writing {tag} at {row_num:,} rows")
     ROOT.mkdir(parents=True, exist_ok=True)
     stamp.unlink(missing_ok=True)
     shutil.rmtree(path, ignore_errors=True)

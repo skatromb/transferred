@@ -22,7 +22,7 @@ NAME = "baseline dlt postgres→parquet (defaults, capped)"
 
 
 def dump(out: Path) -> int:
-    """Write `CAPPED` under `out` as Parquet. Returns rows written.
+    """Write `CAPPED` under `out` as Parquet. Returns the number of rows written.
 
     Split out of `run` so the paired write leg reads a dump this backend wrote, with
     each range flattened into the four columns it turns one into.
@@ -33,13 +33,13 @@ def dump(out: Path) -> int:
     pipeline.run(
         sql_table(_dlt.SQLALCHEMY_DSN, CAPPED, "public"), loader_file_format="parquet"
     )
-    return _dlt.main_table_rows(out, CAPPED)
+    return _dlt.main_table_row_num(out, CAPPED)
 
 
 def run(out: Path) -> None:
-    rows, wall_seconds = measure(lambda: dump(out))
+    row_num, wall_seconds = measure(lambda: dump(out))
     emit_result(
-        rows=rows,
+        row_num=row_num,
         output_bytes=file_bytes(_dlt.bucket(out)),
         wall_seconds=wall_seconds,
     )

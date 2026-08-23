@@ -16,7 +16,7 @@ from pathlib import Path
 import duckdb
 
 from perf import baseline_dumps
-from perf.data import ROWS
+from perf.data import ROW_NUM
 from perf.postgres import DSN, row_count, table_bytes
 from perf.workload import emit_result, measure, out_path
 from perf.workloads import baseline_duckdb_postgres_to_parquet as read_leg
@@ -27,7 +27,7 @@ TARGET = "perf_load_duckdb"
 
 def prepare() -> Path:
     """The dump this leg loads, written by duckdb's own read leg unless already cached."""
-    return baseline_dumps.ensure("duckdb", read_leg.dump, ROWS)
+    return baseline_dumps.ensure("duckdb", read_leg.dump, ROW_NUM)
 
 
 def load(source: Path) -> None:
@@ -45,7 +45,7 @@ def run(_out: Path) -> None:
 
     _, wall_seconds = measure(lambda: load(source))
     emit_result(
-        rows=row_count(TARGET),
+        row_num=row_count(TARGET),
         output_bytes=table_bytes(TARGET),
         wall_seconds=wall_seconds,
     )

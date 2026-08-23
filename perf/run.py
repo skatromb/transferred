@@ -11,7 +11,7 @@ from tempfile import TemporaryDirectory
 from types import ModuleType
 
 from perf import console, disk, fixtures, postgres, registry, render, results, server
-from perf.data import ROWS
+from perf.data import ROW_NUM
 from perf.harness import run_subprocess
 from perf.metrics import Metrics, Repeated
 
@@ -28,10 +28,10 @@ swaps which version of a pair runs first on every other pass.
 def main() -> None:
     if not registry.WITH_DLT:
         console.progress("dlt: skipped — `make perf-full` includes it")
-    disk.check_disk(ROWS)
+    disk.check_disk(ROW_NUM)
     server.up()
-    server.seed(ROWS)
-    fixtures.build(ROWS)
+    server.seed(ROW_NUM)
+    fixtures.build(ROW_NUM)
     _prepare_dumps()
 
     with TemporaryDirectory() as workdir:
