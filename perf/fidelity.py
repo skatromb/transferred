@@ -21,9 +21,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType
 
-from perf import fixtures, postgres
+from perf import console, fixtures, postgres, render, server
 from perf.data import COLUMNS, ROWS, TABLE
-from perf.harness import format_rows
 from perf.workloads import (
     baseline_dlt_parquet_to_postgres_tuned,
     baseline_duckdb_parquet_to_postgres,
@@ -39,25 +38,29 @@ LEGS: tuple[ModuleType, ...] = (
 
 
 def main() -> None:
-    postgres.up()
-    postgres.seed(ROWS)
+    server.up()
+    server.seed(ROWS)
     fixtures.build(ROWS)
 
-    with TemporaryDirectory() as tmp:
-        landed = {leg.NAME: _load(leg, Path(tmp)) for leg in LEGS}
+    with TemporaryDirectory() as workdir:
+        landed = {leg.NAME: _load(leg, Path(workdir)) for leg in LEGS}
 
-    header = ["column", "source", *landed]
+    console.report(_comparison(landed))
+
+
+def _comparison(landed: dict[str, dict[str, str]]) -> str:
+    """One row per source column: the type Postgres reports, then what each leg landed."""
     source = _column_types(TABLE)
-    body = [
-        [name, source[name], *(types.get(name, "—") for types in landed.values())]
-        for name, _ in COLUMNS
-    ]
-    print(format_rows(header, body))
+    body = []
+    for name, _ in COLUMNS:
+        by_leg = (types.get(name, "—") for types in landed.values())
+        body.append([name, source[name], *by_leg])
+    return render.grid(["column", "source", *landed], body)
 
 
 def _load(leg: ModuleType, workdir: Path) -> dict[str, str]:
     """Run `leg` and return the types its target landed, keyed by column name."""
-    print(f"fidelity: loading via {leg.NAME}", flush=True)
+    console.progress(f"fidelity: loading via {leg.NAME}")
     # The leg emits its own JSON result line, which is not part of this table.
     with redirect_stdout(io.StringIO()):
         leg.run(workdir / leg.TARGET)

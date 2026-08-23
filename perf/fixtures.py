@@ -10,8 +10,9 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-import pyarrow.parquet as pq
+from pyarrow import parquet as pq
 
+from perf import console
 from perf.data import TABLE
 from perf.workloads import postgres_to_parquet
 
@@ -23,13 +24,13 @@ def build(rows: int) -> None:
     """Dump the wide table to the seed our own write leg loads back.
 
     Written by our own read leg, which is the property every write leg needs — see
-    `perf.dumps` for the baselines' side of it.
+    `perf.baseline_dumps` for the baselines' side of it.
     """
     if _seed_rows() == rows:
-        print(f"fixtures: reusing {SEED} at {rows:,} rows", flush=True)
+        console.progress(f"fixtures: reusing {SEED} at {rows:,} rows")
         return
 
-    print(f"fixtures: dumping {TABLE} to {SEED}", flush=True)
+    console.progress(f"fixtures: dumping {TABLE} to {SEED}")
     ROOT.mkdir(exist_ok=True)
     _dump(SEED)
 
@@ -44,9 +45,12 @@ def _dump(dest: Path) -> None:
     shutil.rmtree(staging, ignore_errors=True)
     postgres_to_parquet.dump(staging)
 
-    (part,) = staging.glob("*.parquet")
+    parts = list(staging.glob("*.parquet"))
+    if len(parts) != 1:
+        raise RuntimeError(f"{staging} holds {len(parts)} Parquet parts, expected one")
+
     dest.unlink(missing_ok=True)
-    part.rename(dest)
+    parts[0].rename(dest)
     shutil.rmtree(staging)
 
 

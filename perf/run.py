@@ -2,54 +2,18 @@
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import sys
-from dataclasses import asdict
-from datetime import UTC, datetime
-from functools import cache
+from contextlib import ExitStack
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType
 
-from perf import fixtures, postgres
+from perf import console, disk, fixtures, postgres, registry, render, results, server
 from perf.data import ROWS
-from perf.harness import Metrics, Repeated, format_table, run_subprocess
-from perf.workloads import (
-    baseline_dlt_parquet_to_postgres,
-    baseline_dlt_parquet_to_postgres_tuned,
-    baseline_dlt_postgres_to_parquet,
-    baseline_dlt_postgres_to_parquet_tuned,
-    baseline_duckdb_parquet_to_postgres,
-    baseline_duckdb_postgres_to_parquet,
-    parquet_to_postgres,
-    postgres_to_parquet,
-)
-
-_CORE: tuple[ModuleType, ...] = (
-    postgres_to_parquet,
-    baseline_duckdb_postgres_to_parquet,
-    parquet_to_postgres,
-    baseline_duckdb_parquet_to_postgres,
-)
-"""Both legs against duckdb, the engine to beat. Cheap enough to run on every pass."""
-
-_DLT: tuple[ModuleType, ...] = (
-    baseline_dlt_postgres_to_parquet_tuned,
-    baseline_dlt_postgres_to_parquet,
-    baseline_dlt_parquet_to_postgres_tuned,
-    baseline_dlt_parquet_to_postgres,
-)
-"""dlt's four legs, measured only under `PERF_DLT=1`: two of them cost minutes each."""
-
-_WITH_DLT = os.environ.get("PERF_DLT") == "1"
-"""Whether dlt is measured. Off by default: its four legs are most of a suite's hour."""
-
-WORKLOADS: tuple[ModuleType, ...] = _CORE + (_DLT if _WITH_DLT else ())
-"""Every workload of this run: both legs against duckdb, then dlt's four when enabled."""
-
-RESULTS_DIR = Path(__file__).resolve().parent / ".results"
+from perf.harness import run_subprocess
+from perf.metrics import Metrics, Repeated
 
 REPEATS = int(os.environ.get("PERF_REPEATS", "4"))
 """Passes over every workload. Override via `PERF_REPEATS=N`.
@@ -62,20 +26,20 @@ swaps which version of a pair runs first on every other pass.
 
 
 def main() -> None:
-    if not _WITH_DLT:
-        print("dlt: skipped — `make perf-full` includes it", flush=True)
-    postgres.check_disk(ROWS)
-    postgres.up()
-    postgres.seed(ROWS)
+    if not registry.WITH_DLT:
+        console.progress("dlt: skipped — `make perf-full` includes it")
+    disk.check_disk(ROWS)
+    server.up()
+    server.seed(ROWS)
     fixtures.build(ROWS)
     _prepare_dumps()
 
-    with TemporaryDirectory() as tmp:
-        metrics = _measure_all(Path(tmp))
+    with TemporaryDirectory() as workdir:
+        metrics = _measure_all(Path(workdir))
 
-    print(format_table(metrics))
-    print(f"\nfull results → {results_path()}")
-    print(postgres.teardown_hint())
+    console.report(render.table(metrics))
+    console.report(f"\nfull results → {results.results_path()}")
+    console.report(server.teardown_hint())
 
 
 def _prepare_dumps() -> None:
@@ -84,8 +48,8 @@ def _prepare_dumps() -> None:
     A write leg run on its own builds its dump on demand, which is untimed but does
     count towards the peak RSS the harness reads from the subprocess.
     """
-    for mod in WORKLOADS:
-        prepare = getattr(mod, "prepare", None)
+    for workload in registry.WORKLOADS:
+        prepare = getattr(workload, "prepare", None)
         if prepare:
             prepare()
 
@@ -98,17 +62,17 @@ def _measure_all(workdir: Path) -> list[Repeated]:
     whichever workload runs late for the whole drift. Interleaving spreads it evenly,
     and `Repeated.best` then picks each engine's best moment.
     """
-    runs: dict[str, list[Metrics]] = {mod.NAME: [] for mod in WORKLOADS}
-    for index in range(REPEATS):
-        for mod in WORKLOADS:
-            print(f"pass {index + 1}/{REPEATS}: {mod.NAME}", flush=True)
-            runs[mod.NAME].append(measure_once(mod.NAME, mod, workdir))
-            dump_results(runs)
-    return [Repeated(runs[mod.NAME]) for mod in WORKLOADS]
+    runs: dict[str, list[Metrics]] = {leg.NAME: [] for leg in registry.WORKLOADS}
+    for current in range(1, REPEATS + 1):
+        for workload in registry.WORKLOADS:
+            console.progress(f"pass {current}/{REPEATS}: {workload.NAME}")
+            runs[workload.NAME].append(measure_once(workload.NAME, workload, workdir))
+            results.dump_results(runs)
+    return [Repeated(runs[leg.NAME]) for leg in registry.WORKLOADS]
 
 
 def measure_once(
-    label: str, mod: ModuleType, workdir: Path, python: str = sys.executable
+    label: str, workload: ModuleType, workdir: Path, python: str = sys.executable
 ) -> Metrics:
     """Run one workload as a subprocess under `python`, reclaiming what it wrote afterwards.
 
@@ -123,11 +87,10 @@ def measure_once(
     `python` and `label` are what `perf.versions` varies: the same leg under another
     interpreter, holding another release of the wheel.
     """
-    out = workdir / mod.__name__.rsplit(".", 1)[-1]
-    try:
-        return run_subprocess(label, [python, "-m", mod.__name__, str(out)])
-    finally:
-        _reclaim(out, getattr(mod, "TARGET", None))
+    out = workdir / workload.__name__.rsplit(".", 1)[-1]
+    with ExitStack() as reclaim:
+        reclaim.callback(_reclaim, out, getattr(workload, "TARGET", None))
+        return run_subprocess(label, [python, "-m", workload.__name__, str(out)])
 
 
 def _reclaim(out: Path, target: str | None) -> None:
@@ -138,24 +101,6 @@ def _reclaim(out: Path, target: str | None) -> None:
         out.unlink(missing_ok=True)
     if target:
         postgres.drop_table(target)
-
-
-def dump_results(runs: dict[str, list[Metrics]]) -> None:
-    """Rewrite this run's JSON with every measurement taken so far.
-
-    After each run rather than at the end: a suite is dozens of subprocesses over an
-    hour, and one failing used to take every earlier measurement with it — which is
-    also how `perf.versions` lost eight runs to a ninth that hung.
-    """
-    measured = [Repeated(r) for r in runs.values() if r]
-    results_path().write_text(json.dumps([asdict(m) for m in measured], indent=2))
-
-
-@cache
-def results_path() -> Path:
-    """This run's JSON file, named once so every rewrite lands in the same place."""
-    RESULTS_DIR.mkdir(exist_ok=True)
-    return RESULTS_DIR / f"{datetime.now(UTC).isoformat(timespec='seconds')}.json"
 
 
 if __name__ == "__main__":

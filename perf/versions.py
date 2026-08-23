@@ -20,10 +20,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import ModuleType
 
-from perf import fixtures, postgres
+from perf import console, disk, fixtures, render, results, server
 from perf.data import ROWS
-from perf.harness import Metrics, Repeated, format_table
-from perf.run import REPEATS, dump_results, measure_once, results_path
+from perf.metrics import Metrics, Repeated
+from perf.run import REPEATS, measure_once
 from perf.workloads import parquet_to_postgres, postgres_to_parquet
 
 LEGS: tuple[ModuleType, ...] = (postgres_to_parquet, parquet_to_postgres)
@@ -32,21 +32,27 @@ LEGS: tuple[ModuleType, ...] = (postgres_to_parquet, parquet_to_postgres)
 VENVS = Path(__file__).resolve().parent / ".venvs"
 """Where each version's venv lives. Kept between runs — building one costs a download."""
 
+type VersionedPythons = list[tuple[str, str]]
+"""Each version paired with the interpreter of the venv holding it."""
+
+_MIN_VERSIONS = 2
+"""Fewer than a pair is not a comparison."""
+
 
 def main() -> None:
     versions = _versions()
-    postgres.check_disk(ROWS)
-    postgres.up()
-    postgres.seed(ROWS)
+    disk.check_disk(ROWS)
+    server.up()
+    server.seed(ROWS)
     fixtures.build(ROWS)
     pythons = {version: _install(version) for version in versions}
 
-    with TemporaryDirectory() as tmp:
-        metrics = _measure_all(pythons, Path(tmp))
+    with TemporaryDirectory() as workdir:
+        metrics = _measure_all(pythons, Path(workdir))
 
-    print(format_table(metrics))
-    print(f"\nfull results → {results_path()}")
-    print(postgres.teardown_hint())
+    console.report(render.table(metrics))
+    console.report(f"\nfull results → {results.results_path()}")
+    console.report(server.teardown_hint())
 
 
 def _versions() -> list[str]:
@@ -55,13 +61,10 @@ def _versions() -> list[str]:
     Raises:
         SystemExit: the variable is unset or names fewer than two versions.
     """
-    versions = [
-        v.strip() for v in os.environ.get("PERF_VERSIONS", "").split(",") if v.strip()
-    ]
-    if len(versions) < 2:
-        raise SystemExit(
-            "set PERF_VERSIONS to two or more published versions, comma-separated"
-        )
+    requested = os.environ.get("PERF_VERSIONS", "").split(",")
+    versions = [name.strip() for name in requested if name.strip()]
+    if len(versions) < _MIN_VERSIONS:
+        sys.exit("set PERF_VERSIONS to two or more published versions, comma-separated")
     return versions
 
 
@@ -78,9 +81,10 @@ def _install(version: str) -> str:
     root = VENVS / version
     python = root / "bin" / "python"
     if not python.exists():
-        series = f"{sys.version_info.major}.{sys.version_info.minor}"
-        subprocess.run(["uv", "venv", "-q", "--python", series, str(root)], check=True)
-    print(f"venv: installing transferred=={version}", flush=True)
+        series = ".".join(map(str, sys.version_info[:2]))
+        create = ["uv", "venv", "-q", "--python", series, str(root)]
+        subprocess.run(create, check=True)
+    console.progress(f"venv: installing transferred=={version}")
     subprocess.run(
         ["uv", "pip", "install", "-q", "--only-binary", ":all:", "--python", str(python),
          f"transferred=={version}", "pyarrow"],
@@ -95,25 +99,39 @@ def _measure_all(pythons: dict[str, str], workdir: Path) -> list[Repeated]:
     Leg outermost, so the versions of one leg run back to back and share whatever the
     machine is doing in that minute. Version outermost would put the other leg between
     them, which is the drift the comparison is trying not to charge to a release.
-
-    The pair also swaps order every pass, so neither version always pays whatever it
-    costs to be the one that runs first.
     """
     runs: dict[str, list[Metrics]] = {}
-    for index in range(REPEATS):
-        for mod in LEGS:
-            versions = list(pythons.items())
-            if index % 2:
-                versions.reverse()
+    for current in range(1, REPEATS + 1):
+        for leg in LEGS:
+            _measure_leg(runs, leg, _ordered(pythons, current), workdir, current)
+    return [Repeated(metrics) for metrics in runs.values()]
 
-            for version, python in versions:
-                label = f"{mod.NAME.removeprefix('transferred ')} {version}"
-                print(f"pass {index + 1}/{REPEATS}: {label}", flush=True)
-                runs.setdefault(label, []).append(
-                    measure_once(label, mod, workdir, python)
-                )
-                dump_results(runs)
-    return [Repeated(r) for r in runs.values()]
+
+def _measure_leg(
+    runs: dict[str, list[Metrics]],
+    leg: ModuleType,
+    versions: VersionedPythons,
+    workdir: Path,
+    current: int,
+) -> None:
+    """Measure `leg` under each version in turn, recording every run into `runs`."""
+    for version, python in versions:
+        engine = leg.NAME.removeprefix("transferred ")
+        label = f"{engine} {version}"
+        console.progress(f"pass {current}/{REPEATS}: {label}")
+        runs.setdefault(label, []).append(measure_once(label, leg, workdir, python))
+        results.dump_results(runs)
+
+
+def _ordered(pythons: dict[str, str], current: int) -> VersionedPythons:
+    """The versions to run in pass `current`, swapped over on every other one.
+
+    So neither version always pays whatever it costs to be the one that runs first.
+    """
+    versions = list(pythons.items())
+    if current % 2 == 0:
+        versions.reverse()
+    return versions
 
 
 if __name__ == "__main__":

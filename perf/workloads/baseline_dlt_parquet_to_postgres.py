@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from perf import dumps
+from perf import baseline_dumps
 from perf.data import CAPPED, SLOW_ROWS
 from perf.postgres import row_count, table_bytes
 from perf.workload import emit_result, measure, out_path
@@ -27,7 +27,9 @@ TARGET = "perf_load_dlt"
 
 def prepare() -> Path:
     """The dump this leg loads, written by dlt's own default read leg unless cached."""
-    return _dlt.main_table(dumps.ensure("dlt", read_leg.dump, SLOW_ROWS), CAPPED)
+    return _dlt.main_table(
+        baseline_dumps.ensure("dlt", read_leg.dump, SLOW_ROWS), CAPPED
+    )
 
 
 def run(out: Path) -> None:
@@ -35,7 +37,7 @@ def run(out: Path) -> None:
     _dlt.reset(TARGET)
     from dlt.sources.filesystem import filesystem, read_parquet
 
-    pipeline = _dlt.postgres_pipeline("dlt_pq_to_pg", out, _dlt.dsn())
+    pipeline = _dlt.postgres_pipeline("dlt_pq_to_pg", out, _dlt.SQLALCHEMY_DSN)
     files = filesystem(bucket_url=source.as_uri(), file_glob="*.parquet")
     rows = (files | read_parquet()).with_name(TARGET)
 

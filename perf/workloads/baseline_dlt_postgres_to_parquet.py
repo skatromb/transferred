@@ -30,7 +30,9 @@ def dump(out: Path) -> int:
     from dlt.sources.sql_database import sql_table
 
     pipeline = _dlt.parquet_pipeline("dlt_pg_to_pq", out)
-    pipeline.run(sql_table(_dlt.dsn(), CAPPED, "public"), loader_file_format="parquet")
+    pipeline.run(
+        sql_table(_dlt.SQLALCHEMY_DSN, CAPPED, "public"), loader_file_format="parquet"
+    )
     return _dlt.main_table_rows(out, CAPPED)
 
 

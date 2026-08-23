@@ -114,6 +114,7 @@ def seed_sql(rows: int) -> str:
     selected = ",\n        ".join(
         f"{expression} as {name}" for name, expression in COLUMNS
     )
+    last_row = rows - 1
     return f"""
     create extension if not exists citext;
     create extension if not exists postgis;
@@ -124,5 +125,5 @@ def seed_sql(rows: int) -> str:
     create table {TABLE} as
     select
         {selected}
-    from generate_series(0, {rows - 1}) as i;
+    from generate_series(0, {last_row}) as i;
     """
