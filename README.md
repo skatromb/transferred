@@ -2,6 +2,12 @@
 
 <img src="https://raw.githubusercontent.com/skatromb/transferred/main/logo.png" alt="transferred" width="240">
 
+[![Check](https://github.com/skatromb/transferred/actions/workflows/check.yml/badge.svg)](https://github.com/skatromb/transferred/actions/workflows/check.yml)
+[![PyPI](https://img.shields.io/pypi/v/transferred.svg)](https://pypi.org/project/transferred/)
+[![Downloads](https://img.shields.io/pypi/dm/transferred.svg)](https://pypi.org/project/transferred/)
+[![Python](https://img.shields.io/pypi/pyversions/transferred.svg)](https://pypi.org/project/transferred/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/skatromb/transferred/blob/main/LICENSE)
+[![wemake-python-styleguide](https://img.shields.io/badge/style-wemake-000000.svg)](https://github.com/wemake-services/wemake-python-styleguide)
 
 The most convenient batch data transfer tool. Inspired by [dlt](https://dlthub.com).
 
