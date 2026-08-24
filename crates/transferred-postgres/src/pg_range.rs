@@ -83,15 +83,15 @@ impl ExtensionType for PgRange {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
+    use arrow_schema::extension::EXTENSION_TYPE_NAME_KEY;
+
     use super::*;
 
     fn int4_range() -> ArrowType {
         ArrowType::Struct(PgRange::fields(ArrowType::Int32))
     }
 
-    /// Spelled out rather than built from the constants: both directions fill this struct
-    /// positionally, and every other test derives its expectation from `fields` too, so nothing
-    /// else would notice the tag fields swapping places.
+    /// Literal names, not the constants: every other test derives its expectation from `fields`.
     #[test]
     fn declares_its_fields_in_one_fixed_order() {
         let fields = PgRange::fields(ArrowType::Int32);
@@ -134,8 +134,7 @@ mod tests {
         assert!(PgRange::type_of(&mismatched).is_err());
     }
 
-    /// The lookup positions in `range_values` rest on this: a right-named struct in the wrong order
-    /// is no `transferred.pg_range` at all, so field name and position can never disagree there.
+    /// `range_values` looks fields up by position, which only holds if a reordered struct is refused.
     #[test]
     fn rejects_the_tag_fields_out_of_order() {
         let swapped = ArrowType::Struct(
@@ -156,5 +155,14 @@ mod tests {
     fn rejects_a_storage_type_that_is_not_a_struct() {
         assert!(PgRange.supports_data_type(&int4_range()).is_ok());
         assert!(PgRange.supports_data_type(&ArrowType::Int32).is_err());
+    }
+
+    /// A tag over the wrong storage type must not produce a `PgRange` the readers then trust.
+    #[test]
+    fn refuses_to_rebuild_over_the_wrong_storage_type() {
+        let mut field = ArrowField::new("valid", ArrowType::Int32, true);
+        field.set_metadata([(EXTENSION_TYPE_NAME_KEY.to_owned(), PgRange::NAME.to_owned())].into());
+
+        assert!(field.try_extension_type::<PgRange>().is_err());
     }
 }

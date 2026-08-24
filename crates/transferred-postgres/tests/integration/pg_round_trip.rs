@@ -4,8 +4,9 @@
 #![allow(clippy::expect_used)]
 
 use std::error::Error as _;
+use std::sync::Arc;
 
-use arrow::array::RecordBatch;
+use arrow::array::{Int64Array, RecordBatch};
 use arrow_schema::{DataType, Field, Schema};
 use async_trait::async_trait;
 use futures::{StreamExt, stream};
@@ -179,8 +180,34 @@ async fn refuses_a_target_whose_staging_name_would_not_fit() {
     assert_eq!(count_rows(&into).await, 1);
 }
 
-/// Source that yields one batch, then fails. Staging exists by then, since its DDL is
-/// derived from the first batch's schema.
+/// Source that yields one prepared batch, for the shapes no fixture table holds.
+struct OneBatch(RecordBatch);
+
+#[async_trait]
+impl Source for OneBatch {
+    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>> {
+        Ok(vec![stream::iter(vec![Ok(self.0)]).boxed()])
+    }
+}
+
+/// Past 64 KB the COPY buffer flushes mid-batch, and the flush waits for a row to end.
+#[tokio::test]
+async fn a_batch_wider_than_the_copy_buffer_arrives_whole() {
+    let into = "it_chunked";
+    let ids = Int64Array::from_iter_values(0..10_000);
+    let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int64, true)]));
+    let batch = RecordBatch::try_new(schema, vec![Arc::new(ids)]).expect("build batch");
+
+    let rows = try_transfer(Box::new(OneBatch(batch.clone())), into)
+        .await
+        .expect("run transfer")
+        .rows;
+
+    assert_eq!(rows, batch.num_rows() as u64);
+    assert_eq!(read_table(into).await, batch);
+}
+
+/// Source that yields one batch, then fails — staging exists by then, built from that schema.
 struct FailsAfterFirstBatch(RecordBatch);
 
 #[async_trait]
@@ -210,8 +237,7 @@ async fn a_failed_load_drops_staging_and_spares_the_target() {
     );
 }
 
-/// A view on the target blocks the swap's `drop table`. The swap is one transaction, so the
-/// target and its dependents must come through unchanged and the staging table must go.
+/// A view blocks the swap's `drop table`; the swap is one transaction, so both must survive.
 #[tokio::test]
 async fn a_failed_swap_spares_the_target_and_its_dependents() {
     let into = "it_swap_blocked";
