@@ -21,3 +21,9 @@ def test_none_compression_is_accepted():
 def test_unknown_compression_raises():
     with pytest.raises(ValueError):
         Parquet(compression="lz4")  # ty: ignore[invalid-argument-type]
+
+
+def test_format_is_immutable():
+    """Reassigning a knob after construction would not reach the Rust codec."""
+    with pytest.raises(AttributeError, match="Parquet is immutable"):
+        Parquet().compression = "snappy"
