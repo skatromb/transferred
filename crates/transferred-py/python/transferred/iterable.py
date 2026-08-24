@@ -9,6 +9,7 @@ from collections.abc import Callable, Iterable, Iterator
 from itertools import batched, chain
 from typing import TYPE_CHECKING, Any
 
+from transferred._native import EmptySourceError
 from transferred.arrow import ArrowSource
 
 if TYPE_CHECKING:
@@ -27,7 +28,7 @@ def _iterable_to_arrow(iterable: Iterable[Row]) -> ArrowSource:
 
     Raises:
         ImportError: pyarrow not installed.
-        ValueError: iterable is empty.
+        EmptySourceError: iterable is empty.
         TypeError: rows are none of dict / dataclass / pydantic.BaseModel.
     """
     return ArrowSource(_iterable_to_reader(iterable))
@@ -56,7 +57,7 @@ def _to_dicts(iterable: Iterable[Row]) -> Iterator[dict[str, Any]]:
     try:
         first_row = next(iterator)
     except StopIteration:
-        raise ValueError("iterable is empty") from None
+        raise EmptySourceError("iterable is empty") from None
 
     convert = _converter_for(first_row)
 
@@ -66,8 +67,7 @@ def _to_dicts(iterable: Iterable[Row]) -> Iterator[dict[str, Any]]:
 def _converter_for(row: Any) -> Callable[[Any], dict[str, Any]]:
     """Return a `row` → `dict[str, Any]` converter for `row`'s type.
 
-    Supported row types: `dict`, `@dataclass` instance, `pydantic.BaseModel`
-    (v1 + v2).
+    Supported row types: `dict`, `@dataclass` instance, `pydantic.BaseModel`.
 
     Raises:
         TypeError: `row` is none of the supported types.
@@ -79,23 +79,10 @@ def _converter_for(row: Any) -> Callable[[Any], dict[str, Any]]:
         field_names = [field.name for field in dataclasses.fields(row)]
         return lambda instance: {name: getattr(instance, name) for name in field_names}
 
-    if _is_pydantic_model(row):
-        # v2: model_dump; v1: dict
-        if hasattr(row, "model_dump"):
-            return lambda model: model.model_dump()
-        return lambda model: model.dict()
+    if hasattr(row, "model_dump"):  # pydantic model
+        return lambda model: model.model_dump()
 
     raise TypeError(
         f"unsupported row type {type(row).__name__!r}. "
         "Supported: dict, dataclass, pydantic.BaseModel."
     )
-
-
-def _is_pydantic_model(row: Any) -> bool:
-    """True if `row` is a `pydantic.BaseModel` instance (v1 or v2)."""
-    try:
-        from pydantic import BaseModel
-    except ImportError:
-        return False
-
-    return isinstance(row, BaseModel)

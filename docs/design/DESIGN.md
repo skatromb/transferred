@@ -88,7 +88,7 @@ Dispatcher rules in `Transfer.__init__`:
 - Any other `Iterable` (excluding `str`/`bytes`/`bytearray`/`dict`) → wrapped via `_iterable_to_arrow`. Rows are batched into `pa.RecordBatch` of `_BATCH_SIZE` (4096), one FFI crossing per batch, schema inferred from first batch.
 - Anything else → `TypeError`.
 
-Row shapes accepted by the iterable path: `dict`, `dataclass`, `pydantic.BaseModel` (v1 + v2). All normalized to `dict[str, Any]` on the Python side via a once-sniffed converter; pyarrow then builds the `RecordBatch`. `namedtuple` / `attrs` / `msgspec.Struct` deferred — trivial to add when requested.
+Row shapes accepted by the iterable path: `dict`, `dataclass`, `pydantic.BaseModel` (v2 — recognised by `model_dump`, so pydantic is never imported to convert a row). All normalized to `dict[str, Any]` on the Python side via a once-sniffed converter; pyarrow then builds the `RecordBatch`. `namedtuple` / `attrs` / `msgspec.Struct` deferred — trivial to add when requested.
 
 Source accepts `table=` OR `query=` (mutually exclusive):
 
