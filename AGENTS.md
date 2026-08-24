@@ -49,6 +49,8 @@ PLAN.md holds unshipped work only, each `## X.Y.Z` heading scoped to its version
 
 A shipped version's section moves verbatim to the end of [DONE.md](./DONE.md), which is not loaded by default. Grep it for why a decision went the way it did.
 
+Ticking a box is not a commit of its own. Bundle it with the code that delivered the item, or leave the edit in the working tree.
+
 ## Lints & typechecks
 
 Fix the root cause. Don't sprinkle `#[allow(…)]`, `# noqa`, `# type: ignore`, `// eslint-disable` in production code. If the lint is genuinely wrong for the case, justify before suppressing.
@@ -92,7 +94,7 @@ Don't stack "fix CI" / "fix lint" follow-ups on a feature branch. Reserve new co
 
 Default to bullets of what and why was done.
 
-Skip test-related stuff when CI covers the checks.
+Skip test-related stuff when CI covers the checks. A test plan earns its place only when the reviewer must verify something by hand.
 
 No AI-attribution trailer (`🤖 Generated with Claude Code`) in PR bodies.
 
