@@ -1,8 +1,10 @@
 name: Dependabot auto-merge
 
-# pull_request_target, because Dependabot's GITHUB_TOKEN is read-only on pull_request.
-# The PR branch is never checked out, so none of its code runs here.
-on: pull_request_target
+# Workaround to not spam this check in PR's check list
+on:
+  workflow_run:
+    workflows: [Check]
+    types: [completed]
 
 permissions:
   contents: write
@@ -11,14 +13,16 @@ permissions:
 jobs:
   automerge:
     name: Enable auto-merge
-    if: github.actor == 'dependabot[bot]'
+    if: >-
+      github.event.workflow_run.actor.login == 'dependabot[bot]'
+      && github.event.workflow_run.event == 'pull_request'
+      && github.event.workflow_run.conclusion == 'success'
+      && contains(github.event.workflow_run.head_commit.message, 'update-type: version-update:semver-')
+      && !contains(github.event.workflow_run.head_commit.message, 'update-type: version-update:semver-major')
     runs-on: ubuntu-24.04-arm
     steps:
-      - uses: dependabot/fetch-metadata@v3
-        id: metadata
-
-      - if: steps.metadata.outputs.update-type != 'version-update:semver-major'
-        run: gh pr merge --auto --squash "$PR_URL"
+      - run: gh pr merge --auto --squash "$BRANCH"
         env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
