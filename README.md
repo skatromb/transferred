@@ -1,7 +1,5 @@
 # transferred
 
-<img src="https://raw.githubusercontent.com/skatromb/transferred/main/logo.png" alt="transferred" width="240">
-
 [![Downloads](https://img.shields.io/pypi/dm/transferred.svg)](https://pypi.org/project/transferred/)
 [![Check](https://github.com/skatromb/transferred/actions/workflows/check.yml/badge.svg)](https://github.com/skatromb/transferred/actions/workflows/check.yml)
 [![Coverage](https://img.shields.io/codecov/c/github/skatromb/transferred.svg)](https://codecov.io/gh/skatromb/transferred)
@@ -9,6 +7,8 @@
 [![Python](https://img.shields.io/pypi/pyversions/transferred.svg)](https://pypi.org/project/transferred/)
 [![wemake-python-styleguide](https://img.shields.io/badge/style-wemake-000000.svg)](https://github.com/wemake-services/wemake-python-styleguide)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/skatromb/transferred/blob/main/LICENSE)
+
+<img src="https://raw.githubusercontent.com/skatromb/transferred/main/logo.png" alt="transferred" width="240">
 
 The most convenient batch data transfer tool. Inspired by [dlt](https://dlthub.com).
 
