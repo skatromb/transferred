@@ -34,7 +34,7 @@ jobs:
         run: make coverage-rust
 
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage-rust.lcov
@@ -64,7 +64,7 @@ jobs:
         run: make coverage-python
 
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage-python.lcov,coverage-python.xml
