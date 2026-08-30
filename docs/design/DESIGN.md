@@ -100,9 +100,8 @@ PostgresSource(dsn="...", table="public.orders", skip_columns=["legacy_blob"])
 
 **Schema direction — source-owned, destination-validated.** Source schema is ground truth: connectors infer it natively (PG `information_schema`, Parquet file metadata, Arrow batch schema, …) and preserve it end-to-end. Destination validates the inferred schema against its accepted type set and fails loudly on incompatibility, naming the column and both types. Arrow is internal, never spelled in Python.
 
-There is no user-facing schema knob. A hand-written `schema=` per destination, in that
-destination's own type vocabulary, is deferred — see PLAN.md. Until then a column whose type
-the destination cannot take is dropped with `skip_columns=` on the source.
+There is no user-facing schema knob and none is designed. A column whose type the destination
+cannot take is dropped with `skip_columns=` on the source.
 
 `.run()` returns a `RunReport`:
 
@@ -291,7 +290,7 @@ fallback (expand a range into columns, flatten a struct, serialize to text) or r
 | Lossy structural     | Unknown type → `arrow.opaque` (bytes). Composite → struct flatten. Hstore → JSON. `geometry(_, 4326)` no Z/M → BQ `GEOGRAPHY` (planar→geodesic edge reinterpretation). | Auto-apply            | WARN, in run summary    |
 | Lossy semantic       | CRS reprojection. `ST_MakeValid`. Z/M drop. Decimal truncation. tz coercion.            | **Fail**              | ERROR, stops the run    |
 
-Tier defaults are not overridable; per-column control arrives with the deferred type registry. Lossy-semantic coercions are not implemented at all, so the run fails on the offending column — drop it with `columns=` or `skip_columns=` on the source.
+Tier defaults are not overridable; per-column control arrives with the deferred type registry. Lossy-semantic coercions are not implemented at all, so the run fails on the offending column — drop it with `skip_columns=` on the source.
 
 **Run-summary contract.** Every coercion applied is recorded in `RunReport.coercions` and rendered in the end-of-run summary. Logs alone get ignored; the summary is where surprises become visible.
 
