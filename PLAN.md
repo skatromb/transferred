@@ -66,6 +66,15 @@ match destination {
 - `Transfer` becomes `Transfer<D>`. The source stays `Box<dyn Source>`, having no report to type, so the parameter does not spread; `self: Box<Self>` drops back to `self`.
 - DESIGN's API surface and run-report contract follow, before 0.3 starts.
 
+## Interlude — single-stream Source contract
+
+Collapse `Source::stream_partitions` → one `BatchStream`; `Destination::write_partitions` takes the same. Breaking on both traits, so it runs before 0.4 hands us more connectors.
+
+- Partition identity leaves the contract: no destination reads it, and part-file splitting is better done by size on the destination than by whatever shape the source had.
+- Parallelism stays, but stops leaking: a source merges its parallel readers into the one stream (`select_all`, or spawned tasks feeding a bounded mpsc); a destination that wants parallel writes fans the stream out to a pool of writers over a bounded channel. Work-stealing beats partition-pinned writers on skew.
+- Batches are pointer-sized to move (`RecordBatch` is `Arc`s over buffers) and coarse (~MBs), so the merge point runs at ~10³ msg/s against a channel ceiling in the millions — never the bottleneck.
+- DESIGN follows: `Source`/`Destination` signatures, and the memory model's "no internal mpsc channels" narrows to the serial path — reader merges and writer pools use bounded channels, capacity counted into the memory bound.
+
 ## 0.3 — S3 + GCS
 
 - S3 destination (Parquet) via `object_store`.
@@ -108,7 +117,6 @@ Not before here: hiding a `pub` type is a breaking change, so this cannot be a p
 - Retries for the transient errors
 - CLI
 - Multiple destinations `Transfer`s
-- Collapse `Source::stream_partitions` (`Vec<BatchStream>`) → a single `BatchStream`. The destination consumes batches without caring about source partition identity, so output partitioning becomes a destination/format policy. Simplifies the `Source` contract; trade-off is losing the source-partition → part-file mapping (parallel-per-partition write).
 - Try to run code in a [dev container](https://zed.dev/blog/dev-containers)
 
 ## Never ~~say never~~
