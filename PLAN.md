@@ -4,50 +4,92 @@ What is left to build. Shipped versions move to [DONE.md](./DONE.md); architectu
 
 Legend: `[x]` done · `[~]` in progress · `[ ]` pending.
 
-## 0.2.0 — BigQuery source + destination
+## 0.2.0 — BigQuery destination
 
-Goal: add BigQuery source + destination. Atomic full load PG ↔ BQ. Direct type mapping; formal schema/coercion still deferred to 0.6.
+Goal: atomic full load PG → BQ. Direct type mapping; formal schema/coercion still deferred to 0.7.
 
 **Scope:**
 
-- `transferred-bigquery` destination: Storage Write API in `pending` mode against transient staging table → server-side copy job `WRITE_TRUNCATE` from staging into final → `DROP TABLE staging`. No GCS staging.
-- `transferred-bigquery` source: Storage Read API.
+- `transferred-bigquery` destination: Storage Write API in `pending` mode against a per-load staging table → `CREATE OR REPLACE TABLE target AS SELECT * FROM staging` → `DROP TABLE staging`. No GCS staging. Why a query and not a copy job is in DESIGN's runtime contract.
+- Client: the official `google-cloud-bigquery` 0.16.x, with `google-cloud-bigquery-v2` for table and dataset metadata. Preview, and taken anyway — its write layer is the shape this load needs, the BQ source comes from the same family, and it carries no `arrow` of its own to collide with ours.
 - Destination table-creation options bag (additive over the source-derived DDL): BQ `partition_by=`/`cluster_by=`, both set-at-create and cost-relevant. A PG `primary_key=` waits for incremental loads, which is the only thing that reads one.
-- Auth via `gcp_auth` (ADC, service-account JSON, gcloud, workload identity).
-- Direct Arrow ↔ BQ type mapping: `geography(_, 4326)` → BQ `GEOGRAPHY`, `geometry(_, 4326)` no Z/M → BQ `GEOGRAPHY`. Unsupported types error. Tiered coercion (auto/warn/fail) deferred to 0.6.
+- Auth via `google-cloud-auth` (ADC, service-account JSON, gcloud, workload identity).
+- Direct Arrow ↔ BQ type mapping: `geography(_, 4326)` → BQ `GEOGRAPHY`, `geometry(_, 4326)` no Z/M → BQ `GEOGRAPHY`. Unsupported types error. Tiered coercion (auto/warn/fail) deferred to 0.7.
 - BQ `GEOGRAPHY` exists only in WGS84, so the mapping has to *decide* whether a `geoarrow.wkb` column is WGS84, not merely carry its CRS. `crs: "EPSG:4326"` is a string compare; a PROJJSON or WKT2 CRS needs PROJ, and no geoarrow crate supplies it — `geoarrow-schema` only carries the value and delegates conversion to a `CrsTransform` the caller writes, its own default silently dropping the CRS. So refusing anything but an authority code is the 0.2.0 answer. BQ reads the tag and its metadata for itself; where a shared `Wkb` ends up living is the interchange contract's call.
 - Decide there whether `transferred.pg_range` becomes `transferred.range`. BQ `RANGE<DATE|DATETIME|TIMESTAMP>` is always `[lower, upper)` with NULL for an infinite bound and no empty range at all, so a BQ range fits the same five-field struct — at which point the `pg_` in the name is a lie, and `empty` reads as the PG-only field it is. Renaming is one constant plus the metadata every reader compares against, so it is a 0.2.0 decision, not a 0.1.0 hedge. The name generalises further than the mapping does: `int4range` and `numrange` have no BQ range to land in, so they go as the struct we already store or as a simpler type, decided per range when the mapping is written.
-- `Timestamp(_, None)` → BQ `DATETIME`, never `TIMESTAMP`. Both Arrow `None` and PG `timestamp` mean wall-clock without a zone, and `TIMESTAMP` is an instant, so reaching for it would invent a zone for the commonest column type in a PG schema. Users who want an instant must name the zone the naive values are read in, which is 0.6's `schema=`.
+- `Timestamp(_, None)` → BQ `DATETIME`, never `TIMESTAMP`. Both Arrow `None` and PG `timestamp` mean wall-clock without a zone, and `TIMESTAMP` is an instant, so reaching for it would invent a zone for the commonest column type in a PG schema. Users who want an instant must name the zone the naive values are read in, which is 0.7's `schema=`.
 - `TableFieldSchema.timestamp_precision` lets a BQ column hold picoseconds, which no Arrow unit reaches. Reading one truncates to `Nanosecond`.
 
 **Tasks:**
 
-- [ ] `transferred-bigquery` Storage Write client (tonic + googleapis).
-- [ ] Atomic staging-table + copy-replace + drop-staging flow.
-- [ ] `transferred-bigquery` source — Storage Read API.
-- [ ] Auth integration (`gcp_auth`).
-- [ ] Arrow ↔ BQ type mapping, internal only. The schema comes from the source, so no BQ type is ever named in Python here — that vocabulary arrives with `schema=` in 0.6. Type names come from the `TableFieldSchema.Type` enum in `google/cloud/bigquery/storage/v1/table.proto` — a proto we compile anyway for Storage Write, so prost generates the list and upstream owns it. Verified against googleapis master: `STRING, INT64, DOUBLE, STRUCT, BYTES, BOOL, TIMESTAMP, DATE, TIME, DATETIME, GEOGRAPHY, NUMERIC, BIGNUMERIC, INTERVAL, JSON, RANGE`, plus `Mode: NULLABLE/REQUIRED/REPEATED`.
-  - Two vocabularies exist: Storage Write v1 is GoogleSQL (`INT64`, `BOOL`, `STRUCT`), the v2 REST jobs API is legacy (`INTEGER`, `BOOLEAN`, `RECORD`). Staging-table create + copy job go through v2, so both get touched.
-  - Precision/scale are separate `TableFieldSchema` fields, `ARRAY` is `mode=REPEATED`, `STRUCT` carries `fields` — the enum names only the type.
-- [ ] BQ env-gated integration test.
-- [ ] Round-trip integration tests (PG ↔ BQ).
+- [~] Storage Write client. `write.arrow(schema).pending(table)` opens the stream, `append(batch).send()` hands back one future per batch, `finalize()` then `commit()` close it. Row-level failures arrive as errors already, both `row_errors` and the `Response::Error` that rides inside a successful response.
+- [ ] Arrow over the wire as IPC bytes, framed by `ipc.rs`. The crate depends on no `arrow`, so no version of it ever meets ours — Google's own integration tests frame the bytes the same way.
+- [ ] Staging table through `TableService::insert_table`, no DDL. Arrays are `mode = REPEATED`, structs are `RECORD` plus nested `fields`, precision and scale are their own fields, and `partition_by`/`cluster_by` land as `TimePartitioning`/`Clustering`. The table name travels as data, so nothing here is spelled into SQL.
+- [ ] Swap and drop-staging as query jobs, located from the dataset through `DatasetService::get_dataset`. Both name a table inside SQL text, so `check_identifier` still guards them.
+- [ ] Auth. `google-cloud-auth` honours `GOOGLE_APPLICATION_CREDENTIALS` but has no `_JSON` twin, so CI reads the variable itself and builds the credential from the key with `service_account::Builder`.
+- [~] Arrow ↔ BQ type mapping, internal only. The schema comes from the source, so no BQ type is ever named in Python here — that vocabulary arrives with `schema=` in 0.7. Primitives, `JSON`, `NUMERIC` and `BIGNUMERIC` land; `GEOGRAPHY`, `RANGE`, `uuid` and structs do not yet.
+  - Type names are ours: `TableFieldSchema::type` is a bare `String` in the generated client, so nothing checks the spelling before the server does. Which vocabulary 0.7 borrows instead is open again.
+  - What BQ accepts from an Arrow batch was measured, not assumed: `Decimal128` matches a `NUMERIC` column and `Decimal256` a `BIGNUMERIC`, each refusing the other; `TIMESTAMP` and `DATETIME` take microseconds only, naming the unit when they refuse; `Int16` and `Float32` widen on their own.
+  - Precision/scale are separate `TableFieldSchema` fields, `ARRAY` is `mode=REPEATED`, `STRUCT` carries `fields` — the type name says nothing about any of them.
+- [~] BQ env-gated integration test — `make check-integration`, credentials via `make gcp-login`.
+
+## Interlude — per-destination run report
+
+Runs once the BQ destination lands, while the API is still ours to change.
+
+- `RunReport` becomes per-destination, with the type riding on the destination: `Destination[R]`, then `FilesDestination(Destination[FilesReport])`, and `Transfer[R]` infers `R` from the argument it is handed. `run()` returns `FilesReport` with its paths or `BigQueryReport` with its table and job, and `written_objects` goes away. The generic lives in the hand-written Python wrapper, so the generated `_native` stubs stay as they are.
+- In Rust the report is an associated type on `Destination`, and the closed list of destinations lives in `transferred-py`, which constructs every connector anyway. A forgotten destination fails to compile, and so does one whose report has no Python conversion.
+
+```rust
+// transferred-core, naming no destination
+pub trait Destination {
+    type Written;
+    async fn write_partitions(self, partitions: Vec<BatchStream>) -> Result<RunReport<Self::Written>>;
+}
+```
+
+```rust
+// transferred-py, the one place a closed list belongs
+enum AnyDestination {
+    Files(FilesDestination),
+    Postgres(PostgresDestination),
+    BigQuery(BigQueryDestination),
+}
+
+match destination {
+    AnyDestination::Files(d) => report_class(Transfer::new(source, d).run().await?),
+    AnyDestination::Postgres(d) => report_class(Transfer::new(source, d).run().await?),
+    AnyDestination::BigQuery(d) => report_class(Transfer::new(source, d).run().await?),
+}
+```
+
+- `Transfer` becomes `Transfer<D>`. The source stays `Box<dyn Source>`, having no report to type, so the parameter does not spread; `self: Box<Self>` drops back to `self`.
+- DESIGN's API surface and run-report contract follow, before 0.3 starts.
 
 ## 0.3 — S3 + GCS
 
 - S3 destination (Parquet) via `object_store`.
 - GCS destination (Parquet) — nearly free once S3 works.
 
-## 0.4 — Incremental Postgres -> BQ
+## 0.4 — BigQuery source
+
+Storage Read API, on `google-cloud-bigquery-read`.
+
+- Waits on that crate reaching crates.io: it sits at `0.0.0` in the repo, bootstrapped 19 August 2026, `ReadRows` server-side streaming on the 26th, regenerated on the 29th. Left on googleapis/google-cloud-rust#5745 are their librarian templates and a stream-resume design.
+- The source is `create_read_session` plus the streaming `ReadRows`, with the Arrow IPC bytes coming back through `ipc.rs` the way they went out.
+- Round-trip integration tests (PG ↔ BQ) land with the source, which is what reads a loaded table back.
+
+## 0.5 — Incremental Postgres -> BQ
 
 Model decided — see [INCREMENTAL.md](./docs/design/INCREMENTAL.md), D1–D10.
 
-## 0.5 — Arrow interchange contract
+## 0.6 — Arrow interchange contract
 
 Goal: state what the Arrow layer between a source and a destination *is*, so a connector author learns it from a document rather than from reading `pg_to_arrow.rs`.
 
 **Scope:**
 
-- The contract is implicit today. DESIGN.md §Type system records what 0.1 happens to do; the rules themselves live in each connector's match arms, so a new connector cannot tell which Arrow types it must accept, which it may emit, or what the tags oblige it to.
+- The contract is implicit today. DESIGN.md §Type mapping records what 0.1 happens to do; the rules themselves live in each connector's match arms, so a new connector cannot tell which Arrow types it must accept, which it may emit, or what the tags oblige it to.
 - Spell out the supported `DataType` set per direction, and what is deliberately outside it (`Union` — no Parquet encoding, `Dictionary`, `Duration`, `Interval` past Parquet's reach).
 - Promote the extension tiers from prose to normative: canonical (`arrow.uuid`, `arrow.json`, `arrow.opaque`), community (`geoarrow.wkb`), ours (`transferred.*`, with 0.2.0's `transferred.pg_range` → `transferred.range` decision settled first).
 - Say what a destination owes a tag it does not know. Files writes the metadata verbatim, Postgres refuses and names the type — both are defensible and neither is written down as the rule.
@@ -57,13 +99,13 @@ Goal: state what the Arrow layer between a source and a destination *is*, so a c
 
 Not before here: hiding a `pub` type is a breaking change, so this cannot be a patch, and S3/GCS then incremental are wanted first. Landing it right before the schema redesign also gives that work a written target instead of a moving one.
 
-## 0.6 — schema redesign
+## 0.7 — schema redesign
 
 Implements the source-owned schema direction decided during the Interlude. Replaces the direct per-connector type mapping shipped in 0.1.0/0.2.0 with a canonical vocab + coercion engine + user `schema=` API.
 
 **Scope:**
 
-- Schema inference direction: `Source → Destination`. Source schema is ground truth; user overrides via `columns=` short-circuit source inference; coercion check resolves source → destination compatibility.
+- Schema inference direction: `Source → Destination`. Source schema is ground truth; user overrides via `schema=` short-circuit source inference; coercion check resolves source → destination compatibility.
 - Loud-fail semantics:
   - Static (plan-time): declared precision can never fit target → `SchemaError` before any read.
   - Runtime (row-level): Arrow `cast` with `safe=true`. First overflow row aborts run. Atomic destinations guarantee no half-written state.
@@ -73,7 +115,14 @@ Implements the source-owned schema direction decided during the Interlude. Repla
   column 'foo' (type Z). Likely source schema drift. Override with schema=.
   ```
 - Formal coercion engine — Tier 1 auto, Tier 2 warn, Tier 3 fail. Reporting via `RunReport.coercions`.
-- User schema API in Python: single `schema=` knob. Full by default; partial when an ellipsis key (`...: ...`) is present — remaining columns inferred. Source-side filtering via `columns=` / `skip_columns=` (mutually exclusive). Destination-native vocabulary.
+- User schema API in Python: single `schema=` knob, always `dict[column, type]` with typed objects rather than string literals, so a typo is a red squiggle. Full by default; partial when an ellipsis key (`...: ...`) is present — remaining columns inferred. Source-side filtering via `columns=` / `skip_columns=` (mutually exclusive). Parameterless types are module-level singletons (`t.INT64`), parameterised ones constructors (`t.Numeric(18, 4)`) — precision and scale sit outside the type name upstream too, so those are ours.
+- Vocabulary is per destination, no cross-destination DSL:
+
+| Destination | `schema=` values | Python → Rust seam |
+| ----------- | ---------------- | ------------------ |
+| `FilesDestination` | `pa.DataType` | assemble a `pa.Schema`, hand over `__arrow_c_schema__()` — the C Data Interface `ArrowSource` already uses |
+| `BigQueryDestination` | `transferred.bigquery.types` | `TableFieldSchema`, the Storage Write wire shape |
+| `PostgresDestination` | `transferred.postgres.types` | type name; extension types validated by `::regtype` |
 - Type registry — coverage extended beyond the 0.1.0/0.2.0 direct-mapping baseline.
 
 **Tasks:**
