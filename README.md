@@ -1,6 +1,6 @@
 # transferred
 
-[![Downloads](https://img.shields.io/pypi/dm/transferred.svg)](https://pypi.org/project/transferred/)
+[![Downloads](https://img.shields.io/pypi/dm/transferred.svg?cacheSeconds=86400)](https://pypi.org/project/transferred/)
 [![Check](https://github.com/skatromb/transferred/actions/workflows/check.yml/badge.svg)](https://github.com/skatromb/transferred/actions/workflows/check.yml)
 [![Coverage](https://img.shields.io/codecov/c/github/skatromb/transferred.svg)](https://codecov.io/gh/skatromb/transferred)
 [![PyPI](https://img.shields.io/pypi/v/transferred.svg)](https://pypi.org/project/transferred/)
