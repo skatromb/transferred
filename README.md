@@ -3,16 +3,16 @@
 [![Downloads](https://img.shields.io/pypi/dm/transferred.svg?cacheSeconds=86400)](https://pypi.org/project/transferred/)
 [![Check](https://github.com/skatromb/transferred/actions/workflows/check.yml/badge.svg)](https://github.com/skatromb/transferred/actions/workflows/check.yml)
 [![Coverage](https://img.shields.io/codecov/c/github/skatromb/transferred.svg)](https://codecov.io/gh/skatromb/transferred)
-[![PyPI](https://img.shields.io/pypi/v/transferred.svg)](https://pypi.org/project/transferred/)
 [![Python](https://img.shields.io/pypi/pyversions/transferred.svg)](https://pypi.org/project/transferred/)
+[![PyPI](https://img.shields.io/pypi/v/transferred.svg)](https://pypi.org/project/transferred/)
 [![wemake-python-styleguide](https://img.shields.io/badge/style-wemake-000000.svg)](https://github.com/wemake-services/wemake-python-styleguide)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/skatromb/transferred/blob/main/LICENSE)
 
 <img src="https://raw.githubusercontent.com/skatromb/transferred/main/logo.png" alt="transferred" width="240">
 
 The most convenient batch data transfer tool. Inspired by [dlt](https://dlthub.com).
 
-`transferred` moves table data between systems. Blazing fast, no transformations supported — hand them over to your Data Warehouse.
+`transferred` moves structured data between files, databases, python iterables.
+Blazing fast, no transformations supported — hand them over to your Data Warehouse.
 
 ## Install
 
@@ -57,24 +57,21 @@ More in [examples/](https://github.com/skatromb/transferred/tree/main/examples).
 
 ## Supported
 
-Sources:
-- Parquet file — `FilesSource`
-- Postgres table — `PostgresSource`
-- DataFrames — polars or pandas `DataFrame`, a duckdb result, a `pa.Table`, pyarrow's `RecordBatch` or `RecordBatchReader`
-- Python iterables of `dict` / `@dataclass` / `pydantic.BaseModel` (requires `pip install transferred[iterable]`)
-
-Destinations:
-- Parquet file — `FilesDestination`
-- Postgres table — `PostgresDestination` (full replace, swapped in one transaction)
+| Type | Source | Destination |
+| ------ | ------ | ----------- |
+| Parquet files | `FilesSource` | `FilesDestination` |
+| Database table | `PostgresSource` | `PostgresDestination` |
+| DataFrames | polars or pandas `DataFrame`, a duckdb result, a `pa.Table`, pyarrow's `RecordBatch` or `RecordBatchReader` | — |
+| Python iterables | `dict` / `@dataclass` / `pydantic.BaseModel` (with `pip install transferred[iterable]`) | — |
 
 BigQuery, S3/GCS and incremental loads land later. See [PLAN.md](https://github.com/skatromb/transferred/blob/main/PLAN.md).
 
 ## Promises
 
-- Make data transfers as simple as it could be
-- Enforce best practices by default
+- Best practice by default, override if needed
+- No boring sizing/config
+- No Out-of-memory
 - Blazing fast
-- No OOMs!
 
 ## License
 
