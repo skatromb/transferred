@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn refuses_to_rebuild_over_the_wrong_storage_type() {
         let mut field = ArrowField::new("valid", ArrowType::Int32, true);
-        field.set_metadata([(EXTENSION_TYPE_NAME_KEY, PgRange::NAME)]);
+        field.set_metadata([(EXTENSION_TYPE_NAME_KEY.to_owned(), PgRange::NAME.to_owned())].into());
 
         assert!(field.try_extension_type::<PgRange>().is_err());
     }

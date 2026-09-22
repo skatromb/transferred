@@ -12,7 +12,8 @@ use arrow::buffer::NullBuffer;
 use arrow::datatypes::IntervalMonthDayNano;
 use arrow_schema::extension::{Json, Opaque, Uuid};
 use arrow_schema::{DataType, Field, IntervalUnit, Schema, TimeUnit};
-use transferred_postgres::{PgRange, Wkb};
+use geoarrow_schema::WkbType;
+use transferred_postgres::{PgRange, geoarrow};
 
 use crate::common::read_table;
 
@@ -316,7 +317,7 @@ fn hex_bytes(hex: &str) -> Vec<u8> {
 }
 
 /// Builds a nullable `geoarrow.wkb` field, as the mapping tags a `PostGIS` column.
-fn wkb(name: &str, wkb: Wkb) -> Field {
+fn wkb(name: &str, wkb: WkbType) -> Field {
     nullable(name, DataType::Binary).with_extension_type(wkb)
 }
 
@@ -338,12 +339,12 @@ async fn geometry() {
 
     let expected = expected(
         vec![
-            wkb("geom", Wkb::planar(None)),
-            wkb("pt", Wkb::planar(Some(4326))),
-            wkb("nosrid", Wkb::planar(None)),
-            wkb("geog", Wkb::spherical(Some(4326))),
+            wkb("geom", geoarrow::planar(None)),
+            wkb("pt", geoarrow::planar(Some(4326))),
+            wkb("nosrid", geoarrow::planar(None)),
+            wkb("geog", geoarrow::spherical(Some(4326))),
             // An unconstrained `geography` takes any geographic SRID, 4269 here, not just 4326.
-            wkb("bare", Wkb::spherical(None)),
+            wkb("bare", geoarrow::spherical(None)),
         ],
         vec![
             Arc::new(BinaryArray::from(vec![

@@ -6,7 +6,7 @@ updates:
       interval: weekly
     groups:
       arrow:
-        patterns: ["arrow*", "parquet"]
+        patterns: ["arrow*", "parquet", "geoarrow-schema"]
         update-types: [minor, patch, major]
       cargo:
         patterns: ["*"]
