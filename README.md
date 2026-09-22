@@ -49,11 +49,12 @@ print(report)
 #     orders/part-00001.parquet
 ```
 
+More in [examples/](https://github.com/skatromb/transferred/tree/main/examples).
+
 10M rows of 22 diverse columns including `jsonb` and PostGIS geometry — peaking at 414 MiB RAM, interpreter included.
 
 Look at [docs/DLT_COMPARISON.md](https://github.com/skatromb/transferred/blob/main/docs/DLT_COMPARISON.md) for more performance insights.
 
-More in [examples/](https://github.com/skatromb/transferred/tree/main/examples).
 
 ## Supported
 

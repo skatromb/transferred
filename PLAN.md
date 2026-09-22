@@ -33,6 +33,8 @@ Goal: atomic full load PG → BQ. Direct type mapping, no coercion engine.
   - Precision/scale are separate `TableFieldSchema` fields, `ARRAY` is `mode=REPEATED`, `STRUCT` carries `fields` — the type name says nothing about any of them.
 - [~] BQ env-gated integration test — `make check-integration`, credentials via `make gcp-login`.
 
+## Try hypothesis
+
 ## Interlude — per-destination run report
 
 Runs once the BQ destination lands, while the API is still ours to change.
