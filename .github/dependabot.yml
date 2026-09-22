@@ -7,7 +7,7 @@ updates:
     groups:
       arrow:
         patterns: ["arrow*", "parquet"]
-        update-types: [minor, pathch, major]
+        update-types: [minor, patch, major]
       cargo:
         patterns: ["*"]
         update-types: [minor, patch]
