@@ -18,8 +18,8 @@ transferred-core = { path = "crates/transferred-core", version = "0.1.3" }
 transferred-files = { path = "crates/transferred-files", version = "0.1.3" }
 transferred-postgres = { path = "crates/transferred-postgres", version = "0.1.3" }
 # Held at the major `geoarrow-schema` releases against; the two move together.
-arrow = { version = "59", features = ["prettyprint"] }
-arrow-schema = { version = "59", features = ["canonical_extension_types"] }
+arrow = { version = "60", features = ["prettyprint"] }
+arrow-schema = { version = "60", features = ["canonical_extension_types"] }
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "io-util", "net", "time", "fs"] }
 tokio-stream = "0.1"
 futures = "0.3"
