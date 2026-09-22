@@ -18,6 +18,7 @@ use arrow_schema::{
     DataType as ArrowType, Field as ArrowField, IntervalUnit, Schema, SchemaRef, TimeUnit,
 };
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use geoarrow_schema::WkbType;
 use pg_interval::Interval as PgInterval;
 use postgres_protocol::types::{Range, RangeBound, range_from_sql};
 use rust_decimal::Decimal;
@@ -31,7 +32,7 @@ use crate::convert::{
     BARE_NUMERIC_TYPMOD, CITEXT, GEOGRAPHY, GEOMETRY, decimal_units, geo_srid, month_day_nano,
     numeric_precision_scale,
 };
-use crate::geoarrow::Wkb;
+use crate::geoarrow;
 use crate::pg_range::PgRange;
 
 /// PG stores `timestamptz` as UTC; the original client offset is not retained.
@@ -157,7 +158,7 @@ enum Decoding {
         scale: i8,
     },
     /// `PostGIS` sends EWKB, which `geoarrow.wkb` takes verbatim; only the field names the geo type.
-    Geo(Wkb),
+    Geo(WkbType),
     /// A range arrives as a tag byte plus bounds, each bound through the element's own decoding.
     Range(Box<Decoding>),
     /// No mapping: the bytes pass through, tagged with the Postgres type they came from.
@@ -195,8 +196,8 @@ impl Decoding {
             // Extension-type OIDs differ per database, so `citext` and `PostGIS` match on a name.
             ref text if matches!(text.kind(), Kind::Enum(_)) || text.name() == CITEXT => Self::Text,
             // `geoarrow.wkb` holds EWKB, so the bytes pass through untouched, SRID per value and all.
-            ref geo if geo.name() == GEOMETRY => Self::Geo(Wkb::planar(geo_srid(typmod))),
-            ref geo if geo.name() == GEOGRAPHY => Self::Geo(Wkb::spherical(geo_srid(typmod))),
+            ref geo if geo.name() == GEOMETRY => Self::Geo(geoarrow::planar(geo_srid(typmod))),
+            ref geo if geo.name() == GEOGRAPHY => Self::Geo(geoarrow::spherical(geo_srid(typmod))),
             ref other => {
                 warn!(
                     target: "postgres::source",

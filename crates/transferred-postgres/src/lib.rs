@@ -2,11 +2,10 @@
 mod connection;
 mod convert;
 mod destination;
-mod geoarrow;
+pub mod geoarrow;
 mod pg_range;
 mod source;
 
 pub use destination::{PostgresDestination, STAGING_SUFFIX};
-pub use geoarrow::Wkb;
 pub use pg_range::PgRange;
 pub use source::PostgresSource;

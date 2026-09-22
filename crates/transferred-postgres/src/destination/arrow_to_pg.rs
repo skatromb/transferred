@@ -12,6 +12,7 @@ use arrow::array::{
 use arrow_schema::extension::{ExtensionType, Json, Uuid};
 use arrow_schema::{DataType as ArrowType, Field as ArrowField, IntervalUnit, SchemaRef, TimeUnit};
 use bytes::{BufMut, BytesMut};
+use geoarrow_schema::WkbType;
 use postgres_protocol::IsNull as ProtocolIsNull;
 use postgres_protocol::escape::escape_identifier;
 use postgres_protocol::types::{RangeBound, empty_range_to_sql, range_to_sql};
@@ -21,7 +22,7 @@ use transferred_core::{Result, TransferredError};
 use crate::convert::{
     GEOGRAPHY, GEOMETRY, pg_date, pg_interval, pg_numeric, pg_timestamp, pg_uuid,
 };
-use crate::geoarrow::Wkb;
+use crate::geoarrow;
 use crate::pg_range::{LOWER, PgRange};
 
 /// Postgres column definitions + value encoders, mapped once from an Arrow schema.
@@ -133,7 +134,7 @@ impl Encoding {
             ArrowType::Utf8 if extension == Some(Json::NAME) => Self::Json,
             ArrowType::Utf8 => Self::Text,
             // `PostGIS` gets its OIDs per database, so no `PgType` names it and only the DDL can.
-            ArrowType::Binary if extension == Some(Wkb::NAME) => Self::Geo {
+            ArrowType::Binary if extension == Some(WkbType::NAME) => Self::Geo {
                 sql: geo_sql_type(field)?,
             },
             // Plain bytes, and `arrow.opaque`, whose type name the destination deliberately drops.
@@ -359,17 +360,17 @@ fn write_bound(
 /// subtype, which the tag says nothing about. E.g. `geography(Geometry,4326)`, or bare `geometry`.
 fn geo_sql_type(field: &ArrowField) -> Result<String> {
     let wkb = field
-        .try_extension_type::<Wkb>()
+        .try_extension_type::<WkbType>()
         .map_err(TransferredError::destination)?;
 
     // `geography` bends its edges around the globe; `geometry` keeps them straight.
-    let name = if wkb.is_spherical() {
+    let name = if geoarrow::is_spherical(&wkb) {
         GEOGRAPHY
     } else {
         GEOMETRY
     };
 
-    Ok(match wkb.epsg() {
+    Ok(match geoarrow::epsg(&wkb) {
         Some(epsg) => format!("{name}(Geometry,{epsg})"),
         None => name.to_owned(),
     })
@@ -495,14 +496,15 @@ mod tests {
     #[test]
     fn declares_postgis_columns_from_the_wkb_tag() {
         let schema = Schema::new(vec![
-            ArrowField::new("geom", ArrowType::Binary, true).with_extension_type(Wkb::planar(None)),
+            ArrowField::new("geom", ArrowType::Binary, true)
+                .with_extension_type(geoarrow::planar(None)),
             ArrowField::new("pt", ArrowType::Binary, true)
-                .with_extension_type(Wkb::planar(Some(4326))),
+                .with_extension_type(geoarrow::planar(Some(4326))),
             ArrowField::new("geog", ArrowType::Binary, true)
-                .with_extension_type(Wkb::spherical(Some(4326))),
+                .with_extension_type(geoarrow::spherical(Some(4326))),
             // Bare `geography` is not implicitly 4326: PG takes any SRID into such a column.
             ArrowField::new("bare", ArrowType::Binary, true)
-                .with_extension_type(Wkb::spherical(None)),
+                .with_extension_type(geoarrow::spherical(None)),
         ]);
 
         assert_eq!(
@@ -516,7 +518,7 @@ mod tests {
     fn writes_wkb_verbatim() {
         let wkb: &[u8] = &[1, 2, 3, 4];
         let field = ArrowField::new("geog", ArrowType::Binary, true)
-            .with_extension_type(Wkb::spherical(Some(4326)));
+            .with_extension_type(geoarrow::spherical(Some(4326)));
 
         assert_eq!(
             write_first(field, Arc::new(BinaryArray::from(vec![wkb]))).unwrap(),
