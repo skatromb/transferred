@@ -5,6 +5,9 @@ updates:
     schedule:
       interval: weekly
     groups:
+      arrow:
+        patterns: ["arrow*", "parquet"]
+        update-types: [minor, pathch, major]
       cargo:
         patterns: ["*"]
         update-types: [minor, patch]
