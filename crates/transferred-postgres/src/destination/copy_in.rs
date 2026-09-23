@@ -55,16 +55,9 @@ impl CopyIn {
     /// Writes one COPY row per Arrow row, sending whenever the buffer fills.
     pub async fn write_batch(&mut self, encoder: &Encoder, batch: &RecordBatch) -> Result<()> {
         let columns = encoder.columns(batch)?;
-        let fields_count = i16::try_from(columns.len()).map_err(|_| {
-            TransferredError::destination(format!(
-                "a COPY row holds at most {} columns, not {}",
-                i16::MAX,
-                columns.len()
-            ))
-        })?;
 
         for row_num in 0..batch.num_rows() {
-            self.buf.put_i16(fields_count);
+            self.buf.put_i16(encoder.field_count);
             for (encoder, array) in columns.iter().zip(batch.columns()) {
                 self.push_field(encoder, array.as_ref(), row_num)?;
             }

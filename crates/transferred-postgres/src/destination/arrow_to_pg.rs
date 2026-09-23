@@ -33,6 +33,8 @@ const NANOS_PER_MICRO: i64 = 1_000;
 pub struct Encoder {
     schema: SchemaRef,
     columns: Vec<ColumnEncoder>,
+    /// Fields in every COPY row, which the wire format counts in an `i16`.
+    pub(crate) field_count: i16,
 }
 
 impl Encoder {
@@ -49,7 +51,19 @@ impl Encoder {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(Self { schema, columns })
+        let field_count = i16::try_from(columns.len()).map_err(|_| {
+            TransferredError::destination(format!(
+                "a COPY row holds at most {} columns, not {}",
+                i16::MAX,
+                columns.len()
+            ))
+        })?;
+
+        Ok(Self {
+            schema,
+            columns,
+            field_count,
+        })
     }
 
     /// Column-type list for `CREATE TABLE`, quoted and comma-separated.
