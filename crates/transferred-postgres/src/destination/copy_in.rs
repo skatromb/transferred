@@ -54,11 +54,11 @@ impl CopyIn {
 
     /// Writes one COPY row per Arrow row, sending whenever the buffer fills.
     pub async fn write_batch(&mut self, encoder: &Encoder, batch: &RecordBatch) -> Result<()> {
-        let columns = encoder.columns(batch)?;
+        encoder.check(batch)?;
 
         for row_num in 0..batch.num_rows() {
             self.buf.put_i16(encoder.field_count);
-            for (encoder, array) in columns.iter().zip(batch.columns()) {
+            for (encoder, array) in encoder.columns.iter().zip(batch.columns()) {
                 self.push_field(encoder, array.as_ref(), row_num)?;
             }
 

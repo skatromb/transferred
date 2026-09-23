@@ -32,7 +32,7 @@ const NANOS_PER_MICRO: i64 = 1_000;
 /// Postgres column definitions + value encoders, mapped once from an Arrow schema.
 pub struct Encoder {
     schema: SchemaRef,
-    columns: Vec<ColumnEncoder>,
+    pub(crate) columns: Vec<ColumnEncoder>,
     /// Fields in every COPY row, which the wire format counts in an `i16`.
     pub(crate) field_count: i16,
 }
@@ -76,8 +76,8 @@ impl Encoder {
             .join(", ")
     }
 
-    /// Checks a batch against the mapped schema, then hands back the column encoders.
-    pub fn columns(&self, batch: &RecordBatch) -> Result<&[ColumnEncoder]> {
+    /// Checks a batch against the mapped schema.
+    pub fn check(&self, batch: &RecordBatch) -> Result<()> {
         // The table was created from the first batch, so a later partition may not fit it.
         if batch.schema().fields() != self.schema.fields() {
             return Err(TransferredError::destination(format!(
@@ -87,7 +87,7 @@ impl Encoder {
             )));
         }
 
-        Ok(&self.columns)
+        Ok(())
     }
 }
 
@@ -480,7 +480,8 @@ mod tests {
         let mut buf = BytesMut::new();
 
         let encoder = Encoder::new(schema.into())?;
-        let column = encoder.columns(&batch)?.first().unwrap();
+        encoder.check(&batch)?;
+        let column = encoder.columns.first().unwrap();
         column.write(batch.column(0).as_ref(), 0, &mut buf)?;
         Ok(buf)
     }
@@ -607,7 +608,7 @@ mod tests {
         let batch =
             RecordBatch::try_new(widened, vec![Arc::new(Int64Array::from(vec![1]))]).unwrap();
 
-        assert!(encoder.columns(&batch).is_err());
+        assert!(encoder.check(&batch).is_err());
     }
 
     /// Only fields drive the mapping, so writer metadata on the schema must not reject a batch.
@@ -622,7 +623,7 @@ mod tests {
         let batch =
             RecordBatch::try_new(tagged, vec![Arc::new(Int32Array::from(vec![1]))]).unwrap();
 
-        assert_eq!(encoder.columns(&batch).unwrap().len(), 1);
+        assert!(encoder.check(&batch).is_ok());
     }
 
     /// Names go straight into DDL, and a Parquet field or dict key need not be a bare identifier.
