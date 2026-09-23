@@ -151,10 +151,8 @@ enum Decoding {
     Float4,
     Float8,
     Text,
-    /// `versioned` is `jsonb`, which leads with a format version byte `json` has no room for.
-    Json {
-        versioned: bool,
-    },
+    Json,
+    Jsonb,
     Bytea,
     Uuid,
     Date,
@@ -191,8 +189,8 @@ impl Decoding {
             PgType::TIMESTAMPTZ => Self::Timestamptz,
             PgType::INTERVAL => Self::Interval,
             PgType::UUID => Self::Uuid,
-            PgType::JSON => Self::Json { versioned: false },
-            PgType::JSONB => Self::Json { versioned: true },
+            PgType::JSON => Self::Json,
+            PgType::JSONB => Self::Jsonb,
             PgType::NUMERIC => Self::numeric(typmod, name)?,
             PgType::INT4_RANGE => Self::Range(Box::new(Self::Int4)),
             PgType::INT8_RANGE => Self::Range(Box::new(Self::Int8)),
@@ -248,7 +246,7 @@ impl Decoding {
             Self::Int8 => ArrowType::Int64,
             Self::Float4 => ArrowType::Float32,
             Self::Float8 => ArrowType::Float64,
-            Self::Text | Self::Json { .. } => ArrowType::Utf8,
+            Self::Text | Self::Json | Self::Jsonb => ArrowType::Utf8,
             Self::Bytea | Self::Geo(_) | Self::Opaque(_) => ArrowType::Binary,
             Self::Uuid => ArrowType::FixedSizeBinary(UUID_BYTES),
             Self::Date => ArrowType::Date32,
@@ -268,7 +266,7 @@ impl Decoding {
 
         match self {
             Self::Uuid => field.try_with_extension_type(Uuid)?,
-            Self::Json { .. } => field.try_with_extension_type(Json::default())?,
+            Self::Json | Self::Jsonb => field.try_with_extension_type(Json::default())?,
             Self::Geo(wkb) => field.try_with_extension_type(wkb.clone())?,
             Self::Opaque(opaque) => field.try_with_extension_type(opaque.clone())?,
             Self::Range(_) => field.try_with_extension_type(PgRange)?,
@@ -299,9 +297,9 @@ impl Decoding {
             Self::Float8 => {
                 cast::<Float64Builder>(builder)?.append_option(decode(&PgType::FLOAT8, bytes)?);
             }
-            Self::Text => cast::<StringBuilder>(builder)?.append_option(text(bytes)?),
-            &Self::Json { versioned } => {
-                let json = bytes.map(|bytes| json(bytes, versioned)).transpose()?;
+            Self::Text | Self::Json => cast::<StringBuilder>(builder)?.append_option(text(bytes)?),
+            Self::Jsonb => {
+                let json = bytes.map(jsonb).transpose()?;
                 cast::<StringBuilder>(builder)?.append_option(text(json)?);
             }
             Self::Bytea | Self::Geo(_) | Self::Opaque(_) => {
@@ -395,12 +393,8 @@ fn decode<'a, T: FromSql<'a>>(pg_type: &PgType, bytes: Option<&'a [u8]>) -> Resu
         .map_err(TransferredError::source)
 }
 
-/// Strips the format version byte `jsonb` leads with; `json` sends the document text as it is.
-fn json(bytes: &[u8], versioned: bool) -> Result<&[u8]> {
-    if !versioned {
-        return Ok(bytes);
-    }
-
+/// Strips the format version byte `jsonb` leads with, leaving the document text.
+fn jsonb(bytes: &[u8]) -> Result<&[u8]> {
     match bytes.split_first() {
         Some((1, text)) => Ok(text),
         _ => Err(TransferredError::source(
