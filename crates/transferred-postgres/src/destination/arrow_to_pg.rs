@@ -110,7 +110,7 @@ enum Encoding {
     Interval,
     Numeric {
         precision: u8,
-        scale: i8,
+        scale: u8,
     },
     /// `PostGIS` values write as `bytea`-framed WKB; only the DDL names the geo type.
     Geo {
@@ -149,7 +149,14 @@ impl Encoding {
             // Arrow timestamps are UTC instants whatever the zone name, so the zone needs no lookup.
             ArrowType::Timestamp(TimeUnit::Microsecond, Some(_)) => Self::Timestamptz,
             ArrowType::Interval(IntervalUnit::MonthDayNano) => Self::Interval,
-            &ArrowType::Decimal128(precision, scale) => Self::Numeric { precision, scale },
+            &ArrowType::Decimal128(precision, scale) => Self::Numeric {
+                precision,
+                scale: u8::try_from(scale).map_err(|_| {
+                    TransferredError::destination(
+                        "`Decimal128` with negative scale is not supported",
+                    )
+                })?,
+            },
             ArrowType::Struct(_) if extension == Some(PgRange::NAME) => {
                 let bounds_type =
                     PgRange::type_of(field.data_type()).map_err(TransferredError::destination)?;
@@ -381,12 +388,9 @@ fn geo_sql_type(field: &ArrowField) -> Result<String> {
 }
 
 /// Restates an Arrow count of `10^-scale` units as a decimal, as PG `numeric` carries it.
-fn pg_numeric(units: i128, scale: i8) -> Result<Decimal> {
-    let scale = u32::try_from(scale).map_err(|_| {
-        TransferredError::destination("`Decimal128` with negative scale is not supported in 0.1")
-    })?;
-
-    Decimal::try_from_i128_with_scale(units, scale).map_err(TransferredError::destination)
+fn pg_numeric(units: i128, scale: u8) -> Result<Decimal> {
+    Decimal::try_from_i128_with_scale(units, u32::from(scale))
+        .map_err(TransferredError::destination)
 }
 
 /// PG counts interval time in microseconds, so anything finer than a microsecond has nowhere to go.
@@ -654,9 +658,15 @@ mod tests {
         assert!(pg_numeric(i128::MAX, 9).is_err());
     }
 
+    /// `rust_decimal` holds no negative scale, so the column is refused before any row is read.
     #[test]
-    fn pg_numeric_rejects_negative_scale() {
-        assert!(pg_numeric(15, -2).is_err());
+    fn rejects_a_decimal_with_negative_scale() {
+        let schema = Schema::new(vec![ArrowField::new(
+            "n",
+            ArrowType::Decimal128(5, -2),
+            true,
+        )]);
+        assert!(Encoder::new(schema.into()).is_err());
     }
 
     #[test]

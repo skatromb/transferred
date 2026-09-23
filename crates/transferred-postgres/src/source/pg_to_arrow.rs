@@ -38,7 +38,7 @@ const UTC: &str = "UTC";
 const CITEXT: &str = "citext";
 
 /// Precision and scale for bare `numeric`, matching BQ `NUMERIC` so it lands there uncoerced.
-const BARE_NUMERIC: (u8, i8) = (DECIMAL128_MAX_PRECISION, 9);
+const BARE_NUMERIC: (u8, u8) = (DECIMAL128_MAX_PRECISION, 9);
 
 /// Typmod PG reports for a `numeric` declared without precision.
 const BARE_NUMERIC_TYPMOD: i32 = -1;
@@ -163,7 +163,7 @@ enum Decoding {
     Interval,
     Numeric {
         precision: u8,
-        scale: i8,
+        scale: u8,
     },
     /// `PostGIS` sends EWKB, which `geoarrow.wkb` takes verbatim; only the field names the geo type.
     Geo(WkbType),
@@ -255,7 +255,9 @@ impl Decoding {
             Self::Timestamp => ArrowType::Timestamp(TimeUnit::Microsecond, None),
             Self::Timestamptz => ArrowType::Timestamp(TimeUnit::Microsecond, Some(UTC.into())),
             Self::Interval => ArrowType::Interval(IntervalUnit::MonthDayNano),
-            &Self::Numeric { precision, scale } => ArrowType::Decimal128(precision, scale),
+            &Self::Numeric { precision, scale } => {
+                ArrowType::Decimal128(precision, scale.cast_signed())
+            }
             Self::Range(bounds) => ArrowType::Struct(PgRange::fields(bounds.arrow_type())),
         }
     }
@@ -424,7 +426,7 @@ fn bound<'a>(bound: &RangeBound<Option<&'a [u8]>>) -> Option<&'a [u8]> {
 }
 
 /// Decodes a `numeric` typmod, defaulting bare `numeric` `-1` to (38,9).
-fn numeric_precision_scale(typmod: i32) -> Result<(u8, i8)> {
+fn numeric_precision_scale(typmod: i32) -> Result<(u8, u8)> {
     if typmod == BARE_NUMERIC_TYPMOD {
         return Ok(BARE_NUMERIC);
     }
@@ -435,28 +437,23 @@ fn numeric_precision_scale(typmod: i32) -> Result<(u8, i8)> {
     let precision = ((typmod - 4) >> 16) & 0xffff;
     let scale = (((typmod - 4) & 0x7ff) ^ 0x400) - 0x400;
 
-    // PG holds 1000 digits to Arrow's 38, and PG 15+ decouples scale from precision, so a narrow
-    // column may still carry a scale that busts an i8 or outruns its own precision.
-    match (u8::try_from(precision), i8::try_from(scale)) {
+    // PG holds 1000 digits to Arrow's 38, and PG 15+ lets scale go negative or past precision.
+    match (u8::try_from(precision), u8::try_from(scale)) {
         (Ok(precision), Ok(scale))
-            if precision <= DECIMAL128_MAX_PRECISION
-                && i32::from(scale) <= i32::from(precision) =>
+            if precision <= DECIMAL128_MAX_PRECISION && scale <= precision =>
         {
             Ok((precision, scale))
         }
         _ => Err(TransferredError::source(format!(
-            "`numeric({precision},{scale})` is outside Arrow `Decimal128`, which holds \
-             {DECIMAL128_MAX_PRECISION} digits and no more scale than precision"
+            "`numeric({precision},{scale})` is not supported: it needs at most \
+             {DECIMAL128_MAX_PRECISION} digits and a scale from 0 to its precision"
         ))),
     }
 }
 
 /// Restates a decimal as an integer count of `10^-scale` units, as Arrow `Decimal128` stores it.
-fn decimal_units(mut decimal: Decimal, scale: i8) -> Result<i128> {
-    let scale = u32::try_from(scale).map_err(|_| {
-        TransferredError::source("`numeric` with negative scale is not supported in 0.1")
-    })?;
-
+fn decimal_units(mut decimal: Decimal, scale: u8) -> Result<i128> {
+    let scale = u32::from(scale);
     decimal.rescale(scale);
     if decimal.scale() != scale {
         return Err(TransferredError::source(format!(
@@ -608,7 +605,6 @@ mod tests {
     const NUMERIC_38_9: i32 = 2_490_381;
     const NUMERIC_5_NEG2: i32 = 329_730;
     const NUMERIC_1000_500: i32 = 65_536_504;
-    const NUMERIC_5_200: i32 = 327_884;
     const NUMERIC_5_10: i32 = 327_694;
 
     /// Largest mantissa `rust_decimal` can hold: 2^96 - 1, with no room to zero-pad.
@@ -627,19 +623,14 @@ mod tests {
 
     /// PG 15+ allows negative scale; the decode must not read it as a large positive one.
     #[test]
-    fn typmod_keeps_negative_scale_negative() {
-        assert_eq!(numeric_precision_scale(NUMERIC_5_NEG2).unwrap(), (5, -2));
+    fn typmod_rejects_negative_scale_by_its_value() {
+        let error = numeric_precision_scale(NUMERIC_5_NEG2).unwrap_err();
+        assert!(format!("{error:?}").contains("numeric(5,-2)"));
     }
 
     #[test]
     fn typmod_rejects_precision_past_decimal128() {
         assert!(numeric_precision_scale(NUMERIC_1000_500).is_err());
-    }
-
-    /// PG 15+ decouples scale from precision, so a narrow column can still carry an i8-busting scale.
-    #[test]
-    fn typmod_rejects_scale_past_i8() {
-        assert!(numeric_precision_scale(NUMERIC_5_200).is_err());
     }
 
     /// PG takes `numeric(5,10)`; Arrow `Decimal128` does not, and would build a broken array from it.
@@ -682,11 +673,6 @@ mod tests {
             decimal_units(Decimal::new(-1_234_567_885, 10), 9).unwrap(),
             -123_456_789
         );
-    }
-
-    #[test]
-    fn decimal_units_rejects_negative_scale() {
-        assert!(decimal_units(Decimal::new(15, 1), -2).is_err());
     }
 
     #[test]
