@@ -78,6 +78,8 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           manylinux: auto
+          # Vendored OpenSSL's build script needs `IPC::Cmd`, which the manylinux image lacks.
+          before-script-linux: yum install -y perl-IPC-Cmd
           working-directory: crates/transferred-py
           args: --release --out dist --find-interpreter
 
