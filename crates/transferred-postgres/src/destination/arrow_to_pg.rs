@@ -113,9 +113,7 @@ enum Encoding {
         scale: u8,
     },
     /// `PostGIS` values write as `bytea`-framed WKB; only the DDL names the geo type.
-    Geo {
-        sql: String,
-    },
+    Geo(WkbType),
     /// A range writes as a tag byte plus bounds, each bound through the element's own encoding.
     Range {
         pg_type: PgType,
@@ -138,9 +136,11 @@ impl Encoding {
             ArrowType::Utf8 if extension == Some(Json::NAME) => Self::Json,
             ArrowType::Utf8 => Self::Text,
             // `PostGIS` gets its OIDs per database, so no `PgType` names it and only the DDL can.
-            ArrowType::Binary if extension == Some(WkbType::NAME) => Self::Geo {
-                sql: geo_sql_type(field)?,
-            },
+            ArrowType::Binary if extension == Some(WkbType::NAME) => Self::Geo(
+                field
+                    .try_extension_type()
+                    .map_err(TransferredError::destination)?,
+            ),
             // Plain bytes, and `arrow.opaque`, whose type name the destination deliberately drops.
             ArrowType::Binary => Self::Bytea,
             ArrowType::FixedSizeBinary(16) if extension == Some(Uuid::NAME) => Self::Uuid,
@@ -179,7 +179,7 @@ impl Encoding {
     fn sql_type(&self) -> String {
         match self {
             Self::Numeric { precision, scale } => format!("numeric({precision},{scale})"),
-            Self::Geo { sql } => sql.clone(),
+            Self::Geo(wkb) => geo_sql_type(wkb),
             other => other.pg_type().name().to_owned(),
         }
     }
@@ -195,7 +195,7 @@ impl Encoding {
             Self::Float8 => PgType::FLOAT8,
             Self::Text => PgType::TEXT,
             Self::Json => PgType::JSON,
-            Self::Bytea | Self::Geo { .. } => PgType::BYTEA,
+            Self::Bytea | Self::Geo(_) => PgType::BYTEA,
             Self::Uuid => PgType::UUID,
             Self::Date => PgType::DATE,
             Self::Timestamp => PgType::TIMESTAMP,
@@ -238,7 +238,7 @@ impl Encoding {
                 Ok(IsNull::No)
             }
             // Binary COPY sends no types of its own, so `bytea` framing reaches `geometry_recv`.
-            Self::Bytea | Self::Geo { .. } => cast::<BinaryArray>(array)?
+            Self::Bytea | Self::Geo(_) => cast::<BinaryArray>(array)?
                 .value(row_num)
                 .to_sql(&pg_type, buf),
             Self::Uuid => {
@@ -352,22 +352,18 @@ fn write_bound(
 
 /// SQL type for a `geoarrow.wkb` field, constrained to its coordinate system but not to a geometry
 /// subtype, which the tag says nothing about. E.g. `geography(Geometry,4326)`, or bare `geometry`.
-fn geo_sql_type(field: &ArrowField) -> Result<String> {
-    let wkb = field
-        .try_extension_type::<WkbType>()
-        .map_err(TransferredError::destination)?;
-
+fn geo_sql_type(wkb: &WkbType) -> String {
     // `geography` bends its edges around the globe; `geometry` keeps them straight.
-    let name = if geoarrow::is_spherical(&wkb) {
+    let name = if geoarrow::is_spherical(wkb) {
         GEOGRAPHY
     } else {
         GEOMETRY
     };
 
-    Ok(match geoarrow::epsg(&wkb) {
+    match geoarrow::epsg(wkb) {
         Some(epsg) => format!("{name}(Geometry,{epsg})"),
         None => name.to_owned(),
-    })
+    }
 }
 
 /// Restates an Arrow count of `10^-scale` units as a decimal, as PG `numeric` carries it.
