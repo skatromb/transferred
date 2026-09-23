@@ -9,9 +9,11 @@ use rustls::{ClientConfig, DigitallySignedStruct, Error as TlsError, SignatureSc
 use tokio_postgres::{Client, Config};
 use tokio_postgres_rustls::MakeRustlsConnect;
 use tracing::warn;
-use url::Url;
 
 type AnyError = Box<dyn std::error::Error + Send + Sync>;
+
+/// libpq's strictest `sslmode`, spelled the same in URL and key=value DSNs; `Config` rejects it.
+const VERIFY_FULL: &str = "sslmode=verify-full";
 
 /// Connects to Postgres, reading `sslmode` out of the DSN the way libpq does.
 pub(crate) async fn connect(dsn: &str) -> Result<Client, AnyError> {
@@ -33,30 +35,10 @@ pub(crate) async fn connect(dsn: &str) -> Result<Client, AnyError> {
 
 /// Rewrites `sslmode=verify-full` to the `require` `Config` understands, and reports the intent.
 fn split_verify_full(dsn: &str) -> (String, bool) {
-    let Ok(mut url) = Url::parse(dsn) else {
-        return (dsn.to_owned(), false);
-    };
-    if !url
-        .query_pairs()
-        .any(|(key, value)| key == "sslmode" && value == "verify-full")
-    {
-        return (dsn.to_owned(), false);
-    }
-
-    let rewritten: Vec<_> = url
-        .query_pairs()
-        .map(|(key, value)| {
-            let value = if key == "sslmode" {
-                "require".into()
-            } else {
-                value
-            };
-            (key.into_owned(), value.into_owned())
-        })
-        .collect();
-    url.query_pairs_mut().clear().extend_pairs(rewritten);
-
-    (url.into(), true)
+    (
+        dsn.replace(VERIFY_FULL, "sslmode=require"),
+        dsn.contains(VERIFY_FULL),
+    )
 }
 
 /// A rustls connector that authenticates the server only when `verify-full` asked it to.
@@ -145,6 +127,14 @@ mod tests {
             dsn,
             "postgresql://u:p@h/db?sslmode=require&application_name=x"
         );
+        assert!(verify);
+    }
+
+    #[test]
+    fn rewrites_verify_full_in_key_value_form() {
+        let (dsn, verify) = split_verify_full("host=h user=u sslmode=verify-full dbname=db");
+
+        assert_eq!(dsn, "host=h user=u sslmode=require dbname=db");
         assert!(verify);
     }
 

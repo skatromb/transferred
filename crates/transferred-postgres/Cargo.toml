@@ -32,7 +32,6 @@ geoarrow-schema = "0.9"
 pg_interval = "0.6"
 rust_decimal = { version = "1", default-features = false, features = ["db-tokio-postgres"] }
 uuid = "1"
-url = "2.5"
 
 [features]
 # Integration tests that spin up a throwaway Postgres container. Needs Docker.
