@@ -3,8 +3,6 @@
 mod arrow_to_pg;
 mod copy_in;
 
-use std::future::ready;
-use std::pin::pin;
 use std::time::Instant;
 
 use async_trait::async_trait;
@@ -123,10 +121,10 @@ impl Target {
         let encoder = Encoder::new(first.schema())?;
         self.create_staging(client, &encoder.declarations()).await?;
 
-        let mut batches = pin!(stream::once(ready(Ok(first))).chain(rest));
         let mut copy = CopyIn::open(client, &self.staging).await?;
+        copy.write_batch(&encoder, &first).await?;
 
-        while let Some(batch) = batches.try_next().await? {
+        while let Some(batch) = rest.try_next().await? {
             copy.write_batch(&encoder, &batch).await?;
         }
 
