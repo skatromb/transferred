@@ -118,7 +118,7 @@ enum Encoding {
     },
     /// A range writes as a tag byte plus bounds, each bound through the element's own encoding.
     Range {
-        sql: String,
+        pg_type: PgType,
         element: Box<Encoding>,
     },
 }
@@ -163,7 +163,7 @@ impl Encoding {
                 let element = Self::new(&ArrowField::new(LOWER, bounds_type.clone(), true))?;
 
                 Self::Range {
-                    sql: range_sql(&element)?.to_owned(),
+                    pg_type: range_type(&element)?,
                     element: Box::new(element),
                 }
             }
@@ -177,26 +177,33 @@ impl Encoding {
 
     /// Type half of the column's DDL, e.g. `numeric(38,9)`; the test suite pins every name.
     fn sql_type(&self) -> String {
-        let name = match self {
-            Self::Bool => "bool",
-            Self::Int2 => "int2",
-            Self::Int4 => "int4",
-            Self::Int8 => "int8",
-            Self::Float4 => "float4",
-            Self::Float8 => "float8",
-            Self::Text => "text",
-            Self::Json => "json",
-            Self::Bytea => "bytea",
-            Self::Uuid => "uuid",
-            Self::Date => "date",
-            Self::Timestamp => "timestamp",
-            Self::Timestamptz => "timestamptz",
-            Self::Interval => "interval",
-            Self::Numeric { precision, scale } => return format!("numeric({precision},{scale})"),
-            Self::Geo { sql } | Self::Range { sql, .. } => sql.as_str(),
-        };
+        match self {
+            Self::Numeric { precision, scale } => format!("numeric({precision},{scale})"),
+            Self::Geo { sql } => sql.clone(),
+            other => other.pg_type().name().to_owned(),
+        }
+    }
 
-        name.to_owned()
+    /// Postgres type the values are written as; geometry travels framed as `bytea`.
+    fn pg_type(&self) -> PgType {
+        match self {
+            Self::Bool => PgType::BOOL,
+            Self::Int2 => PgType::INT2,
+            Self::Int4 => PgType::INT4,
+            Self::Int8 => PgType::INT8,
+            Self::Float4 => PgType::FLOAT4,
+            Self::Float8 => PgType::FLOAT8,
+            Self::Text => PgType::TEXT,
+            Self::Json => PgType::JSON,
+            Self::Bytea | Self::Geo { .. } => PgType::BYTEA,
+            Self::Uuid => PgType::UUID,
+            Self::Date => PgType::DATE,
+            Self::Timestamp => PgType::TIMESTAMP,
+            Self::Timestamptz => PgType::TIMESTAMPTZ,
+            Self::Interval => PgType::INTERVAL,
+            Self::Numeric { .. } => PgType::NUMERIC,
+            Self::Range { pg_type, .. } => pg_type.clone(),
+        }
     }
 
     /// Writes one value in Postgres binary form; nulls stop here, before any downcast.
@@ -205,91 +212,67 @@ impl Encoding {
             return Ok(IsNull::Yes);
         }
 
-        match self {
-            Self::Bool => write_sql(
-                &cast::<BooleanArray>(array)?.value(row_num),
-                &PgType::BOOL,
-                buf,
-            ),
-            Self::Int2 => write_sql(
-                &cast::<Int16Array>(array)?.value(row_num),
-                &PgType::INT2,
-                buf,
-            ),
-            Self::Int4 => write_sql(
-                &cast::<Int32Array>(array)?.value(row_num),
-                &PgType::INT4,
-                buf,
-            ),
-            Self::Int8 => write_sql(
-                &cast::<Int64Array>(array)?.value(row_num),
-                &PgType::INT8,
-                buf,
-            ),
-            Self::Float4 => write_sql(
-                &cast::<Float32Array>(array)?.value(row_num),
-                &PgType::FLOAT4,
-                buf,
-            ),
-            Self::Float8 => write_sql(
-                &cast::<Float64Array>(array)?.value(row_num),
-                &PgType::FLOAT8,
-                buf,
-            ),
+        let pg_type = self.pg_type();
+        let written = match self {
+            Self::Bool => cast::<BooleanArray>(array)?
+                .value(row_num)
+                .to_sql(&pg_type, buf),
+            Self::Int2 => cast::<Int16Array>(array)?
+                .value(row_num)
+                .to_sql(&pg_type, buf),
+            Self::Int4 => cast::<Int32Array>(array)?
+                .value(row_num)
+                .to_sql(&pg_type, buf),
+            Self::Int8 => cast::<Int64Array>(array)?
+                .value(row_num)
+                .to_sql(&pg_type, buf),
+            Self::Float4 => cast::<Float32Array>(array)?
+                .value(row_num)
+                .to_sql(&pg_type, buf),
+            Self::Float8 => cast::<Float64Array>(array)?
+                .value(row_num)
+                .to_sql(&pg_type, buf),
             // `json` takes the same bytes as `text`; PG validates the document as it reads it.
             Self::Text | Self::Json => {
                 buf.put_slice(cast::<StringArray>(array)?.value(row_num).as_bytes());
                 Ok(IsNull::No)
             }
             // Binary COPY sends no types of its own, so `bytea` framing reaches `geometry_recv`.
-            Self::Bytea | Self::Geo { .. } => write_sql(
-                &cast::<BinaryArray>(array)?.value(row_num),
-                &PgType::BYTEA,
-                buf,
-            ),
-            Self::Uuid => write_sql(
-                &pg_uuid(cast::<FixedSizeBinaryArray>(array)?.value(row_num))?,
-                &PgType::UUID,
-                buf,
-            ),
-            Self::Date => write_sql(
-                &pg_date(cast::<Date32Array>(array)?.value(row_num))?,
-                &PgType::DATE,
-                buf,
-            ),
-            Self::Timestamp => write_sql(
-                &pg_timestamp(cast::<TimestampMicrosecondArray>(array)?.value(row_num))?
-                    .naive_utc(),
-                &PgType::TIMESTAMP,
-                buf,
-            ),
-            Self::Timestamptz => write_sql(
-                &pg_timestamp(cast::<TimestampMicrosecondArray>(array)?.value(row_num))?,
-                &PgType::TIMESTAMPTZ,
-                buf,
-            ),
-            Self::Interval => write_sql(
-                &pg_interval(cast::<IntervalMonthDayNanoArray>(array)?.value(row_num))?,
-                &PgType::INTERVAL,
-                buf,
-            ),
-            Self::Numeric { scale, .. } => write_sql(
-                &pg_numeric(cast::<Decimal128Array>(array)?.value(row_num), *scale)?,
-                &PgType::NUMERIC,
-                buf,
-            ),
-            Self::Range { element, .. } => {
-                write_range(element, cast::<StructArray>(array)?, row_num, buf)
+            Self::Bytea | Self::Geo { .. } => cast::<BinaryArray>(array)?
+                .value(row_num)
+                .to_sql(&pg_type, buf),
+            Self::Uuid => {
+                pg_uuid(cast::<FixedSizeBinaryArray>(array)?.value(row_num))?.to_sql(&pg_type, buf)
             }
-        }
-    }
-}
+            Self::Date => {
+                pg_date(cast::<Date32Array>(array)?.value(row_num))?.to_sql(&pg_type, buf)
+            }
+            Self::Timestamp => {
+                pg_timestamp(cast::<TimestampMicrosecondArray>(array)?.value(row_num))?
+                    .naive_utc()
+                    .to_sql(&pg_type, buf)
+            }
+            Self::Timestamptz => {
+                pg_timestamp(cast::<TimestampMicrosecondArray>(array)?.value(row_num))?
+                    .to_sql(&pg_type, buf)
+            }
+            // `PgInterval` has an inherent `to_sql` rendering text, which shadows the trait's.
+            Self::Interval => ToSql::to_sql(
+                &pg_interval(cast::<IntervalMonthDayNanoArray>(array)?.value(row_num))?,
+                &pg_type,
+                buf,
+            ),
+            Self::Numeric { scale, .. } => {
+                pg_numeric(cast::<Decimal128Array>(array)?.value(row_num), *scale)?
+                    .to_sql(&pg_type, buf)
+            }
+            Self::Range { element, .. } => {
+                return write_range(element, cast::<StructArray>(array)?, row_num, buf);
+            }
+        };
 
-/// Writes one value in Postgres binary form, turning a `ToSql` failure into a destination error.
-fn write_sql(value: &impl ToSql, pg_type: &PgType, buf: &mut BytesMut) -> Result<IsNull> {
-    value
-        .to_sql(pg_type, buf)
-        .map_err(TransferredError::destination)
+        written.map_err(TransferredError::destination)
+    }
 }
 
 /// Downcasts an Arrow column; a mismatch is unreachable, as the encoding came from the same field.
@@ -299,15 +282,15 @@ fn cast<A: 'static>(array: &dyn Array) -> Result<&A> {
     })
 }
 
-/// Names the Postgres range over `element`; a range outside these six is defined per database.
-fn range_sql(element: &Encoding) -> Result<&'static str> {
+/// Picks the Postgres range over `element`; a range outside these six is defined per database.
+fn range_type(element: &Encoding) -> Result<PgType> {
     Ok(match element {
-        Encoding::Int4 => "int4range",
-        Encoding::Int8 => "int8range",
-        Encoding::Numeric { .. } => "numrange",
-        Encoding::Date => "daterange",
-        Encoding::Timestamp => "tsrange",
-        Encoding::Timestamptz => "tstzrange",
+        Encoding::Int4 => PgType::INT4_RANGE,
+        Encoding::Int8 => PgType::INT8_RANGE,
+        Encoding::Numeric { .. } => PgType::NUM_RANGE,
+        Encoding::Date => PgType::DATE_RANGE,
+        Encoding::Timestamp => PgType::TS_RANGE,
+        Encoding::Timestamptz => PgType::TSTZ_RANGE,
         other => {
             return Err(TransferredError::destination(format!(
                 "Postgres has no built-in range over `{}`",
