@@ -9,21 +9,25 @@ use arrow::array::{
     Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, IntervalMonthDayNanoArray,
     RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
 };
+use arrow::datatypes::{Date32Type, IntervalMonthDayNano};
 use arrow_schema::extension::{ExtensionType, Json, Uuid};
 use arrow_schema::{DataType as ArrowType, Field as ArrowField, IntervalUnit, SchemaRef, TimeUnit};
 use bytes::{BufMut, BytesMut};
+use chrono::{DateTime, NaiveDate, Utc};
 use geoarrow_schema::WkbType;
+use pg_interval::Interval as PgInterval;
 use postgres_protocol::IsNull as ProtocolIsNull;
 use postgres_protocol::escape::escape_identifier;
 use postgres_protocol::types::{RangeBound, empty_range_to_sql, range_to_sql};
+use rust_decimal::Decimal;
 use tokio_postgres::types::{IsNull, ToSql, Type as PgType};
 use transferred_core::{Result, TransferredError};
 
-use crate::convert::{
-    GEOGRAPHY, GEOMETRY, pg_date, pg_interval, pg_numeric, pg_timestamp, pg_uuid,
-};
-use crate::geoarrow;
+use crate::geoarrow::{self, GEOGRAPHY, GEOMETRY};
 use crate::pg_range::{LOWER, PgRange};
+
+/// PG counts sub-second time in microseconds; Arrow intervals count nanoseconds.
+const NANOS_PER_MICRO: i64 = 1_000;
 
 /// Postgres column definitions + value encoders, mapped once from an Arrow schema.
 pub struct Encoder {
@@ -375,6 +379,51 @@ fn geo_sql_type(field: &ArrowField) -> Result<String> {
         None => name.to_owned(),
     })
 }
+
+/// Restates an Arrow count of `10^-scale` units as a decimal, as PG `numeric` carries it.
+fn pg_numeric(units: i128, scale: i8) -> Result<Decimal> {
+    let scale = u32::try_from(scale).map_err(|_| {
+        TransferredError::destination("`Decimal128` with negative scale is not supported in 0.1")
+    })?;
+
+    Decimal::try_from_i128_with_scale(units, scale).map_err(TransferredError::destination)
+}
+
+/// PG counts interval time in microseconds, so anything finer than a microsecond has nowhere to go.
+fn pg_interval(interval: IntervalMonthDayNano) -> Result<PgInterval> {
+    if interval.nanoseconds % NANOS_PER_MICRO != 0 {
+        return Err(TransferredError::destination(format!(
+            "`interval` of {}ns is finer than the microsecond Postgres stores",
+            interval.nanoseconds
+        )));
+    }
+
+    Ok(PgInterval::new(
+        interval.months,
+        interval.days,
+        interval.nanoseconds / NANOS_PER_MICRO,
+    ))
+}
+
+/// Restates a count of days from the epoch as a date, as PG stores it.
+fn pg_date(days: i32) -> Result<NaiveDate> {
+    Date32Type::to_naive_date_opt(days).ok_or_else(|| {
+        TransferredError::destination(format!("`date` {days} days from epoch is out of range"))
+    })
+}
+
+/// Restates a count of microseconds from the epoch as a UTC instant, as PG stores it.
+fn pg_timestamp(micros: i64) -> Result<DateTime<Utc>> {
+    DateTime::from_timestamp_micros(micros).ok_or_else(|| {
+        TransferredError::destination(format!("timestamp {micros}µs from epoch is out of range"))
+    })
+}
+
+/// Reads 16 Arrow bytes as a uuid.
+fn pg_uuid(bytes: &[u8]) -> Result<uuid::Uuid> {
+    uuid::Uuid::from_slice(bytes).map_err(TransferredError::destination)
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -590,5 +639,37 @@ mod tests {
             Encoder::new(awkward.into()).unwrap().declarations(),
             r#""Total Sales" int4, "user.id" text"#
         );
+    }
+
+    #[test]
+    fn pg_numeric_restates_units_at_scale() {
+        assert_eq!(pg_numeric(1_500_000_000, 9).unwrap(), Decimal::new(15, 1));
+        assert_eq!(pg_numeric(-250_000_000, 9).unwrap(), Decimal::new(-25, 2));
+        assert_eq!(pg_numeric(0, 4).unwrap(), Decimal::ZERO);
+    }
+
+    /// Arrow holds 38 digits, `rust_decimal` 29, so the widest Arrow decimals have nowhere to land.
+    #[test]
+    fn pg_numeric_rejects_units_past_the_rust_decimal_mantissa() {
+        assert!(pg_numeric(i128::MAX, 9).is_err());
+    }
+
+    #[test]
+    fn pg_numeric_rejects_negative_scale() {
+        assert!(pg_numeric(15, -2).is_err());
+    }
+
+    #[test]
+    fn pg_interval_keeps_months_days_and_micros_separate() {
+        let interval = pg_interval(IntervalMonthDayNano::new(14, 3, 14_706_789_000_000)).unwrap();
+        assert_eq!(
+            (interval.months, interval.days, interval.microseconds),
+            (14, 3, 14_706_789_000)
+        );
+    }
+
+    #[test]
+    fn pg_interval_rejects_sub_microsecond_precision() {
+        assert!(pg_interval(IntervalMonthDayNano::new(0, 0, 1)).is_err());
     }
 }

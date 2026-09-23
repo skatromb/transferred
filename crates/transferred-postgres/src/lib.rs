@@ -1,6 +1,5 @@
 //! Postgres source + destination. tokio-postgres + binary COPY, both directions.
 mod connection;
-mod convert;
 mod destination;
 pub mod geoarrow;
 mod pg_range;
