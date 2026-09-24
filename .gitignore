@@ -13,3 +13,4 @@ __pycache__/
 /perf/.fixtures/
 /perf/.results/
 /perf/.venvs/
+/.agents/worktrees/
