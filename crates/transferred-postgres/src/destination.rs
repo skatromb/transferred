@@ -44,36 +44,37 @@ impl PostgresDestination {
 impl Destination for PostgresDestination {
     async fn write_partitions(self: Box<Self>, partitions: Vec<BatchStream>) -> Result<RunReport> {
         let start = Instant::now();
-        let mut client = connect(&self.dsn)
+        let client = connect(&self.dsn)
             .await
             .map_err(TransferredError::destination)?;
-        let target = Target::resolve(&client, &self.table).await?;
+        let mut loader = Loader::new(client, &self.table).await?;
 
-        let rows = match target.load(&client, partitions).await {
-            Ok(rows) => rows,
-            Err(error) => {
-                target.drop_staging(&client).await;
-                return Err(error);
-            }
-        };
-
-        if let Err(error) = target.swap(&mut client).await {
-            target.drop_staging(&client).await;
-            return Err(error);
+        let result: Result<u64> = async {
+            let rows = loader.load(partitions).await?;
+            loader.swap().await?;
+            Ok(rows)
         }
+        .await;
+
+        if result.is_err() {
+            loader.drop_staging().await;
+        }
+        let rows = result?;
 
         Ok(RunReport {
             rows,
             bytes_written: 0,
-            written_objects: vec![target.qualified.clone()],
+            written_objects: vec![loader.qualified.clone()],
             duration: start.elapsed(),
             coercions: vec![],
         })
     }
 }
 
-/// A resolved target table and the staging table standing in for it during the load.
-struct Target {
+/// Loads into a target table through its staging table, over one connection.
+struct Loader {
+    /// Connection every statement of the load runs on.
+    client: Client,
     /// Quoted, schema-qualified target, ready to interpolate into SQL.
     qualified: String,
     /// Quoted, schema-qualified staging table.
@@ -82,9 +83,9 @@ struct Target {
     bare: String,
 }
 
-impl Target {
+impl Loader {
     /// Splits `table` into identifier parts using PG's own parser, then requotes both names.
-    async fn resolve(client: &Client, table: &str) -> Result<Self> {
+    async fn new(client: Client, table: &str) -> Result<Self> {
         let parts: Vec<String> = client
             .query_one("select parse_ident($1)", &[&table])
             .await
@@ -107,11 +108,12 @@ impl Target {
             qualified: qualify(schema, name),
             staging: qualify(schema, &staging),
             bare: escape_identifier(name),
+            client,
         })
     }
 
     /// Creates the staging table from the first batch's schema, then COPYs every batch into it.
-    async fn load(&self, client: &Client, partitions: Vec<BatchStream>) -> Result<u64> {
+    async fn load(&self, partitions: Vec<BatchStream>) -> Result<u64> {
         let mut rest = stream::iter(partitions).flatten().boxed();
 
         let Some(first) = rest.try_next().await? else {
@@ -119,9 +121,9 @@ impl Target {
         };
 
         let encoder = Encoder::new(first.schema())?;
-        self.create_staging(client, &encoder.declarations()).await?;
+        self.create_staging(&encoder.declarations()).await?;
 
-        let mut copy = CopyIn::open(client, &self.staging).await?;
+        let mut copy = CopyIn::open(&self.client, &self.staging).await?;
         copy.write_batch(&encoder, &first).await?;
 
         while let Some(batch) = rest.try_next().await? {
@@ -132,8 +134,9 @@ impl Target {
     }
 
     /// Replaces the target with the staging table in one transaction, so the swap is all-or-nothing.
-    async fn swap(&self, client: &mut Client) -> Result<()> {
-        let transaction = client
+    async fn swap(&mut self) -> Result<()> {
+        let transaction = self
+            .client
             .transaction()
             .await
             .map_err(TransferredError::destination)?;
@@ -156,8 +159,8 @@ impl Target {
     }
 
     /// Creates the staging table, replacing whatever an interrupted load left behind.
-    async fn create_staging(&self, client: &Client, declarations: &str) -> Result<()> {
-        client
+    async fn create_staging(&self, declarations: &str) -> Result<()> {
+        self.client
             .batch_execute(&format!(
                 "drop table if exists {staging}; create table {staging} ({declarations})",
                 staging = self.staging,
@@ -167,9 +170,9 @@ impl Target {
     }
 
     /// Removes a leftover staging table, logging failures rather than masking the error that got us here.
-    async fn drop_staging(&self, client: &Client) {
+    async fn drop_staging(&self) {
         let sql = format!("drop table if exists {}", self.staging);
-        if let Err(error) = client.batch_execute(&sql).await {
+        if let Err(error) = self.client.batch_execute(&sql).await {
             warn!(target: "postgres::destination", table = %self.staging, %error, "failed to drop staging table");
         }
     }
