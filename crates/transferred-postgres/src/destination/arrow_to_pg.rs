@@ -9,26 +9,32 @@ use arrow::array::{
     Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, IntervalMonthDayNanoArray,
     RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
 };
+use arrow::datatypes::{Date32Type, IntervalMonthDayNano};
 use arrow_schema::extension::{ExtensionType, Json, Uuid};
 use arrow_schema::{DataType as ArrowType, Field as ArrowField, IntervalUnit, SchemaRef, TimeUnit};
 use bytes::{BufMut, BytesMut};
+use chrono::{DateTime, NaiveDate, Utc};
 use geoarrow_schema::WkbType;
+use pg_interval::Interval as PgInterval;
 use postgres_protocol::IsNull as ProtocolIsNull;
 use postgres_protocol::escape::escape_identifier;
 use postgres_protocol::types::{RangeBound, empty_range_to_sql, range_to_sql};
+use rust_decimal::Decimal;
 use tokio_postgres::types::{IsNull, ToSql, Type as PgType};
 use transferred_core::{Result, TransferredError};
 
-use crate::convert::{
-    GEOGRAPHY, GEOMETRY, pg_date, pg_interval, pg_numeric, pg_timestamp, pg_uuid,
-};
-use crate::geoarrow;
+use crate::geoarrow::{self, GEOGRAPHY, GEOMETRY};
 use crate::pg_range::{LOWER, PgRange};
+
+/// PG counts sub-second time in microseconds; Arrow intervals count nanoseconds.
+const NANOS_PER_MICRO: i64 = 1_000;
 
 /// Postgres column definitions + value encoders, mapped once from an Arrow schema.
 pub struct Encoder {
     schema: SchemaRef,
-    columns: Vec<ColumnEncoder>,
+    pub(crate) columns: Vec<ColumnEncoder>,
+    /// Fields in every COPY row, which the wire format counts in an `i16`.
+    pub(crate) field_count: i16,
 }
 
 impl Encoder {
@@ -45,7 +51,19 @@ impl Encoder {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        Ok(Self { schema, columns })
+        let field_count = i16::try_from(columns.len()).map_err(|_| {
+            TransferredError::destination(format!(
+                "a COPY row holds at most {} columns, not {}",
+                i16::MAX,
+                columns.len()
+            ))
+        })?;
+
+        Ok(Self {
+            schema,
+            columns,
+            field_count,
+        })
     }
 
     /// Column-type list for `CREATE TABLE`, quoted and comma-separated.
@@ -58,8 +76,8 @@ impl Encoder {
             .join(", ")
     }
 
-    /// Checks a batch against the mapped schema, then hands back the column encoders.
-    pub fn columns(&self, batch: &RecordBatch) -> Result<&[ColumnEncoder]> {
+    /// Checks a batch against the mapped schema.
+    pub fn check(&self, batch: &RecordBatch) -> Result<()> {
         // The table was created from the first batch, so a later partition may not fit it.
         if batch.schema().fields() != self.schema.fields() {
             return Err(TransferredError::destination(format!(
@@ -69,7 +87,7 @@ impl Encoder {
             )));
         }
 
-        Ok(&self.columns)
+        Ok(())
     }
 }
 
@@ -106,15 +124,13 @@ enum Encoding {
     Interval,
     Numeric {
         precision: u8,
-        scale: i8,
+        scale: u8,
     },
     /// `PostGIS` values write as `bytea`-framed WKB; only the DDL names the geo type.
-    Geo {
-        sql: String,
-    },
+    Geo(WkbType),
     /// A range writes as a tag byte plus bounds, each bound through the element's own encoding.
     Range {
-        sql: String,
+        pg_type: PgType,
         element: Box<Encoding>,
     },
 }
@@ -134,9 +150,11 @@ impl Encoding {
             ArrowType::Utf8 if extension == Some(Json::NAME) => Self::Json,
             ArrowType::Utf8 => Self::Text,
             // `PostGIS` gets its OIDs per database, so no `PgType` names it and only the DDL can.
-            ArrowType::Binary if extension == Some(WkbType::NAME) => Self::Geo {
-                sql: geo_sql_type(field)?,
-            },
+            ArrowType::Binary if extension == Some(WkbType::NAME) => Self::Geo(
+                field
+                    .try_extension_type()
+                    .map_err(TransferredError::destination)?,
+            ),
             // Plain bytes, and `arrow.opaque`, whose type name the destination deliberately drops.
             ArrowType::Binary => Self::Bytea,
             ArrowType::FixedSizeBinary(16) if extension == Some(Uuid::NAME) => Self::Uuid,
@@ -145,14 +163,21 @@ impl Encoding {
             // Arrow timestamps are UTC instants whatever the zone name, so the zone needs no lookup.
             ArrowType::Timestamp(TimeUnit::Microsecond, Some(_)) => Self::Timestamptz,
             ArrowType::Interval(IntervalUnit::MonthDayNano) => Self::Interval,
-            &ArrowType::Decimal128(precision, scale) => Self::Numeric { precision, scale },
+            &ArrowType::Decimal128(precision, scale) => Self::Numeric {
+                precision,
+                scale: u8::try_from(scale).map_err(|_| {
+                    TransferredError::destination(
+                        "`Decimal128` with negative scale is not supported",
+                    )
+                })?,
+            },
             ArrowType::Struct(_) if extension == Some(PgRange::NAME) => {
                 let bounds_type =
                     PgRange::type_of(field.data_type()).map_err(TransferredError::destination)?;
                 let element = Self::new(&ArrowField::new(LOWER, bounds_type.clone(), true))?;
 
                 Self::Range {
-                    sql: range_sql(&element)?.to_owned(),
+                    pg_type: range_type(&element)?,
                     element: Box::new(element),
                 }
             }
@@ -166,26 +191,33 @@ impl Encoding {
 
     /// Type half of the column's DDL, e.g. `numeric(38,9)`; the test suite pins every name.
     fn sql_type(&self) -> String {
-        let name = match self {
-            Self::Bool => "bool",
-            Self::Int2 => "int2",
-            Self::Int4 => "int4",
-            Self::Int8 => "int8",
-            Self::Float4 => "float4",
-            Self::Float8 => "float8",
-            Self::Text => "text",
-            Self::Json => "json",
-            Self::Bytea => "bytea",
-            Self::Uuid => "uuid",
-            Self::Date => "date",
-            Self::Timestamp => "timestamp",
-            Self::Timestamptz => "timestamptz",
-            Self::Interval => "interval",
-            Self::Numeric { precision, scale } => return format!("numeric({precision},{scale})"),
-            Self::Geo { sql } | Self::Range { sql, .. } => sql.as_str(),
-        };
+        match self {
+            Self::Numeric { precision, scale } => format!("numeric({precision},{scale})"),
+            Self::Geo(wkb) => geo_sql_type(wkb),
+            other => other.pg_type().name().to_owned(),
+        }
+    }
 
-        name.to_owned()
+    /// Postgres type the values are written as; geometry travels framed as `bytea`.
+    fn pg_type(&self) -> PgType {
+        match self {
+            Self::Bool => PgType::BOOL,
+            Self::Int2 => PgType::INT2,
+            Self::Int4 => PgType::INT4,
+            Self::Int8 => PgType::INT8,
+            Self::Float4 => PgType::FLOAT4,
+            Self::Float8 => PgType::FLOAT8,
+            Self::Text => PgType::TEXT,
+            Self::Json => PgType::JSON,
+            Self::Bytea | Self::Geo(_) => PgType::BYTEA,
+            Self::Uuid => PgType::UUID,
+            Self::Date => PgType::DATE,
+            Self::Timestamp => PgType::TIMESTAMP,
+            Self::Timestamptz => PgType::TIMESTAMPTZ,
+            Self::Interval => PgType::INTERVAL,
+            Self::Numeric { .. } => PgType::NUMERIC,
+            Self::Range { pg_type, .. } => pg_type.clone(),
+        }
     }
 
     /// Writes one value in Postgres binary form; nulls stop here, before any downcast.
@@ -194,91 +226,67 @@ impl Encoding {
             return Ok(IsNull::Yes);
         }
 
-        match self {
-            Self::Bool => write_sql(
-                &cast::<BooleanArray>(array)?.value(row_num),
-                &PgType::BOOL,
-                buf,
-            ),
-            Self::Int2 => write_sql(
-                &cast::<Int16Array>(array)?.value(row_num),
-                &PgType::INT2,
-                buf,
-            ),
-            Self::Int4 => write_sql(
-                &cast::<Int32Array>(array)?.value(row_num),
-                &PgType::INT4,
-                buf,
-            ),
-            Self::Int8 => write_sql(
-                &cast::<Int64Array>(array)?.value(row_num),
-                &PgType::INT8,
-                buf,
-            ),
-            Self::Float4 => write_sql(
-                &cast::<Float32Array>(array)?.value(row_num),
-                &PgType::FLOAT4,
-                buf,
-            ),
-            Self::Float8 => write_sql(
-                &cast::<Float64Array>(array)?.value(row_num),
-                &PgType::FLOAT8,
-                buf,
-            ),
+        let pg_type = self.pg_type();
+        let written = match self {
+            Self::Bool => cast::<BooleanArray>(array)?
+                .value(row_num)
+                .to_sql(&pg_type, buf),
+            Self::Int2 => cast::<Int16Array>(array)?
+                .value(row_num)
+                .to_sql(&pg_type, buf),
+            Self::Int4 => cast::<Int32Array>(array)?
+                .value(row_num)
+                .to_sql(&pg_type, buf),
+            Self::Int8 => cast::<Int64Array>(array)?
+                .value(row_num)
+                .to_sql(&pg_type, buf),
+            Self::Float4 => cast::<Float32Array>(array)?
+                .value(row_num)
+                .to_sql(&pg_type, buf),
+            Self::Float8 => cast::<Float64Array>(array)?
+                .value(row_num)
+                .to_sql(&pg_type, buf),
             // `json` takes the same bytes as `text`; PG validates the document as it reads it.
             Self::Text | Self::Json => {
                 buf.put_slice(cast::<StringArray>(array)?.value(row_num).as_bytes());
                 Ok(IsNull::No)
             }
             // Binary COPY sends no types of its own, so `bytea` framing reaches `geometry_recv`.
-            Self::Bytea | Self::Geo { .. } => write_sql(
-                &cast::<BinaryArray>(array)?.value(row_num),
-                &PgType::BYTEA,
-                buf,
-            ),
-            Self::Uuid => write_sql(
-                &pg_uuid(cast::<FixedSizeBinaryArray>(array)?.value(row_num))?,
-                &PgType::UUID,
-                buf,
-            ),
-            Self::Date => write_sql(
-                &pg_date(cast::<Date32Array>(array)?.value(row_num))?,
-                &PgType::DATE,
-                buf,
-            ),
-            Self::Timestamp => write_sql(
-                &pg_timestamp(cast::<TimestampMicrosecondArray>(array)?.value(row_num))?
-                    .naive_utc(),
-                &PgType::TIMESTAMP,
-                buf,
-            ),
-            Self::Timestamptz => write_sql(
-                &pg_timestamp(cast::<TimestampMicrosecondArray>(array)?.value(row_num))?,
-                &PgType::TIMESTAMPTZ,
-                buf,
-            ),
-            Self::Interval => write_sql(
-                &pg_interval(cast::<IntervalMonthDayNanoArray>(array)?.value(row_num))?,
-                &PgType::INTERVAL,
-                buf,
-            ),
-            Self::Numeric { scale, .. } => write_sql(
-                &pg_numeric(cast::<Decimal128Array>(array)?.value(row_num), *scale)?,
-                &PgType::NUMERIC,
-                buf,
-            ),
-            Self::Range { element, .. } => {
-                write_range(element, cast::<StructArray>(array)?, row_num, buf)
+            Self::Bytea | Self::Geo(_) => cast::<BinaryArray>(array)?
+                .value(row_num)
+                .to_sql(&pg_type, buf),
+            Self::Uuid => {
+                pg_uuid(cast::<FixedSizeBinaryArray>(array)?.value(row_num))?.to_sql(&pg_type, buf)
             }
-        }
-    }
-}
+            Self::Date => {
+                pg_date(cast::<Date32Array>(array)?.value(row_num))?.to_sql(&pg_type, buf)
+            }
+            Self::Timestamp => {
+                pg_timestamp(cast::<TimestampMicrosecondArray>(array)?.value(row_num))?
+                    .naive_utc()
+                    .to_sql(&pg_type, buf)
+            }
+            Self::Timestamptz => {
+                pg_timestamp(cast::<TimestampMicrosecondArray>(array)?.value(row_num))?
+                    .to_sql(&pg_type, buf)
+            }
+            // `PgInterval` has an inherent `to_sql` rendering text, which shadows the trait's.
+            Self::Interval => ToSql::to_sql(
+                &pg_interval(cast::<IntervalMonthDayNanoArray>(array)?.value(row_num))?,
+                &pg_type,
+                buf,
+            ),
+            Self::Numeric { scale, .. } => {
+                pg_numeric(cast::<Decimal128Array>(array)?.value(row_num), *scale)?
+                    .to_sql(&pg_type, buf)
+            }
+            Self::Range { element, .. } => {
+                return write_range(element, cast::<StructArray>(array)?, row_num, buf);
+            }
+        };
 
-/// Writes one value in Postgres binary form, turning a `ToSql` failure into a destination error.
-fn write_sql(value: &impl ToSql, pg_type: &PgType, buf: &mut BytesMut) -> Result<IsNull> {
-    value
-        .to_sql(pg_type, buf)
-        .map_err(TransferredError::destination)
+        written.map_err(TransferredError::destination)
+    }
 }
 
 /// Downcasts an Arrow column; a mismatch is unreachable, as the encoding came from the same field.
@@ -288,15 +296,15 @@ fn cast<A: 'static>(array: &dyn Array) -> Result<&A> {
     })
 }
 
-/// Names the Postgres range over `element`; a range outside these six is defined per database.
-fn range_sql(element: &Encoding) -> Result<&'static str> {
+/// Picks the Postgres range over `element`; a range outside these six is defined per database.
+fn range_type(element: &Encoding) -> Result<PgType> {
     Ok(match element {
-        Encoding::Int4 => "int4range",
-        Encoding::Int8 => "int8range",
-        Encoding::Numeric { .. } => "numrange",
-        Encoding::Date => "daterange",
-        Encoding::Timestamp => "tsrange",
-        Encoding::Timestamptz => "tstzrange",
+        Encoding::Int4 => PgType::INT4_RANGE,
+        Encoding::Int8 => PgType::INT8_RANGE,
+        Encoding::Numeric { .. } => PgType::NUM_RANGE,
+        Encoding::Date => PgType::DATE_RANGE,
+        Encoding::Timestamp => PgType::TS_RANGE,
+        Encoding::Timestamptz => PgType::TSTZ_RANGE,
         other => {
             return Err(TransferredError::destination(format!(
                 "Postgres has no built-in range over `{}`",
@@ -358,23 +366,61 @@ fn write_bound(
 
 /// SQL type for a `geoarrow.wkb` field, constrained to its coordinate system but not to a geometry
 /// subtype, which the tag says nothing about. E.g. `geography(Geometry,4326)`, or bare `geometry`.
-fn geo_sql_type(field: &ArrowField) -> Result<String> {
-    let wkb = field
-        .try_extension_type::<WkbType>()
-        .map_err(TransferredError::destination)?;
-
+fn geo_sql_type(wkb: &WkbType) -> String {
     // `geography` bends its edges around the globe; `geometry` keeps them straight.
-    let name = if geoarrow::is_spherical(&wkb) {
+    let name = if geoarrow::is_spherical(wkb) {
         GEOGRAPHY
     } else {
         GEOMETRY
     };
 
-    Ok(match geoarrow::epsg(&wkb) {
+    match geoarrow::epsg(wkb) {
         Some(epsg) => format!("{name}(Geometry,{epsg})"),
         None => name.to_owned(),
+    }
+}
+
+/// Restates an Arrow count of `10^-scale` units as a decimal, as PG `numeric` carries it.
+fn pg_numeric(units: i128, scale: u8) -> Result<Decimal> {
+    Decimal::try_from_i128_with_scale(units, u32::from(scale))
+        .map_err(TransferredError::destination)
+}
+
+/// PG counts interval time in microseconds, so anything finer than a microsecond has nowhere to go.
+fn pg_interval(interval: IntervalMonthDayNano) -> Result<PgInterval> {
+    if interval.nanoseconds % NANOS_PER_MICRO != 0 {
+        return Err(TransferredError::destination(format!(
+            "`interval` of {}ns is finer than the microsecond Postgres stores",
+            interval.nanoseconds
+        )));
+    }
+
+    Ok(PgInterval::new(
+        interval.months,
+        interval.days,
+        interval.nanoseconds / NANOS_PER_MICRO,
+    ))
+}
+
+/// Restates a count of days from the epoch as a date, as PG stores it.
+fn pg_date(days: i32) -> Result<NaiveDate> {
+    Date32Type::to_naive_date_opt(days).ok_or_else(|| {
+        TransferredError::destination(format!("`date` {days} days from epoch is out of range"))
     })
 }
+
+/// Restates a count of microseconds from the epoch as a UTC instant, as PG stores it.
+fn pg_timestamp(micros: i64) -> Result<DateTime<Utc>> {
+    DateTime::from_timestamp_micros(micros).ok_or_else(|| {
+        TransferredError::destination(format!("timestamp {micros}µs from epoch is out of range"))
+    })
+}
+
+/// Reads 16 Arrow bytes as a uuid.
+fn pg_uuid(bytes: &[u8]) -> Result<uuid::Uuid> {
+    uuid::Uuid::from_slice(bytes).map_err(TransferredError::destination)
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
@@ -434,7 +480,8 @@ mod tests {
         let mut buf = BytesMut::new();
 
         let encoder = Encoder::new(schema.into())?;
-        let column = encoder.columns(&batch)?.first().unwrap();
+        encoder.check(&batch)?;
+        let column = encoder.columns.first().unwrap();
         column.write(batch.column(0).as_ref(), 0, &mut buf)?;
         Ok(buf)
     }
@@ -561,7 +608,7 @@ mod tests {
         let batch =
             RecordBatch::try_new(widened, vec![Arc::new(Int64Array::from(vec![1]))]).unwrap();
 
-        assert!(encoder.columns(&batch).is_err());
+        assert!(encoder.check(&batch).is_err());
     }
 
     /// Only fields drive the mapping, so writer metadata on the schema must not reject a batch.
@@ -576,7 +623,7 @@ mod tests {
         let batch =
             RecordBatch::try_new(tagged, vec![Arc::new(Int32Array::from(vec![1]))]).unwrap();
 
-        assert_eq!(encoder.columns(&batch).unwrap().len(), 1);
+        assert!(encoder.check(&batch).is_ok());
     }
 
     /// Names go straight into DDL, and a Parquet field or dict key need not be a bare identifier.
@@ -590,5 +637,43 @@ mod tests {
             Encoder::new(awkward.into()).unwrap().declarations(),
             r#""Total Sales" int4, "user.id" text"#
         );
+    }
+
+    #[test]
+    fn pg_numeric_restates_units_at_scale() {
+        assert_eq!(pg_numeric(1_500_000_000, 9).unwrap(), Decimal::new(15, 1));
+        assert_eq!(pg_numeric(-250_000_000, 9).unwrap(), Decimal::new(-25, 2));
+        assert_eq!(pg_numeric(0, 4).unwrap(), Decimal::ZERO);
+    }
+
+    /// Arrow holds 38 digits, `rust_decimal` 29, so the widest Arrow decimals have nowhere to land.
+    #[test]
+    fn pg_numeric_rejects_units_past_the_rust_decimal_mantissa() {
+        assert!(pg_numeric(i128::MAX, 9).is_err());
+    }
+
+    /// `rust_decimal` holds no negative scale, so the column is refused before any row is read.
+    #[test]
+    fn rejects_a_decimal_with_negative_scale() {
+        let schema = Schema::new(vec![ArrowField::new(
+            "n",
+            ArrowType::Decimal128(5, -2),
+            true,
+        )]);
+        assert!(Encoder::new(schema.into()).is_err());
+    }
+
+    #[test]
+    fn pg_interval_keeps_months_days_and_micros_separate() {
+        let interval = pg_interval(IntervalMonthDayNano::new(14, 3, 14_706_789_000_000)).unwrap();
+        assert_eq!(
+            (interval.months, interval.days, interval.microseconds),
+            (14, 3, 14_706_789_000)
+        );
+    }
+
+    #[test]
+    fn pg_interval_rejects_sub_microsecond_precision() {
+        assert!(pg_interval(IntervalMonthDayNano::new(0, 0, 1)).is_err());
     }
 }

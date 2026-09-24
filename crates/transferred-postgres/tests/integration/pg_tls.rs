@@ -74,6 +74,6 @@ async fn verify_full_rejects_a_self_signed_certificate() {
         .await
         .expect_err("a self-signed certificate must not verify");
 
-    let chain = format!("{:?}", std::error::Error::source(&error));
-    assert!(chain.contains("InvalidCertificate"), "{chain}");
+    let cause = std::error::Error::source(&error).map(ToString::to_string);
+    assert_eq!(cause.as_deref(), Some("error performing TLS handshake"));
 }

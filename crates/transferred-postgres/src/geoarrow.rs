@@ -8,6 +8,16 @@ use geoarrow_schema::{Crs, CrsType, Edges, Metadata, WkbType};
 /// user-defined SRID may belong to another authority, which 0.1 does not look up.
 const EPSG: &str = "EPSG:";
 
+/// The `PostGIS` type names, which carry no fixed OID: `CREATE EXTENSION` assigns one per database.
+pub(crate) const GEOMETRY: &str = "geometry";
+pub(crate) const GEOGRAPHY: &str = "geography";
+
+/// PG Typmod for a `geo...` without a coordinate system. Each value's own EWKB can name one.
+const UNCONSTRAINED_TYPMOD: i32 = -1;
+
+/// `PostGIS` spells "coordinate system unknown" as SRID 0.
+const UNKNOWN_SRID: i32 = 0;
+
 /// Tags geometry on a plane, as PG `geometry` measures it.
 #[must_use]
 pub fn planar(epsg: Option<i32>) -> WkbType {
@@ -46,6 +56,15 @@ pub fn epsg(wkb: &WkbType) -> Option<i32> {
     }
 
     crs.crs_value()?.as_str()?.strip_prefix(EPSG)?.parse().ok()
+}
+
+/// Decodes the SRID a `geometry`/`geography` typmod pins its column to, if it pins one at all.
+pub(crate) fn srid(typmod: i32) -> Option<i32> {
+    // `TYPMOD_GET_SRID`: 20 SRID bits sitting above the 8 that hold the geometry subtype.
+    // https://github.com/postgis/postgis/blob/3.6.0/postgis/gserialized_typmod.c
+    let srid = (typmod & 0x0fff_ff00) >> 8;
+
+    (typmod != UNCONSTRAINED_TYPMOD && srid != UNKNOWN_SRID).then_some(srid)
 }
 
 #[cfg(test)]
@@ -119,5 +138,32 @@ mod tests {
     #[test]
     fn ignores_a_coordinate_system_nothing_vouches_for() {
         assert_eq!(epsg(&parse(Some(r#"{"crs":"EPSG:4326"}"#))), None);
+    }
+
+    /// Typmods as PG 17 stores them in `pg_attribute.atttypmod`, pinned here rather than reused
+    /// from the constants above, so a wrong constant fails a test instead of agreeing with it.
+    const GEOMETRY_BARE: i32 = -1;
+    const GEOMETRY_POINT: i32 = 4;
+    const GEOMETRY_POINT_4326: i32 = 1_107_460;
+    const GEOMETRY_ANY_4326: i32 = 1_107_456;
+
+    /// The SRID sits above the subtype bits, so constraining one must not disturb the other.
+    #[test]
+    fn typmod_decodes_the_declared_srid() {
+        assert_eq!(srid(GEOMETRY_POINT_4326), Some(4326));
+        assert_eq!(srid(GEOMETRY_ANY_4326), Some(4326));
+    }
+
+    /// An unconstrained column takes rows with differing SRIDs, so it has no single one to report.
+    /// Masking `-1` blindly would read it as SRID 1048575.
+    #[test]
+    fn typmod_reports_no_srid_for_an_unconstrained_column() {
+        assert_eq!(srid(GEOMETRY_BARE), None);
+    }
+
+    /// `geometry(Point)` pins the subtype only, which `PostGIS` records as SRID 0 — its own "unknown".
+    #[test]
+    fn typmod_reports_no_srid_for_postgis_unknown() {
+        assert_eq!(srid(GEOMETRY_POINT), None);
     }
 }

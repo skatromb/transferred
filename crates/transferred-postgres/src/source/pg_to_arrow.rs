@@ -12,7 +12,7 @@ use arrow::array::{
     Int64Builder, IntervalMonthDayNanoBuilder, RecordBatch, StringBuilder, StructBuilder,
     TimestampMicrosecondBuilder, make_builder,
 };
-use arrow::datatypes::Date32Type;
+use arrow::datatypes::{DECIMAL128_MAX_PRECISION, Date32Type, IntervalMonthDayNano};
 use arrow_schema::extension::{Json, Opaque, Uuid};
 use arrow_schema::{
     DataType as ArrowType, Field as ArrowField, IntervalUnit, Schema, SchemaRef, TimeUnit,
@@ -28,15 +28,23 @@ use tokio_postgres::types::{FromSql, Kind, Type as PgType};
 use tracing::warn;
 use transferred_core::{Result, TransferredError};
 
-use crate::convert::{
-    BARE_NUMERIC_TYPMOD, CITEXT, GEOGRAPHY, GEOMETRY, decimal_units, geo_srid, month_day_nano,
-    numeric_precision_scale,
-};
-use crate::geoarrow;
+use crate::geoarrow::{self, GEOGRAPHY, GEOMETRY};
 use crate::pg_range::PgRange;
 
 /// PG stores `timestamptz` as UTC; the original client offset is not retained.
 const UTC: &str = "UTC";
+
+/// Case-insensitive text, an extension type answering to a name rather than a fixed OID.
+const CITEXT: &str = "citext";
+
+/// Precision and scale for bare `numeric`, matching BQ `NUMERIC` so it lands there uncoerced.
+const BARE_NUMERIC: (u8, u8) = (DECIMAL128_MAX_PRECISION, 9);
+
+/// Typmod PG reports for a `numeric` declared without precision.
+const BARE_NUMERIC_TYPMOD: i32 = -1;
+
+/// PG counts sub-second time in microseconds; Arrow intervals count nanoseconds.
+const NANOS_PER_MICRO: i64 = 1_000;
 
 /// The `arrow.opaque` fallback's `vendor_name`: the system an unmapped type came from.
 const VENDOR: &str = "PostgreSQL";
@@ -143,10 +151,8 @@ enum Decoding {
     Float4,
     Float8,
     Text,
-    /// `versioned` is `jsonb`, which leads with a format version byte `json` has no room for.
-    Json {
-        versioned: bool,
-    },
+    Json,
+    Jsonb,
     Bytea,
     Uuid,
     Date,
@@ -155,7 +161,7 @@ enum Decoding {
     Interval,
     Numeric {
         precision: u8,
-        scale: i8,
+        scale: u8,
     },
     /// `PostGIS` sends EWKB, which `geoarrow.wkb` takes verbatim; only the field names the geo type.
     Geo(WkbType),
@@ -183,8 +189,8 @@ impl Decoding {
             PgType::TIMESTAMPTZ => Self::Timestamptz,
             PgType::INTERVAL => Self::Interval,
             PgType::UUID => Self::Uuid,
-            PgType::JSON => Self::Json { versioned: false },
-            PgType::JSONB => Self::Json { versioned: true },
+            PgType::JSON => Self::Json,
+            PgType::JSONB => Self::Jsonb,
             PgType::NUMERIC => Self::numeric(typmod, name)?,
             PgType::INT4_RANGE => Self::Range(Box::new(Self::Int4)),
             PgType::INT8_RANGE => Self::Range(Box::new(Self::Int8)),
@@ -196,8 +202,12 @@ impl Decoding {
             // Extension-type OIDs differ per database, so `citext` and `PostGIS` match on a name.
             ref text if matches!(text.kind(), Kind::Enum(_)) || text.name() == CITEXT => Self::Text,
             // `geoarrow.wkb` holds EWKB, so the bytes pass through untouched, SRID per value and all.
-            ref geo if geo.name() == GEOMETRY => Self::Geo(geoarrow::planar(geo_srid(typmod))),
-            ref geo if geo.name() == GEOGRAPHY => Self::Geo(geoarrow::spherical(geo_srid(typmod))),
+            ref geo if geo.name() == GEOMETRY => {
+                Self::Geo(geoarrow::planar(geoarrow::srid(typmod)))
+            }
+            ref geo if geo.name() == GEOGRAPHY => {
+                Self::Geo(geoarrow::spherical(geoarrow::srid(typmod)))
+            }
             ref other => {
                 warn!(
                     target: "postgres::source",
@@ -236,14 +246,16 @@ impl Decoding {
             Self::Int8 => ArrowType::Int64,
             Self::Float4 => ArrowType::Float32,
             Self::Float8 => ArrowType::Float64,
-            Self::Text | Self::Json { .. } => ArrowType::Utf8,
+            Self::Text | Self::Json | Self::Jsonb => ArrowType::Utf8,
             Self::Bytea | Self::Geo(_) | Self::Opaque(_) => ArrowType::Binary,
             Self::Uuid => ArrowType::FixedSizeBinary(UUID_BYTES),
             Self::Date => ArrowType::Date32,
             Self::Timestamp => ArrowType::Timestamp(TimeUnit::Microsecond, None),
             Self::Timestamptz => ArrowType::Timestamp(TimeUnit::Microsecond, Some(UTC.into())),
             Self::Interval => ArrowType::Interval(IntervalUnit::MonthDayNano),
-            &Self::Numeric { precision, scale } => ArrowType::Decimal128(precision, scale),
+            &Self::Numeric { precision, scale } => {
+                ArrowType::Decimal128(precision, scale.cast_signed())
+            }
             Self::Range(bounds) => ArrowType::Struct(PgRange::fields(bounds.arrow_type())),
         }
     }
@@ -254,7 +266,7 @@ impl Decoding {
 
         match self {
             Self::Uuid => field.try_with_extension_type(Uuid)?,
-            Self::Json { .. } => field.try_with_extension_type(Json::default())?,
+            Self::Json | Self::Jsonb => field.try_with_extension_type(Json::default())?,
             Self::Geo(wkb) => field.try_with_extension_type(wkb.clone())?,
             Self::Opaque(opaque) => field.try_with_extension_type(opaque.clone())?,
             Self::Range(_) => field.try_with_extension_type(PgRange)?,
@@ -285,9 +297,9 @@ impl Decoding {
             Self::Float8 => {
                 cast::<Float64Builder>(builder)?.append_option(decode(&PgType::FLOAT8, bytes)?);
             }
-            Self::Text => cast::<StringBuilder>(builder)?.append_option(text(bytes)?),
-            &Self::Json { versioned } => {
-                let json = bytes.map(|bytes| json(bytes, versioned)).transpose()?;
+            Self::Text | Self::Json => cast::<StringBuilder>(builder)?.append_option(text(bytes)?),
+            Self::Jsonb => {
+                let json = bytes.map(jsonb).transpose()?;
                 cast::<StringBuilder>(builder)?.append_option(text(json)?);
             }
             Self::Bytea | Self::Geo(_) | Self::Opaque(_) => {
@@ -381,12 +393,8 @@ fn decode<'a, T: FromSql<'a>>(pg_type: &PgType, bytes: Option<&'a [u8]>) -> Resu
         .map_err(TransferredError::source)
 }
 
-/// Strips the format version byte `jsonb` leads with; `json` sends the document text as it is.
-fn json(bytes: &[u8], versioned: bool) -> Result<&[u8]> {
-    if !versioned {
-        return Ok(bytes);
-    }
-
+/// Strips the format version byte `jsonb` leads with, leaving the document text.
+fn jsonb(bytes: &[u8]) -> Result<&[u8]> {
     match bytes.split_first() {
         Some((1, text)) => Ok(text),
         _ => Err(TransferredError::source(
@@ -409,6 +417,63 @@ fn bound<'a>(bound: &RangeBound<Option<&'a [u8]>>) -> Option<&'a [u8]> {
         RangeBound::Inclusive(value) | RangeBound::Exclusive(value) => *value,
         RangeBound::Unbounded => None,
     }
+}
+
+/// Decodes a `numeric` typmod, defaulting bare `numeric` `-1` to (38,9).
+fn numeric_precision_scale(typmod: i32) -> Result<(u8, u8)> {
+    if typmod == BARE_NUMERIC_TYPMOD {
+        return Ok(BARE_NUMERIC);
+    }
+
+    // `numeric_typmod_precision`/`numeric_typmod_scale`, minus `VARHDRSZ`; the XOR sign-extends the
+    // 11-bit scale, which PG 15+ allows to be negative.
+    // https://github.com/postgres/postgres/blob/REL_17_10/src/backend/utils/adt/numeric.c#L925
+    let precision = ((typmod - 4) >> 16) & 0xffff;
+    let scale = (((typmod - 4) & 0x7ff) ^ 0x400) - 0x400;
+
+    // PG holds 1000 digits to Arrow's 38, and PG 15+ lets scale go negative or past precision.
+    match (u8::try_from(precision), u8::try_from(scale)) {
+        (Ok(precision), Ok(scale))
+            if precision <= DECIMAL128_MAX_PRECISION && scale <= precision =>
+        {
+            Ok((precision, scale))
+        }
+        _ => Err(TransferredError::source(format!(
+            "`numeric({precision},{scale})` is not supported: it needs at most \
+             {DECIMAL128_MAX_PRECISION} digits and a scale from 0 to its precision"
+        ))),
+    }
+}
+
+/// Restates a decimal as an integer count of `10^-scale` units, as Arrow `Decimal128` stores it.
+fn decimal_units(mut decimal: Decimal, scale: u8) -> Result<i128> {
+    let scale = u32::from(scale);
+    decimal.rescale(scale);
+    if decimal.scale() != scale {
+        return Err(TransferredError::source(format!(
+            "`numeric` value {decimal} does not fit scale {scale}"
+        )));
+    }
+
+    Ok(decimal.mantissa())
+}
+
+/// PG counts interval time in microseconds; Arrow wants nanoseconds, which overflow past ~292 years.
+fn month_day_nano(interval: PgInterval) -> Result<IntervalMonthDayNano> {
+    let nanos = interval
+        .microseconds
+        .checked_mul(NANOS_PER_MICRO)
+        .ok_or_else(|| {
+            TransferredError::source(
+                "`interval` exceeds the nanosecond range of Arrow `Interval(MonthDayNano)`",
+            )
+        })?;
+
+    Ok(IntervalMonthDayNano::new(
+        interval.months,
+        interval.days,
+        nanos,
+    ))
 }
 
 /// Downcasts an Arrow builder; a mismatch is unreachable, as `make_builder` took the same decoding.
@@ -525,5 +590,105 @@ mod tests {
             field.data_type(),
             &ArrowType::Struct(PgRange::fields(ArrowType::Int32))
         );
+    }
+
+    /// Typmods as PG 17 stores them in `pg_attribute.atttypmod`, pinned here rather than reused
+    /// from the constants above, so a wrong constant fails a test instead of agreeing with it.
+    const NUMERIC_BARE: i32 = -1;
+    const NUMERIC_18_4: i32 = 1_179_656;
+    const NUMERIC_38_9: i32 = 2_490_381;
+    const NUMERIC_5_NEG2: i32 = 329_730;
+    const NUMERIC_1000_500: i32 = 65_536_504;
+    const NUMERIC_5_10: i32 = 327_694;
+
+    /// Largest mantissa `rust_decimal` can hold: 2^96 - 1, with no room to zero-pad.
+    const U96_MAX: Decimal = Decimal::from_parts(u32::MAX, u32::MAX, u32::MAX, false, 0);
+
+    #[test]
+    fn typmod_decodes_declared_precision_and_scale() {
+        assert_eq!(numeric_precision_scale(NUMERIC_18_4).unwrap(), (18, 4));
+        assert_eq!(numeric_precision_scale(NUMERIC_38_9).unwrap(), (38, 9));
+    }
+
+    #[test]
+    fn bare_numeric_defaults_to_bq_numeric_shape() {
+        assert_eq!(numeric_precision_scale(NUMERIC_BARE).unwrap(), (38, 9));
+    }
+
+    /// PG 15+ allows negative scale; the decode must not read it as a large positive one.
+    #[test]
+    fn typmod_rejects_negative_scale_by_its_value() {
+        let error = numeric_precision_scale(NUMERIC_5_NEG2).unwrap_err();
+        assert!(format!("{error:?}").contains("numeric(5,-2)"));
+    }
+
+    #[test]
+    fn typmod_rejects_precision_past_decimal128() {
+        assert!(numeric_precision_scale(NUMERIC_1000_500).is_err());
+    }
+
+    /// PG takes `numeric(5,10)`; Arrow `Decimal128` does not, and would build a broken array from it.
+    #[test]
+    fn typmod_rejects_scale_wider_than_precision() {
+        assert!(numeric_precision_scale(NUMERIC_5_10).is_err());
+    }
+
+    #[test]
+    fn decimal_units_scales_to_target() {
+        assert_eq!(
+            decimal_units(Decimal::new(15, 1), 9).unwrap(),
+            1_500_000_000
+        );
+        assert_eq!(
+            decimal_units(Decimal::new(-25, 2), 9).unwrap(),
+            -250_000_000
+        );
+        assert_eq!(decimal_units(Decimal::new(15, 1), 4).unwrap(), 15_000);
+        assert_eq!(decimal_units(Decimal::ZERO, 4).unwrap(), 0);
+    }
+
+    /// `rescale` is infallible and silently keeps the old scale when padding would overflow the
+    /// mantissa, so without the scale check we would emit this value 10^9 times too small.
+    #[test]
+    fn decimal_units_rejects_value_too_wide_to_rescale() {
+        assert_eq!(U96_MAX.scale(), 0);
+        assert!(decimal_units(U96_MAX, 9).is_err());
+    }
+
+    /// Bare `numeric` carries the value's own scale, so the (38,9) default rounds. Lossy by design.
+    #[test]
+    fn decimal_units_rounds_excess_fraction_digits_half_away_from_zero() {
+        // 0.1234567885 sits exactly on the midpoint: half-to-even would keep ...788.
+        assert_eq!(
+            decimal_units(Decimal::new(1_234_567_885, 10), 9).unwrap(),
+            123_456_789
+        );
+        assert_eq!(
+            decimal_units(Decimal::new(-1_234_567_885, 10), 9).unwrap(),
+            -123_456_789
+        );
+    }
+
+    #[test]
+    fn interval_keeps_months_days_and_micros_separate() {
+        let interval = PgInterval::new(14, 3, 14_706_789_000);
+        assert_eq!(
+            month_day_nano(interval).unwrap(),
+            IntervalMonthDayNano::new(14, 3, 14_706_789_000_000)
+        );
+    }
+
+    #[test]
+    fn interval_carries_each_part_signed() {
+        let interval = PgInterval::new(-1, -2, -10_800_000_000);
+        assert_eq!(
+            month_day_nano(interval).unwrap(),
+            IntervalMonthDayNano::new(-1, -2, -10_800_000_000_000)
+        );
+    }
+
+    #[test]
+    fn interval_rejects_micros_past_nanosecond_range() {
+        assert!(month_day_nano(PgInterval::new(0, 0, i64::MAX)).is_err());
     }
 }

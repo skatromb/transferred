@@ -23,8 +23,8 @@ tokio-stream = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1"] }
-tokio-postgres-rustls = { version = "0.14", features = ["native-certs", "ring"] }
-rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
+postgres-native-tls = "0.5"
+native-tls = { version = "0.2", features = ["vendored"] }
 postgres-protocol = "0.6"
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
@@ -32,7 +32,6 @@ geoarrow-schema = "0.9"
 pg_interval = "0.6"
 rust_decimal = { version = "1", default-features = false, features = ["db-tokio-postgres"] }
 uuid = "1"
-url = "2.5"
 
 [features]
 # Integration tests that spin up a throwaway Postgres container. Needs Docker.
