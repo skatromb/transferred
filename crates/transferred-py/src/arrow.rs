@@ -52,7 +52,7 @@ impl PyArrowSource {
     }
 }
 
-/// Rust-side source over a pyarrow `RecordBatchReader` that gives us `Send`
+/// Rust-side source over a pyarrow `RecordBatchReader` that gives us `Send`.
 pub struct ArrowSource {
     reader: ArrowArrayStreamReader,
 }
@@ -67,7 +67,7 @@ impl Source for ArrowSource {
     }
 }
 
-/// Struct for implementing `async Stream`
+/// Adapts the reader to an async `Stream`.
 struct ArrowReaderStream {
     reader: ArrowArrayStreamReader,
 }

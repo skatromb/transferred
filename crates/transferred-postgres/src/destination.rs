@@ -21,7 +21,7 @@ use crate::connection::connect;
 pub const STAGING_SUFFIX: &str = "__transferred_staging";
 
 /// PG truncates identifiers past `NAMEDATALEN - 1`, which would let staging collide with its target.
-/// <https://www.postgresql.org/docs/17/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS>
+/// See <https://www.postgresql.org/docs/17/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS>.
 const MAX_IDENTIFIER_BYTES: usize = 63;
 
 /// A `Destination` that replaces a Postgres table, loading into staging and swapping in one transaction.
