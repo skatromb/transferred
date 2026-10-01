@@ -4,6 +4,11 @@
 //! Python wrapper exposing `_native_source`) constructs a pyarrow reader and
 //! feeds it through here.
 
+#![expect(
+    clippy::multiple_inherent_impl,
+    reason = "Rust-only methods stay out of `#[pymethods]`"
+)]
+
 use std::pin::Pin;
 use std::task::{Context, Poll};
 

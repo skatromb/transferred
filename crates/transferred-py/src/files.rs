@@ -1,5 +1,10 @@
 //! Files source/destination + Parquet format Python wrappers.
 
+#![expect(
+    clippy::multiple_inherent_impl,
+    reason = "Rust-only methods stay out of `#[pymethods]`"
+)]
+
 use std::path::PathBuf;
 use std::sync::Arc;
 

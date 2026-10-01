@@ -1,5 +1,10 @@
 //! `RunReport` Python class.
 
+#![expect(
+    clippy::multiple_inherent_impl,
+    reason = "Rust-only methods stay out of `#[pymethods]`"
+)]
+
 use humansize::{BINARY, format_size};
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};

@@ -1,5 +1,10 @@
 //! Postgres source + destination Python wrappers.
 
+#![expect(
+    clippy::multiple_inherent_impl,
+    reason = "Rust-only methods stay out of `#[pymethods]`"
+)]
+
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use transferred_postgres::{PostgresDestination, PostgresSource};
