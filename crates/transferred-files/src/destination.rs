@@ -11,10 +11,9 @@ use transferred_core::{BatchStream, Destination, Result, RunReport, TransferredE
 
 use crate::formats::FormatWrite;
 
-/// Local files destination. Writes `part-NNNNN.{extension}` files to a directory,
-/// or one `{dir}.{extension}` when `single_file`.
-/// Write is atomic via tmp dir + rename.
-/// Written paths land in `RunReport.written_objects`.
+/// Writes `part-NNNNN.{extension}` files to a directory, or one `{dir}.{extension}` when `single_file`.
+///
+/// Write is atomic via tmp dir + rename. Written paths land in `RunReport.written_objects`.
 #[derive(Clone)]
 pub struct FilesDestination {
     path: PathBuf,
@@ -78,7 +77,7 @@ impl FilesDestination {
         let base_name = self
             .path
             .file_name()
-            .map_or("data".to_string(), |n| n.to_string_lossy().to_string());
+            .map_or("data".to_owned(), |n| n.to_string_lossy().into_owned());
 
         if self.single_file {
             format!("{base_name}.{ext}")

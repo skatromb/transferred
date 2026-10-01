@@ -54,9 +54,9 @@ create_exception!(
 );
 
 /// Joins an error with everything that caused it, a driver's own message often being a bare category.
-fn causes(err: &dyn std::error::Error) -> String {
-    let mut message = err.to_string();
-    let mut cause = err.source();
+fn causes(error: &dyn std::error::Error) -> String {
+    let mut message = error.to_string();
+    let mut cause = error.source();
     while let Some(err) = cause {
         message.push_str(": ");
         message.push_str(&err.to_string());

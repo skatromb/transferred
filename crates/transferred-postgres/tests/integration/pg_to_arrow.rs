@@ -47,7 +47,7 @@ async fn primitives() {
             Arc::new(Float64Array::from(vec![Some(2.5), Some(-2.5), None])),
             Arc::new(StringArray::from(vec![Some("one"), Some(""), None])),
             Arc::new(BinaryArray::from(vec![
-                Some(&[1u8, 2][..]),
+                Some(&[1_u8, 2][..]),
                 Some(&[][..]),
                 None,
             ])),
