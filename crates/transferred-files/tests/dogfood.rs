@@ -5,7 +5,8 @@
 #![expect(clippy::arithmetic_side_effects, reason = "tests code")]
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use arrow::array::{
     ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float64Array,
@@ -15,9 +16,10 @@ use arrow::buffer::OffsetBuffer;
 use arrow::record_batch::RecordBatch;
 use arrow_schema::extension::{ExtensionType, Json, Opaque, Uuid};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
+use async_trait::async_trait;
+use futures::{StreamExt, stream};
 use tempfile::tempdir;
-use transferred_core::Transfer;
-use transferred_core::test_utils::{TestDestination, TestSource};
+use transferred_core::{BatchStream, Destination, Result, RunReport, Source, Transfer};
 use transferred_files::{Compression, FilesDestination, FilesSource, GlobOrPaths, Parquet};
 
 #[tokio::test]
@@ -29,13 +31,13 @@ async fn parquet_dogfood() {
     let input = vec![input_batch(&schema, 5, 0), input_batch(&schema, 3, 100)];
     let total_rows: usize = input.iter().map(RecordBatch::num_rows).sum();
     let total_rows = u64::try_from(total_rows).unwrap();
-    let memory_destination = TestDestination::new();
+    let memory_destination = MemoryDestination::default();
     let collected = memory_destination.batches.clone();
 
     // Act
     // Dump to directory
     let write_report = Transfer::new(
-        Box::new(TestSource::new(input.clone())),
+        Box::new(MemorySource(input.clone())),
         Box::new(FilesDestination::new(
             path.clone(),
             Arc::new(Parquet::new(Compression::Zstd)),
@@ -244,4 +246,45 @@ fn extension_metadata<'schema>(schema: &'schema Schema, field: &str) -> Option<&
         .field_with_name(field)
         .unwrap()
         .extension_type_metadata()
+}
+
+/// Yields fixed batches as a single partition.
+struct MemorySource(Vec<RecordBatch>);
+
+#[async_trait]
+impl Source for MemorySource {
+    async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>> {
+        let stream = stream::iter(self.0.into_iter().map(Ok));
+        Ok(vec![Box::pin(stream)])
+    }
+}
+
+/// Collects batches into a shared `Vec`; clone `batches` before moving it into a `Transfer`.
+#[derive(Default)]
+struct MemoryDestination {
+    batches: Arc<Mutex<Vec<RecordBatch>>>,
+}
+
+#[async_trait]
+impl Destination for MemoryDestination {
+    async fn write_partitions(self: Box<Self>, partitions: Vec<BatchStream>) -> Result<RunReport> {
+        let mut rows: u64 = 0;
+        for mut partition in partitions {
+            while let Some(batch) = partition.next().await {
+                let batch = batch?;
+                rows += u64::try_from(batch.num_rows()).expect("row count fits u64");
+                self.batches
+                    .lock()
+                    .expect("MemoryDestination mutex")
+                    .push(batch);
+            }
+        }
+        Ok(RunReport {
+            rows,
+            bytes_written: 0,
+            written_objects: vec![],
+            duration: Duration::ZERO,
+            coercions: vec![],
+        })
+    }
 }
