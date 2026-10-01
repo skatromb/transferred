@@ -177,6 +177,10 @@ enum Encoding {
 
 impl Encoding {
     /// Decides what a Postgres column an Arrow field becomes.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "every Arrow type not listed is refused"
+    )]
     fn new(field: &ArrowField) -> Result<Self> {
         let extension = field.extension_type_name();
         Ok(match field.data_type() {
@@ -234,7 +238,21 @@ impl Encoding {
         match self {
             Self::Numeric { precision, scale } => format!("numeric({precision},{scale})"),
             Self::Geo(wkb) => geo_sql_type(wkb),
-            other => other.pg_type().name().to_owned(),
+            other @ (Self::Bool
+            | Self::Int2
+            | Self::Int4
+            | Self::Int8
+            | Self::Float4
+            | Self::Float8
+            | Self::Text
+            | Self::Json
+            | Self::Bytea
+            | Self::Uuid
+            | Self::Date
+            | Self::Timestamp
+            | Self::Timestamptz
+            | Self::Interval
+            | Self::Range { .. }) => other.pg_type().name().to_owned(),
         }
     }
 
@@ -269,7 +287,17 @@ impl Encoding {
             Self::Date => PgType::DATE_RANGE,
             Self::Timestamp => PgType::TS_RANGE,
             Self::Timestamptz => PgType::TSTZ_RANGE,
-            other => {
+            other @ (Self::Bool
+            | Self::Int2
+            | Self::Float4
+            | Self::Float8
+            | Self::Text
+            | Self::Json
+            | Self::Bytea
+            | Self::Uuid
+            | Self::Interval
+            | Self::Geo(_)
+            | Self::Range { .. }) => {
                 return Err(TransferredError::destination(format!(
                     "Postgres has no built-in range over `{}`",
                     other.sql_type()

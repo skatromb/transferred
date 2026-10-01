@@ -268,7 +268,19 @@ impl Decoding {
             Self::Geo(wkb) => field.try_with_extension_type(wkb.clone())?,
             Self::Opaque(opaque) => field.try_with_extension_type(opaque.clone())?,
             Self::Range(_) => field.try_with_extension_type(PgRange)?,
-            _ => {}
+            Self::Bool
+            | Self::Int2
+            | Self::Int4
+            | Self::Int8
+            | Self::Float4
+            | Self::Float8
+            | Self::Text
+            | Self::Bytea
+            | Self::Date
+            | Self::Timestamp
+            | Self::Timestamptz
+            | Self::Interval
+            | Self::Numeric { .. } => {}
         }
 
         Ok(field)
