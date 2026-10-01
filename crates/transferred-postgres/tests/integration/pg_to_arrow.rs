@@ -236,12 +236,12 @@ async fn ranges_carry_their_bounds_and_tag() {
             None,
         ],
     );
-    let decimals = |units: Vec<Option<i128>>| {
+    let decimals = |units: Vec<Option<i128>>| -> ArrayRef {
         Arc::new(
             Decimal128Array::from(units)
                 .with_precision_and_scale(38, 9)
                 .unwrap(),
-        ) as ArrayRef
+        )
     };
 
     let expected = expected(

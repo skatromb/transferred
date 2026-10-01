@@ -45,7 +45,7 @@ async fn assert_survives_parquet(table: &str) {
     .await;
 
     let original = read_table(table).await;
-    assert_eq!(report.rows, original.num_rows() as u64);
+    assert_eq!(usize::try_from(report.rows), Ok(original.num_rows()));
     assert_eq!(back, original);
 }
 

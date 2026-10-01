@@ -78,7 +78,7 @@ async fn assert_round_trips(table: &str) {
     let rows = transfer_run(table, &into).await;
 
     let original = read_table(table).await;
-    assert_eq!(rows, original.num_rows() as u64);
+    assert_eq!(usize::try_from(rows), Ok(original.num_rows()));
     assert_eq!(read_table(&into).await, original);
 }
 
@@ -203,7 +203,7 @@ async fn a_batch_wider_than_the_copy_buffer_arrives_whole() {
         .expect("run transfer")
         .rows;
 
-    assert_eq!(rows, batch.num_rows() as u64);
+    assert_eq!(usize::try_from(rows), Ok(batch.num_rows()));
     assert_eq!(read_table(into).await, batch);
 }
 
@@ -270,6 +270,6 @@ async fn round_trips_into_a_qualified_schema() {
     let rows = transfer_run("it_primitives", into).await;
 
     let original = read_table("it_primitives").await;
-    assert_eq!(rows, original.num_rows() as u64);
+    assert_eq!(usize::try_from(rows), Ok(original.num_rows()));
     assert_eq!(read_table(into).await, original);
 }

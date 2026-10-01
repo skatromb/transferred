@@ -82,24 +82,22 @@ impl FormatWrite for Parquet {
         let mut arrow_writer = AsyncArrowWriter::try_new(writer, first.schema(), Some(properties))
             .map_err(TransferredError::destination)?;
 
-        let mut rows = first.num_rows() as u64;
         arrow_writer
             .write(&first)
             .await
             .map_err(TransferredError::destination)?;
 
         while let Some(batch) = batches.try_next().await? {
-            rows += batch.num_rows() as u64;
             arrow_writer
                 .write(&batch)
                 .await
                 .map_err(TransferredError::destination)?;
         }
 
-        arrow_writer
+        let metadata = arrow_writer
             .close()
             .await
             .map_err(TransferredError::destination)?;
-        Ok(rows)
+        u64::try_from(metadata.file_metadata().num_rows()).map_err(TransferredError::destination)
     }
 }

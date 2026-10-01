@@ -104,7 +104,7 @@ mod tests {
 
     impl Error for Layer {
         fn source(&self) -> Option<&(dyn Error + 'static)> {
-            self.1.as_deref().map(|layer| layer as &dyn Error)
+            Some(self.1.as_deref()?)
         }
     }
 

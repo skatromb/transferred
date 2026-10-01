@@ -3,10 +3,6 @@
 
 #![cfg(test)]
 #![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    clippy::cast_precision_loss,
     clippy::redundant_closure_for_method_calls,
     clippy::unwrap_used,
     clippy::indexing_slicing,
@@ -37,6 +33,7 @@ async fn parquet_dogfood() {
     let schema = input_schema();
     let input = vec![input_batch(&schema, 5, 0), input_batch(&schema, 3, 100)];
     let total_rows: usize = input.iter().map(RecordBatch::num_rows).sum();
+    let total_rows = u64::try_from(total_rows).unwrap();
     let memory_destination = TestDestination::new();
     let collected = memory_destination.batches.clone();
 
@@ -74,9 +71,9 @@ async fn parquet_dogfood() {
     // Assert
     assert!(path.is_dir());
     assert_eq!(write_report.written_objects.len(), 1);
-    assert_eq!(write_report.rows as usize, total_rows);
+    assert_eq!(write_report.rows, total_rows);
     assert!(write_report.bytes_written > 0);
-    assert_eq!(read_report.rows as usize, total_rows);
+    assert_eq!(read_report.rows, total_rows);
 
     let read = collected.lock().unwrap();
     let read_schema = read[0].schema();
@@ -128,38 +125,36 @@ fn input_schema() -> Arc<Schema> {
 }
 
 #[expect(clippy::too_many_lines, reason = "tests code")]
-fn input_batch(schema: &Arc<Schema>, rows: usize, offset: i64) -> RecordBatch {
-    let i32_arr = Arc::new(Int32Array::from(
-        (0..rows)
-            .map(|i| i as i32 + offset as i32)
-            .collect::<Vec<_>>(),
-    )) as ArrayRef;
-    let i64_arr = Arc::new(Int64Array::from(
+fn input_batch(schema: &Arc<Schema>, rows: u8, offset: u8) -> RecordBatch {
+    let i32_arr: ArrayRef = Arc::new(Int32Array::from(
+        (0..rows).map(|i| i32::from(i + offset)).collect::<Vec<_>>(),
+    ));
+    let i64_arr: ArrayRef = Arc::new(Int64Array::from(
         (0..rows)
             .map(|i| {
                 if i % 3 == 0 {
                     None
                 } else {
-                    Some(i as i64 + offset)
+                    Some(i64::from(i + offset))
                 }
             })
             .collect::<Vec<_>>(),
-    )) as ArrayRef;
-    let u16_arr = Arc::new(UInt16Array::from(
-        (0..rows).map(|i| i as u16).collect::<Vec<_>>(),
-    )) as ArrayRef;
-    let f64_arr = Arc::new(Float64Array::from(
+    ));
+    let u16_arr: ArrayRef = Arc::new(UInt16Array::from(
+        (0..rows).map(u16::from).collect::<Vec<_>>(),
+    ));
+    let f64_arr: ArrayRef = Arc::new(Float64Array::from(
         (0..rows)
             .map(|i| {
                 if i % 2 == 0 {
-                    Some(i as f64 * 1.25)
+                    Some(f64::from(i) * 1.25)
                 } else {
                     None
                 }
             })
             .collect::<Vec<_>>(),
-    )) as ArrayRef;
-    let bool_arr = Arc::new(BooleanArray::from(
+    ));
+    let bool_arr: ArrayRef = Arc::new(BooleanArray::from(
         (0..rows)
             .map(|i| match i % 3 {
                 0 => Some(true),
@@ -167,23 +162,23 @@ fn input_batch(schema: &Arc<Schema>, rows: usize, offset: i64) -> RecordBatch {
                 _ => None,
             })
             .collect::<Vec<_>>(),
-    )) as ArrayRef;
-    let utf8_arr = Arc::new(StringArray::from(
+    ));
+    let utf8_arr: ArrayRef = Arc::new(StringArray::from(
         (0..rows)
             .map(|i| {
                 if i % 4 == 0 {
                     None
                 } else {
-                    Some(format!("s{}", i + offset as usize))
+                    Some(format!("s{}", i + offset))
                 }
             })
             .collect::<Vec<_>>(),
-    )) as ArrayRef;
-    let bin_arr = Arc::new(BinaryArray::from_opt_vec(
+    ));
+    let bin_arr: ArrayRef = Arc::new(BinaryArray::from_opt_vec(
         (0..rows)
             .map(|i| {
                 if i % 2 == 0 {
-                    Some([i as u8, (i + 1) as u8, (i + 2) as u8])
+                    Some([i, i + 1, i + 2])
                 } else {
                     None
                 }
@@ -192,55 +187,55 @@ fn input_batch(schema: &Arc<Schema>, rows: usize, offset: i64) -> RecordBatch {
             .iter()
             .map(|o| o.as_ref().map(|a| a.as_slice()))
             .collect(),
-    )) as ArrayRef;
-    let date_arr = Arc::new(Date32Array::from(
+    ));
+    let date_arr: ArrayRef = Arc::new(Date32Array::from(
         (0..rows)
             .map(|i| {
                 if i % 5 == 0 {
                     None
                 } else {
-                    Some(19_000 + i as i32)
+                    Some(19_000 + i32::from(i))
                 }
             })
             .collect::<Vec<_>>(),
-    )) as ArrayRef;
-    let ts_arr = Arc::new(
+    ));
+    let ts_arr: ArrayRef = Arc::new(
         TimestampMicrosecondArray::from(
             (0..rows)
-                .map(|i| Some(1_700_000_000_000_000 + i as i64 * 1_000_000))
+                .map(|i| Some(1_700_000_000_000_000 + i64::from(i) * 1_000_000))
                 .collect::<Vec<_>>(),
         )
         .with_timezone("UTC"),
-    ) as ArrayRef;
+    );
 
-    let list_values = Int32Array::from((0..(rows * 2) as i32).collect::<Vec<_>>());
+    let list_values = Int32Array::from((0..i32::from(rows) * 2).collect::<Vec<_>>());
     let list_offsets = OffsetBuffer::from_lengths((0..rows).map(|_| 2usize));
     let list_field = Arc::new(Field::new("item", DataType::Int32, true));
-    let list_arr = Arc::new(ListArray::new(
+    let list_arr: ArrayRef = Arc::new(ListArray::new(
         list_field,
         list_offsets,
         Arc::new(list_values),
         None,
-    )) as ArrayRef;
+    ));
 
-    let uuid_arr = Arc::new(
+    let uuid_arr: ArrayRef = Arc::new(
         FixedSizeBinaryArray::try_from_sparse_iter_with_size(
-            (0..rows).map(|i| (i % 3 != 0).then_some([i as u8; 16])),
+            (0..rows).map(|i| (i % 3 != 0).then_some([i; 16])),
             16,
         )
         .unwrap(),
-    ) as ArrayRef;
-    let json_arr = Arc::new(StringArray::from(
+    );
+    let json_arr: ArrayRef = Arc::new(StringArray::from(
         (0..rows)
-            .map(|i| (i % 2 == 0).then(|| format!(r#"{{"i": {}}}"#, i + offset as usize)))
+            .map(|i| (i % 2 == 0).then(|| format!(r#"{{"i": {}}}"#, i + offset)))
             .collect::<Vec<_>>(),
-    )) as ArrayRef;
+    ));
     // Six macaddr bytes, as an unmapped Postgres type reaches Arrow.
-    let opaque_arr = Arc::new(BinaryArray::from_opt_vec(
+    let opaque_arr: ArrayRef = Arc::new(BinaryArray::from_opt_vec(
         (0..rows)
             .map(|i| (i % 2 == 0).then_some(&b"\x08\x00\x2b\x01\x02\x03"[..]))
             .collect::<Vec<_>>(),
-    )) as ArrayRef;
+    ));
 
     RecordBatch::try_new(
         schema.clone(),
