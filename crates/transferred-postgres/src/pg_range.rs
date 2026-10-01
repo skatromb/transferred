@@ -70,12 +70,12 @@ impl ExtensionType for PgRange {
         Ok(())
     }
 
-    fn supports_data_type(&self, maybe_range: &ArrowType) -> std::result::Result<(), ArrowError> {
-        Self::type_of(maybe_range).map(|_| ())
+    fn supports_data_type(&self, data_type: &ArrowType) -> std::result::Result<(), ArrowError> {
+        Self::type_of(data_type).map(|_| ())
     }
 
-    fn try_new(maybe_range: &ArrowType, (): ()) -> std::result::Result<Self, ArrowError> {
-        Self.supports_data_type(maybe_range).map(|()| Self)
+    fn try_new(data_type: &ArrowType, (): ()) -> std::result::Result<Self, ArrowError> {
+        Self.supports_data_type(data_type).map(|()| Self)
     }
 }
 
