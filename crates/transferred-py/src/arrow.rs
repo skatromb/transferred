@@ -21,7 +21,7 @@ use transferred_core::{BatchStream, Result, Source, TransferredError};
 #[gen_stub_pyclass]
 #[pyclass(name = "_ArrowSource", module = "transferred._native", unsendable)]
 pub struct PyArrowSource {
-    pub(crate) inner: Option<ArrowSource>,
+    inner: Option<ArrowSource>,
 }
 
 #[gen_stub_pymethods]
@@ -37,6 +37,13 @@ impl PyArrowSource {
         Ok(Self {
             inner: Some(ArrowSource { reader }),
         })
+    }
+}
+
+impl PyArrowSource {
+    /// Takes the wrapped source, leaving `None` behind.
+    pub(crate) fn take(&mut self) -> Option<ArrowSource> {
+        self.inner.take()
     }
 }
 

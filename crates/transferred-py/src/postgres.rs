@@ -8,7 +8,7 @@ use transferred_postgres::{PostgresDestination, PostgresSource};
 #[gen_stub_pyclass]
 #[pyclass(name = "_PostgresSource", module = "transferred._native", unsendable)]
 pub struct PyPostgresSource {
-    pub(crate) inner: Option<PostgresSource>,
+    inner: Option<PostgresSource>,
 }
 
 #[gen_stub_pymethods]
@@ -27,6 +27,13 @@ impl PyPostgresSource {
     }
 }
 
+impl PyPostgresSource {
+    /// Takes the wrapped source, leaving `None` behind.
+    pub(crate) fn take(&mut self) -> Option<PostgresSource> {
+        self.inner.take()
+    }
+}
+
 /// Internal `PyO3` wrapper around `transferred_postgres::PostgresDestination`.
 #[gen_stub_pyclass]
 #[pyclass(
@@ -35,7 +42,7 @@ impl PyPostgresSource {
     unsendable
 )]
 pub struct PyPostgresDestination {
-    pub(crate) inner: Option<PostgresDestination>,
+    inner: Option<PostgresDestination>,
 }
 
 #[gen_stub_pymethods]
@@ -51,5 +58,12 @@ impl PyPostgresDestination {
         Self {
             inner: Some(PostgresDestination::new(dsn, table)),
         }
+    }
+}
+
+impl PyPostgresDestination {
+    /// Takes the wrapped destination, leaving `None` behind.
+    pub(crate) fn take(&mut self) -> Option<PostgresDestination> {
+        self.inner.take()
     }
 }

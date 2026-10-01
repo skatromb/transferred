@@ -66,13 +66,12 @@ impl PyTransfer {
     }
 }
 
-/// Downcasts `$obj` to each pyclass in turn; on match, takes `inner` and returns it boxed.
+/// Downcasts `$obj` to each pyclass in turn; on match, takes its inner value and returns it boxed.
 macro_rules! try_take_inner {
     ($obj:expr, $($py_class:ty),+) => {
         $(if let Ok(cell) = $obj.cast::<$py_class>() {
             let inner = cell
                 .try_borrow_mut()?
-                .inner
                 .take()
                 .ok_or_else(already_consumed)?;
             return Ok(Box::new(inner));

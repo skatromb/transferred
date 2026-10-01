@@ -15,7 +15,7 @@ use transferred_files::{
 #[gen_stub_pyclass]
 #[pyclass(name = "_Parquet", module = "transferred._native", unsendable)]
 pub struct PyParquet {
-    pub(crate) inner: Parquet,
+    inner: Parquet,
 }
 
 #[gen_stub_pymethods]
@@ -35,7 +35,7 @@ impl PyParquet {
 #[gen_stub_pyclass]
 #[pyclass(name = "_FilesSource", module = "transferred._native", unsendable)]
 pub struct PyFilesSource {
-    pub(crate) inner: Option<FilesSource>,
+    inner: Option<FilesSource>,
 }
 
 #[gen_stub_pymethods]
@@ -69,11 +69,18 @@ impl PyFilesSource {
     }
 }
 
+impl PyFilesSource {
+    /// Takes the wrapped source, leaving `None` behind.
+    pub(crate) fn take(&mut self) -> Option<FilesSource> {
+        self.inner.take()
+    }
+}
+
 /// Internal `PyO3` wrapper around `transferred_files::FilesDestination`.
 #[gen_stub_pyclass]
 #[pyclass(name = "_FilesDestination", module = "transferred._native", unsendable)]
 pub struct PyFilesDestination {
-    pub(crate) inner: Option<FilesDestination>,
+    inner: Option<FilesDestination>,
 }
 
 #[gen_stub_pymethods]
@@ -90,6 +97,13 @@ impl PyFilesDestination {
         Ok(Self {
             inner: Some(FilesDestination::new(path, format, single_file)),
         })
+    }
+}
+
+impl PyFilesDestination {
+    /// Takes the wrapped destination, leaving `None` behind.
+    pub(crate) fn take(&mut self) -> Option<FilesDestination> {
+        self.inner.take()
     }
 }
 
