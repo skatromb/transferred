@@ -435,6 +435,7 @@ fn pg_interval(interval: IntervalMonthDayNano) -> Result<PgInterval> {
         )));
     }
 
+    #[expect(clippy::integer_division, reason = "remainder is checked to be zero")]
     Ok(PgInterval::new(
         interval.months,
         interval.days,
