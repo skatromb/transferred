@@ -253,12 +253,12 @@ fn input_batch(schema: &Arc<Schema>, rows: usize, offset: i64) -> RecordBatch {
 }
 
 /// Canonical Arrow extension name a field carries in its metadata, if any.
-fn extension_name<'a>(schema: &'a Schema, field: &str) -> Option<&'a str> {
+fn extension_name<'schema>(schema: &'schema Schema, field: &str) -> Option<&'schema str> {
     schema.field_with_name(field).unwrap().extension_type_name()
 }
 
 /// Serialized parameters of a field's extension type, the second reserved key, if any.
-fn extension_metadata<'a>(schema: &'a Schema, field: &str) -> Option<&'a str> {
+fn extension_metadata<'schema>(schema: &'schema Schema, field: &str) -> Option<&'schema str> {
     schema
         .field_with_name(field)
         .unwrap()

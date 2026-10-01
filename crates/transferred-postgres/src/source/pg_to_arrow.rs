@@ -92,12 +92,12 @@ impl Decoder {
 }
 
 /// A field's bytes untouched, for any type — `&[u8]`'s own `FromSql` accepts `bytea` alone.
-struct Raw<'a>(&'a [u8]);
+struct Raw<'buf>(&'buf [u8]);
 
-impl<'a> FromSql<'a> for Raw<'a> {
+impl<'buf> FromSql<'buf> for Raw<'buf> {
     fn from_sql(
         _: &PgType,
-        raw: &'a [u8],
+        raw: &'buf [u8],
     ) -> std::result::Result<Self, Box<dyn StdError + Sync + Send>> {
         Ok(Self(raw))
     }
@@ -386,7 +386,10 @@ fn tag(builder: &mut Box<dyn ArrayBuilder>, set: bool) -> Result<()> {
 }
 
 /// Decodes one value from its Postgres binary form; `None` is a NULL, which PG sends no bytes for.
-fn decode<'a, T: FromSql<'a>>(pg_type: &PgType, bytes: Option<&'a [u8]>) -> Result<Option<T>> {
+fn decode<'buf, T: FromSql<'buf>>(
+    pg_type: &PgType,
+    bytes: Option<&'buf [u8]>,
+) -> Result<Option<T>> {
     bytes
         .map(|bytes| T::from_sql(pg_type, bytes))
         .transpose()
@@ -412,7 +415,7 @@ fn text(bytes: Option<&[u8]>) -> Result<Option<&str>> {
 }
 
 /// A bound's bytes; `None` is an infinite bound, the only kind Postgres sends no value for.
-fn bound<'a>(bound: &RangeBound<Option<&'a [u8]>>) -> Option<&'a [u8]> {
+fn bound<'buf>(bound: &RangeBound<Option<&'buf [u8]>>) -> Option<&'buf [u8]> {
     match bound {
         RangeBound::Inclusive(value) | RangeBound::Exclusive(value) => *value,
         RangeBound::Unbounded => None,
