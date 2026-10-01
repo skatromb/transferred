@@ -1,7 +1,7 @@
 //! PG → PG round trip. Copies each fixture table through `Transfer` and reads both sides back,
 //! so the destination is checked against the source mapping rather than hand-written SQL.
 //! Needs Docker.
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "tests code")]
 
 use std::error::Error as _;
 use std::sync::Arc;

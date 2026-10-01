@@ -486,7 +486,7 @@ fn cast<B: ArrayBuilder>(builder: &mut dyn ArrayBuilder) -> Result<&mut B> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
+    #![expect(clippy::unwrap_used, reason = "tests code")]
 
     use arrow::array::{Array, BooleanArray, Int32Array, StructArray};
     use arrow_schema::extension::ExtensionType;

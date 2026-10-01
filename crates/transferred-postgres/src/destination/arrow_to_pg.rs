@@ -463,7 +463,7 @@ fn pg_uuid(bytes: &[u8]) -> Result<uuid::Uuid> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
+    #![expect(clippy::unwrap_used, reason = "tests code")]
 
     use std::collections::HashMap;
     use std::sync::Arc;

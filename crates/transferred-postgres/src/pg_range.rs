@@ -81,7 +81,7 @@ impl ExtensionType for PgRange {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
+    #![expect(clippy::unwrap_used, reason = "tests code")]
     use arrow_schema::extension::EXTENSION_TYPE_NAME_KEY;
 
     use super::*;

@@ -1,5 +1,5 @@
 //! `sslmode` end to end against a Postgres started with `ssl=on`.
-#![allow(clippy::expect_used)]
+#![expect(clippy::expect_used, reason = "tests code")]
 
 use arrow::array::{AsArray, RecordBatch};
 use futures::{StreamExt, TryStreamExt, stream};

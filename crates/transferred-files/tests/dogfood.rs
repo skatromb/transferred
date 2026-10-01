@@ -1,16 +1,16 @@
 //! Dogfood: in-memory batches → `FilesDestination` → `FilesSource` → in-memory collector,
 //! both legs orchestrated by `Transfer`. Wide schema of round-trip-safe Arrow types.
 
-#![allow(
+#![cfg(test)]
+#![expect(
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
     clippy::cast_sign_loss,
     clippy::cast_precision_loss,
     clippy::redundant_closure_for_method_calls,
     clippy::unwrap_used,
-    clippy::expect_used,
     clippy::indexing_slicing,
-    clippy::panic
+    reason = "tests code"
 )]
 
 use std::path::PathBuf;
@@ -127,7 +127,7 @@ fn input_schema() -> Arc<Schema> {
     ]))
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines, reason = "tests code")]
 fn input_batch(schema: &Arc<Schema>, rows: usize, offset: i64) -> RecordBatch {
     let i32_arr = Arc::new(Int32Array::from(
         (0..rows)

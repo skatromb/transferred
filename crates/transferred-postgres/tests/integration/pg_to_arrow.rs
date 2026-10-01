@@ -1,5 +1,5 @@
 //! PG → Arrow mapping against a throwaway Postgres container seeded by `pg_seed.sql`. Needs Docker.
-#![allow(clippy::expect_used, clippy::unwrap_used)]
+#![expect(clippy::expect_used, clippy::unwrap_used, reason = "tests code")]
 
 use std::sync::Arc;
 
