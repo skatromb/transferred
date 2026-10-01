@@ -54,7 +54,7 @@ impl Encoder {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let field_count = i16::try_from(columns.len()).map_err(|_| {
+        let field_count = i16::try_from(columns.len()).map_err(|_err| {
             TransferredError::destination(format!(
                 "a COPY row holds at most {} columns, not {}",
                 i16::MAX,
@@ -121,7 +121,7 @@ impl ColumnEncoder {
         let len = match self.write(array, row_num, buf)? {
             IsNull::Yes => NULL_FIELD,
             // Whatever the encoder appended past the hole is the value.
-            IsNull::No => i32::try_from(buf.len().saturating_sub(value_at)).map_err(|_| {
+            IsNull::No => i32::try_from(buf.len().saturating_sub(value_at)).map_err(|_err| {
                 TransferredError::destination("value is too large for a COPY field")
             })?,
         };
@@ -207,7 +207,7 @@ impl Encoding {
             ArrowType::Interval(IntervalUnit::MonthDayNano) => Self::Interval,
             &ArrowType::Decimal128(precision, scale) => Self::Numeric {
                 precision,
-                scale: u8::try_from(scale).map_err(|_| {
+                scale: u8::try_from(scale).map_err(|_err| {
                     TransferredError::destination(
                         "`Decimal128` with negative scale is not supported",
                     )
