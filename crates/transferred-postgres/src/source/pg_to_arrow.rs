@@ -174,8 +174,8 @@ enum Decoding {
 impl Decoding {
     /// Decides what Arrow column a Postgres column becomes.
     fn new(column: &PgColumn) -> Result<Self> {
-        let (name, typmod) = (column.name(), column.type_modifier());
-        Ok(match *column.type_() {
+        let (name, typmod, pg_type) = (column.name(), column.type_modifier(), column.type_());
+        Ok(match *pg_type {
             PgType::BOOL => Self::Bool,
             PgType::INT2 => Self::Int2,
             PgType::INT4 => Self::Int4,
@@ -200,24 +200,22 @@ impl Decoding {
             // A range constrains no precision on its bounds, so they can only be bare.
             PgType::NUM_RANGE => Self::Range(Box::new(Self::numeric(BARE_NUMERIC_TYPMOD, name)?)),
             // Extension-type OIDs differ per database, so `citext` and `PostGIS` match on a name.
-            ref text if matches!(text.kind(), Kind::Enum(_)) || text.name() == CITEXT => Self::Text,
+            _ if matches!(pg_type.kind(), Kind::Enum(_)) || pg_type.name() == CITEXT => Self::Text,
             // `geoarrow.wkb` holds EWKB, so the bytes pass through untouched, SRID per value and all.
-            ref geo if geo.name() == GEOMETRY => {
-                Self::Geo(geoarrow::planar(geoarrow::srid(typmod)))
-            }
-            ref geo if geo.name() == GEOGRAPHY => {
+            _ if pg_type.name() == GEOMETRY => Self::Geo(geoarrow::planar(geoarrow::srid(typmod))),
+            _ if pg_type.name() == GEOGRAPHY => {
                 Self::Geo(geoarrow::spherical(geoarrow::srid(typmod)))
             }
-            ref other => {
+            _ => {
                 warn!(
                     target: "postgres::source",
                     column = name,
                     "no Arrow mapping for Postgres type `{}` (oid {}); \
                      passing its bytes through as opaque binary",
-                    other.name(),
-                    other.oid()
+                    pg_type.name(),
+                    pg_type.oid()
                 );
-                Self::Opaque(Opaque::new(other.name(), VENDOR))
+                Self::Opaque(Opaque::new(pg_type.name(), VENDOR))
             }
         })
     }
