@@ -97,7 +97,6 @@ async fn open_file_stream(path: PathBuf, format: Arc<dyn FormatRead>) -> Result<
 }
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used, reason = "tests code")]
 mod tests {
     use crate::Parquet;
     use tempfile::tempdir;

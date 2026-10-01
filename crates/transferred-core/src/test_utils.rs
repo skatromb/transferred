@@ -60,7 +60,8 @@ impl Destination for TestDestination {
         for mut partition in partitions {
             while let Some(batch) = partition.next().await {
                 let batch = batch?;
-                rows += u64::try_from(batch.num_rows()).expect("row count fits u64");
+                rows = rows
+                    .saturating_add(u64::try_from(batch.num_rows()).expect("row count fits u64"));
                 self.batches
                     .lock()
                     .expect("TestDestination mutex")

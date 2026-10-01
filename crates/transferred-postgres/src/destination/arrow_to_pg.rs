@@ -29,9 +29,6 @@ use crate::pg_range::{LOWER, PgRange};
 /// PG counts sub-second time in microseconds; Arrow intervals count nanoseconds.
 const NANOS_PER_MICRO: i64 = 1_000;
 
-/// Width of the length written before every field.
-const FIELD_LEN_BYTES: usize = size_of::<i32>();
-
 /// Field length that means NULL.
 const NULL_FIELD: i32 = -1;
 
@@ -119,16 +116,17 @@ impl ColumnEncoder {
         // The length is only known once the value is written, so leave a hole and come back.
         let start_at = buf.len();
         buf.put_i32(0);
+        let value_at = buf.len();
 
         let len = match self.write(array, row_num, buf)? {
             IsNull::Yes => NULL_FIELD,
             // Whatever the encoder appended past the hole is the value.
-            IsNull::No => i32::try_from(buf.len() - start_at - FIELD_LEN_BYTES).map_err(|_| {
+            IsNull::No => i32::try_from(buf.len().saturating_sub(value_at)).map_err(|_| {
                 TransferredError::destination("value is too large for a COPY field")
             })?,
         };
 
-        let Some(slot) = buf.get_mut(start_at..start_at + FIELD_LEN_BYTES) else {
+        let Some(slot) = buf.get_mut(start_at..value_at) else {
             return Err(TransferredError::destination(
                 "COPY field length slot is out of bounds",
             ));
@@ -492,8 +490,6 @@ fn pg_uuid(bytes: &[u8]) -> Result<uuid::Uuid> {
 
 #[cfg(test)]
 mod tests {
-    #![expect(clippy::unwrap_used, reason = "tests code")]
-
     use std::collections::HashMap;
     use std::sync::Arc;
 

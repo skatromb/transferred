@@ -1,6 +1,5 @@
 //! PG → Parquet. Writes each fixture table out and reads the part file back, so the schema the
 //! source derives is checked against what a Parquet file can actually carry. Needs Docker.
-#![expect(clippy::expect_used, reason = "tests code")]
 
 use std::error::Error as _;
 use std::path::PathBuf;

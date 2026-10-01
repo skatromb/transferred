@@ -2,12 +2,7 @@
 //! both legs orchestrated by `Transfer`. Wide schema of round-trip-safe Arrow types.
 
 #![cfg(test)]
-#![expect(
-    clippy::redundant_closure_for_method_calls,
-    clippy::unwrap_used,
-    clippy::indexing_slicing,
-    reason = "tests code"
-)]
+#![expect(clippy::arithmetic_side_effects, reason = "tests code")]
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -174,20 +169,11 @@ fn input_batch(schema: &Arc<Schema>, rows: u8, offset: u8) -> RecordBatch {
             })
             .collect::<Vec<_>>(),
     ));
-    let bin_arr: ArrayRef = Arc::new(BinaryArray::from_opt_vec(
+    let bin_arr: ArrayRef = Arc::new(
         (0..rows)
-            .map(|i| {
-                if i % 2 == 0 {
-                    Some([i, i + 1, i + 2])
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<Option<[u8; 3]>>>()
-            .iter()
-            .map(|o| o.as_ref().map(|a| a.as_slice()))
-            .collect(),
-    ));
+            .map(|i| (i % 2 == 0).then_some([i, i + 1, i + 2]))
+            .collect::<BinaryArray>(),
+    );
     let date_arr: ArrayRef = Arc::new(Date32Array::from(
         (0..rows)
             .map(|i| {

@@ -42,9 +42,10 @@ impl Destination for FilesDestination {
             return Err(err);
         }
 
-        let mut bytes_written = 0;
+        let mut bytes_written: u64 = 0;
         for written in &writtens {
-            bytes_written += tokio::fs::metadata(&written.path).await?.len();
+            bytes_written =
+                bytes_written.saturating_add(tokio::fs::metadata(&written.path).await?.len());
         }
 
         Ok(RunReport {
@@ -105,7 +106,7 @@ impl FilesDestination {
                 continue; // skip empty partitions — no stray part file
             }
 
-            let name = self.output_filename(written.len() + 1);
+            let name = self.output_filename(written.len().saturating_add(1));
             let file = File::create(tmp_dir.join(&name)).await?;
 
             let rows = self.format.write(Box::new(file), Box::pin(stream)).await?;

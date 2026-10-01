@@ -43,6 +43,9 @@ const BARE_NUMERIC: (u8, u8) = (DECIMAL128_MAX_PRECISION, 9);
 /// Typmod PG reports for a `numeric` declared without precision.
 const BARE_NUMERIC_TYPMOD: i32 = -1;
 
+/// Varlena header PG adds to every typmod it encodes.
+const VARHDRSZ: i32 = 4;
+
 /// PG counts sub-second time in microseconds; Arrow intervals count nanoseconds.
 const NANOS_PER_MICRO: i64 = 1_000;
 
@@ -441,8 +444,9 @@ fn numeric_precision_scale(typmod: i32) -> Result<(u8, u8)> {
     // `numeric_typmod_precision`/`numeric_typmod_scale`, minus `VARHDRSZ`; the XOR sign-extends the
     // 11-bit scale, which PG 15+ allows to be negative.
     // https://github.com/postgres/postgres/blob/REL_17_10/src/backend/utils/adt/numeric.c#L925
-    let precision = ((typmod - 4) >> 16) & 0xffff;
-    let scale = (((typmod - 4) & 0x7ff) ^ 0x400) - 0x400;
+    let typmod = typmod.wrapping_sub(VARHDRSZ);
+    let precision = (typmod >> 16) & 0xffff;
+    let scale = ((typmod & 0x7ff) ^ 0x400).wrapping_sub(0x400);
 
     // PG holds 1000 digits to Arrow's 38, and PG 15+ lets scale go negative or past precision.
     match (u8::try_from(precision), u8::try_from(scale)) {
@@ -499,8 +503,6 @@ fn cast<B: ArrayBuilder>(builder: &mut dyn ArrayBuilder) -> Result<&mut B> {
 
 #[cfg(test)]
 mod tests {
-    #![expect(clippy::unwrap_used, reason = "tests code")]
-
     use arrow::array::{Array, BooleanArray, Int32Array, StructArray};
     use arrow_schema::extension::ExtensionType;
 

@@ -1,5 +1,4 @@
 //! Throwaway Postgres container, seeded by `pg_seed.sql`, shared by the integration tests.
-#![expect(clippy::expect_used, reason = "tests code")]
 
 use std::sync::Mutex;
 

@@ -69,8 +69,6 @@ pub(crate) fn srid(typmod: i32) -> Option<i32> {
 
 #[cfg(test)]
 mod tests {
-    #![expect(clippy::unwrap_used, reason = "tests code")]
-
     use arrow_schema::extension::ExtensionType;
 
     use super::*;
