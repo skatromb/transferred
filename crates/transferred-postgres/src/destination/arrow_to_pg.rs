@@ -29,12 +29,18 @@ use crate::pg_range::{LOWER, PgRange};
 /// PG counts sub-second time in microseconds; Arrow intervals count nanoseconds.
 const NANOS_PER_MICRO: i64 = 1_000;
 
+/// Width of the length written before every field.
+const FIELD_LEN_BYTES: usize = size_of::<i32>();
+
+/// Field length that means NULL.
+const NULL_FIELD: i32 = -1;
+
 /// Postgres column definitions + value encoders, mapped once from an Arrow schema.
 pub struct Encoder {
     schema: SchemaRef,
-    pub(crate) columns: Vec<ColumnEncoder>,
+    columns: Vec<ColumnEncoder>,
     /// Fields in every COPY row, which the wire format counts in an `i16`.
-    pub(crate) field_count: i16,
+    field_count: i16,
 }
 
 impl Encoder {
@@ -89,17 +95,51 @@ impl Encoder {
 
         Ok(())
     }
+
+    /// Appends one COPY row: the field count, then every field.
+    pub fn write_row(&self, batch: &RecordBatch, row_num: usize, buf: &mut BytesMut) -> Result<()> {
+        buf.put_i16(self.field_count);
+        for (column, array) in self.columns.iter().zip(batch.columns()) {
+            column.write_field(array.as_ref(), row_num, buf)?;
+        }
+
+        Ok(())
+    }
 }
 
 /// One column of the target table: its quoted name and the encoding of its values.
-pub struct ColumnEncoder {
+struct ColumnEncoder {
     name: String,
     encoding: Encoding,
 }
 
 impl ColumnEncoder {
-    /// Writes value `row` of `array` into the COPY buffer, or reports it null.
-    pub fn write(&self, array: &dyn Array, row_num: usize, buf: &mut BytesMut) -> Result<IsNull> {
+    /// Appends value `row_num` of `array` as one COPY field: its length, then its bytes.
+    fn write_field(&self, array: &dyn Array, row_num: usize, buf: &mut BytesMut) -> Result<()> {
+        // The length is only known once the value is written, so leave a hole and come back.
+        let start_at = buf.len();
+        buf.put_i32(0);
+
+        let len = match self.write(array, row_num, buf)? {
+            IsNull::Yes => NULL_FIELD,
+            // Whatever the encoder appended past the hole is the value.
+            IsNull::No => i32::try_from(buf.len() - start_at - FIELD_LEN_BYTES).map_err(|_| {
+                TransferredError::destination("value is too large for a COPY field")
+            })?,
+        };
+
+        let Some(slot) = buf.get_mut(start_at..start_at + FIELD_LEN_BYTES) else {
+            return Err(TransferredError::destination(
+                "COPY field length slot is out of bounds",
+            ));
+        };
+        slot.copy_from_slice(&len.to_be_bytes());
+
+        Ok(())
+    }
+
+    /// Writes value `row_num` of `array`, or reports it null.
+    fn write(&self, array: &dyn Array, row_num: usize, buf: &mut BytesMut) -> Result<IsNull> {
         self.encoding.write(array, row_num, buf).map_err(|error| {
             TransferredError::destination(format!("column {}: {error}", self.name))
         })
@@ -322,7 +362,7 @@ fn write_range(
     buf: &mut BytesMut,
 ) -> Result<IsNull> {
     // In the order `PgRange::fields` declares them, as `PgRange::type_of` has already checked.
-    let [lower, upper, lower_inc, upper_inc, empty] = ranges.columns() else {
+    let [lowers, uppers, lower_incs, upper_incs, empties] = ranges.columns() else {
         return Err(TransferredError::destination(format!(
             "a range column holds five children, not {}",
             ranges.num_columns()
@@ -330,17 +370,17 @@ fn write_range(
     };
 
     // `PgRange::fields` declares the flags non-nullable, so they read straight off.
-    if cast::<BooleanArray>(empty.as_ref())?.value(row_num) {
+    if cast::<BooleanArray>(empties.as_ref())?.value(row_num) {
         empty_range_to_sql(buf);
         return Ok(IsNull::No);
     }
 
-    let lower_inc = cast::<BooleanArray>(lower_inc.as_ref())?.value(row_num);
-    let upper_inc = cast::<BooleanArray>(upper_inc.as_ref())?.value(row_num);
+    let lower_inc = cast::<BooleanArray>(lower_incs.as_ref())?.value(row_num);
+    let upper_inc = cast::<BooleanArray>(upper_incs.as_ref())?.value(row_num);
 
     range_to_sql(
-        |buf| write_bound(element, lower.as_ref(), row_num, lower_inc, buf),
-        |buf| write_bound(element, upper.as_ref(), row_num, upper_inc, buf),
+        |buf| write_bound(element, lowers.as_ref(), row_num, lower_inc, buf),
+        |buf| write_bound(element, uppers.as_ref(), row_num, upper_inc, buf),
         buf,
     )
     .map_err(TransferredError::destination)?;

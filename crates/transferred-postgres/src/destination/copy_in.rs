@@ -2,23 +2,16 @@
 
 use std::pin::Pin;
 
-use arrow::array::{Array, RecordBatch};
+use arrow::array::RecordBatch;
 use bytes::{BufMut, Bytes, BytesMut};
 use futures::SinkExt;
-use tokio_postgres::types::IsNull;
 use tokio_postgres::{Client, CopyInSink};
 use transferred_core::{Result, TransferredError};
 
-use super::arrow_to_pg::{ColumnEncoder, Encoder};
+use super::arrow_to_pg::Encoder;
 
 /// Bytes every binary COPY stream starts with, before the flags and header extension.
 const COPY_SIGNATURE: &[u8] = b"PGCOPY\n\xff\r\n\0";
-
-/// Width of the length written before every field.
-const FIELD_LEN_BYTES: usize = size_of::<i32>();
-
-/// Field length that means NULL.
-const NULL_FIELD: i32 = -1;
 
 /// Field count that ends the rows.
 const COPY_TRAILER: i16 = -1;
@@ -57,46 +50,12 @@ impl CopyIn {
         encoder.check(batch)?;
 
         for row_num in 0..batch.num_rows() {
-            self.buf.put_i16(encoder.field_count);
-            for (encoder, array) in encoder.columns.iter().zip(batch.columns()) {
-                self.push_field(encoder, array.as_ref(), row_num)?;
-            }
+            encoder.write_row(batch, row_num, &mut self.buf)?;
 
             if self.buf.len() >= CHUNK_BYTES {
                 self.send().await?;
             }
         }
-
-        Ok(())
-    }
-
-    /// Appends one field: its length, then its bytes.
-    fn push_field(
-        &mut self,
-        encoder: &ColumnEncoder,
-        array: &dyn Array,
-        row_num: usize,
-    ) -> Result<()> {
-        // The length is only known once the value is written, so leave a hole and come back.
-        let start_at = self.buf.len();
-        self.buf.put_i32(0);
-
-        let len = match encoder.write(array, row_num, &mut self.buf)? {
-            IsNull::Yes => NULL_FIELD,
-            // Whatever the encoder appended past the hole is the value.
-            IsNull::No => {
-                i32::try_from(self.buf.len() - start_at - FIELD_LEN_BYTES).map_err(|_| {
-                    TransferredError::destination("value is too large for a COPY field")
-                })?
-            }
-        };
-
-        let Some(slot) = self.buf.get_mut(start_at..start_at + FIELD_LEN_BYTES) else {
-            return Err(TransferredError::destination(
-                "COPY field length slot is out of bounds",
-            ));
-        };
-        slot.copy_from_slice(&len.to_be_bytes());
 
         Ok(())
     }
