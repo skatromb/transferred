@@ -78,8 +78,8 @@ impl Decoder {
 
     /// Appends one row, each field still exactly as Postgres sent it.
     pub fn append_row(&mut self, row: &BinaryCopyOutRow) -> Result<()> {
-        for (at, column) in self.columns.iter_mut().enumerate() {
-            let raw: Option<Raw> = row.try_get(at).map_err(TransferredError::source)?;
+        for (index, column) in self.columns.iter_mut().enumerate() {
+            let raw: Option<Raw> = row.try_get(index).map_err(TransferredError::source)?;
             column.append(raw.map(|raw| raw.0))?;
         }
 
@@ -330,11 +330,11 @@ impl Decoding {
             ),
             Self::Timestamp => cast::<TimestampMicrosecondBuilder>(builder)?.append_option(
                 decode::<NaiveDateTime>(&PgType::TIMESTAMP, bytes)?
-                    .map(|ts| ts.and_utc().timestamp_micros()),
+                    .map(|timestamp| timestamp.and_utc().timestamp_micros()),
             ),
             Self::Timestamptz => cast::<TimestampMicrosecondBuilder>(builder)?.append_option(
                 decode::<DateTime<Utc>>(&PgType::TIMESTAMPTZ, bytes)?
-                    .map(|ts| ts.timestamp_micros()),
+                    .map(|timestamp| timestamp.timestamp_micros()),
             ),
             Self::Interval => cast::<IntervalMonthDayNanoBuilder>(builder)?.append_option(
                 decode::<PgInterval>(&PgType::INTERVAL, bytes)?

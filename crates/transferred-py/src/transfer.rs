@@ -54,11 +54,12 @@ impl PyTransfer {
             .ok_or_else(|| PyRuntimeError::new_err("Transfer already consumed"))?;
 
         let report = py.detach(|| {
-            let rt = Builder::new_current_thread()
+            let runtime = Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map_err(|e| PyRuntimeError::new_err(format!("tokio runtime: {e}")))?;
-            rt.block_on(Transfer::new(source, destination).run())
+                .map_err(|err| PyRuntimeError::new_err(format!("tokio runtime: {err}")))?;
+            runtime
+                .block_on(Transfer::new(source, destination).run())
                 .map_err(to_pyerr)
         })?;
 

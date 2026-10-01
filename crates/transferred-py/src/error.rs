@@ -75,13 +75,13 @@ pub fn to_pyerr(err: CoreError) -> PyErr {
     }
 }
 
-pub fn register(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add("TransferredError", py.get_type::<TransferredError>())?;
-    m.add("SourceError", py.get_type::<SourceError>())?;
-    m.add("EmptySourceError", py.get_type::<EmptySourceError>())?;
-    m.add("DestinationError", py.get_type::<DestinationError>())?;
-    m.add("ArrowError", py.get_type::<ArrowError>())?;
-    m.add("IoError", py.get_type::<IoError>())?;
+pub fn register(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add("TransferredError", py.get_type::<TransferredError>())?;
+    module.add("SourceError", py.get_type::<SourceError>())?;
+    module.add("EmptySourceError", py.get_type::<EmptySourceError>())?;
+    module.add("DestinationError", py.get_type::<DestinationError>())?;
+    module.add("ArrowError", py.get_type::<ArrowError>())?;
+    module.add("IoError", py.get_type::<IoError>())?;
     Ok(())
 }
 

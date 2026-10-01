@@ -118,8 +118,8 @@ fn parquet_arg(format: &Bound<'_, PyAny>) -> PyResult<Parquet> {
     Ok(format.extract::<PyRef<'_, PyParquet>>()?.inner.clone())
 }
 
-fn parse_compression(s: Option<&str>) -> PyResult<Compression> {
-    match s {
+fn parse_compression(compression: Option<&str>) -> PyResult<Compression> {
+    match compression {
         None => Ok(Compression::None),
         Some("zstd") => Ok(Compression::Zstd),
         Some("snappy") => Ok(Compression::Snappy),

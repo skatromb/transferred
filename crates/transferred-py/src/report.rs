@@ -83,8 +83,8 @@ impl PyRunReport {
     }
 
     fn __str__(&self) -> String {
-        let ms = u64::try_from(self.inner.duration.as_millis()).unwrap_or(u64::MAX);
-        let duration = Duration::from_millis(ms);
+        let millis = u64::try_from(self.inner.duration.as_millis()).unwrap_or(u64::MAX);
+        let duration = Duration::from_millis(millis);
         let written_objects: String =
             self.inner
                 .written_objects

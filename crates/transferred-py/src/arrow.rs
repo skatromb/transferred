@@ -80,7 +80,7 @@ impl Stream for ArrowReaderStream {
         Poll::Ready(match next {
             None => None,
             Some(Ok(batch)) => Some(Ok(batch)),
-            Some(Err(e)) => Some(Err(TransferredError::Arrow(e))),
+            Some(Err(err)) => Some(Err(TransferredError::Arrow(err))),
         })
     }
 }

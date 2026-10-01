@@ -53,11 +53,11 @@ impl FormatRead for Parquet {
     async fn read(&self, reader: Box<dyn FileReader>) -> Result<BatchStream> {
         let stream = ParquetRecordBatchStreamBuilder::new(reader)
             .await
-            .map_err(|e| TransferredError::source(format!("parquet reader init: {e}")))?
+            .map_err(|err| TransferredError::source(format!("parquet reader init: {err}")))?
             .build()
-            .map_err(|e| TransferredError::source(format!("parquet reader build: {e}")))?
+            .map_err(|err| TransferredError::source(format!("parquet reader build: {err}")))?
             .map(|result| {
-                result.map_err(|e| TransferredError::source(format!("parquet read: {e}")))
+                result.map_err(|err| TransferredError::source(format!("parquet read: {err}")))
             });
         Ok(Box::pin(stream))
     }

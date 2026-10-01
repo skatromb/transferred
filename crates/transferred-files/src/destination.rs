@@ -49,11 +49,11 @@ impl Destination for FilesDestination {
         }
 
         Ok(RunReport {
-            rows: writtens.iter().map(|w| w.rows).sum(),
+            rows: writtens.iter().map(|written| written.rows).sum(),
             bytes_written,
             written_objects: writtens
                 .iter()
-                .map(|w| w.path.display().to_string())
+                .map(|written| written.path.display().to_string())
                 .collect(),
             duration: start.elapsed(),
             coercions: vec![],
