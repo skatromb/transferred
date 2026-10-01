@@ -217,7 +217,7 @@ impl Encoding {
                 let element = Self::new(&ArrowField::new(LOWER, bounds_type.clone(), true))?;
 
                 Self::Range {
-                    pg_type: range_type(&element)?,
+                    pg_type: element.range_type()?,
                     element: Box::new(element),
                 }
             }
@@ -258,6 +258,24 @@ impl Encoding {
             Self::Numeric { .. } => PgType::NUMERIC,
             Self::Range { pg_type, .. } => pg_type.clone(),
         }
+    }
+
+    /// Picks the Postgres range over this element; a range outside these six is defined per database.
+    fn range_type(&self) -> Result<PgType> {
+        Ok(match self {
+            Self::Int4 => PgType::INT4_RANGE,
+            Self::Int8 => PgType::INT8_RANGE,
+            Self::Numeric { .. } => PgType::NUM_RANGE,
+            Self::Date => PgType::DATE_RANGE,
+            Self::Timestamp => PgType::TS_RANGE,
+            Self::Timestamptz => PgType::TSTZ_RANGE,
+            other => {
+                return Err(TransferredError::destination(format!(
+                    "Postgres has no built-in range over `{}`",
+                    other.sql_type()
+                )));
+            }
+        })
     }
 
     /// Writes one value in Postgres binary form; nulls stop here, before any downcast.
@@ -333,24 +351,6 @@ impl Encoding {
 fn cast<A: 'static>(array: &dyn Array) -> Result<&A> {
     array.as_any().downcast_ref::<A>().ok_or_else(|| {
         TransferredError::destination(format!("column is not a {}", type_name::<A>()))
-    })
-}
-
-/// Picks the Postgres range over `element`; a range outside these six is defined per database.
-fn range_type(element: &Encoding) -> Result<PgType> {
-    Ok(match element {
-        Encoding::Int4 => PgType::INT4_RANGE,
-        Encoding::Int8 => PgType::INT8_RANGE,
-        Encoding::Numeric { .. } => PgType::NUM_RANGE,
-        Encoding::Date => PgType::DATE_RANGE,
-        Encoding::Timestamp => PgType::TS_RANGE,
-        Encoding::Timestamptz => PgType::TSTZ_RANGE,
-        other => {
-            return Err(TransferredError::destination(format!(
-                "Postgres has no built-in range over `{}`",
-                other.sql_type()
-            )));
-        }
     })
 }
 
