@@ -35,7 +35,7 @@ impl PgRange {
 
     /// Reads the bounds' `ArrowType` from Range Struct, erroring unless its fields are exactly
     /// what `fields` declares, order included.
-    pub(crate) fn type_of(maybe_range: &ArrowType) -> std::result::Result<&ArrowType, ArrowError> {
+    pub(crate) fn type_of(maybe_range: &ArrowType) -> Result<&ArrowType, ArrowError> {
         // The first field's type is the only candidate, so rebuild from it and compare the shapes.
         if let ArrowType::Struct(fields) = maybe_range
             && let Some(lower) = fields.first()
@@ -66,15 +66,15 @@ impl ExtensionType for PgRange {
         None
     }
 
-    fn deserialize_metadata(_: Option<&str>) -> std::result::Result<(), ArrowError> {
+    fn deserialize_metadata(_: Option<&str>) -> Result<(), ArrowError> {
         Ok(())
     }
 
-    fn supports_data_type(&self, data_type: &ArrowType) -> std::result::Result<(), ArrowError> {
+    fn supports_data_type(&self, data_type: &ArrowType) -> Result<(), ArrowError> {
         Self::type_of(data_type).map(|_| ())
     }
 
-    fn try_new(data_type: &ArrowType, (): ()) -> std::result::Result<Self, ArrowError> {
+    fn try_new(data_type: &ArrowType, (): ()) -> Result<Self, ArrowError> {
         Self.supports_data_type(data_type).map(|()| Self)
     }
 }
