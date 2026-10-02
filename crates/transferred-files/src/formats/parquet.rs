@@ -20,7 +20,7 @@ pub enum Compression {
     /// Snappy.
     Snappy,
     /// No compression.
-    None,
+    Uncompressed,
 }
 
 impl From<Compression> for ParquetCompression {
@@ -28,7 +28,7 @@ impl From<Compression> for ParquetCompression {
         match compression {
             Compression::Zstd => Self::ZSTD(ZstdLevel::default()),
             Compression::Snappy => Self::SNAPPY,
-            Compression::None => Self::UNCOMPRESSED,
+            Compression::Uncompressed => Self::UNCOMPRESSED,
         }
     }
 }
