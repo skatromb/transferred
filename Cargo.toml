@@ -30,37 +30,7 @@ tracing = { version = "0.1", features = ["log"] }
 pedantic = { level = "warn", priority = -1 }
 nursery = {level = "warn", priority = -1 }
 
-# Relax until the v1.0
-exhaustive_enums = "allow"
-exhaustive_structs = "allow"
-
-# wps lint like from `restriction`
-restriction = { level = "warn", priority = -1 }
-arbitrary_source_item_ordering = "allow"
-big_endian_bytes = "allow"
-blanket_clippy_restriction_lints = "allow"
-default_numeric_fallback = "allow"
-float_arithmetic = "allow"
-impl_trait_in_params = "allow"
-implicit_return = "allow"
-inline_trait_bounds = "allow"
-integer_division_remainder_used = "allow"
-missing_docs_in_private_items = "allow"
-missing_inline_in_public_items = "allow"
-missing_trait_methods = "allow"
-mod_module_files = "deny"
-pattern_type_mismatch = "allow"
-pub_use = "allow"
-pub_with_shorthand = "allow"
-question_mark_used = "allow"
-self_named_module_files = "allow"
-separated_literal_suffix = "allow"
-shadow_reuse = "allow"
-single_call_fn = "allow"
-std_instead_of_alloc = "allow"
-std_instead_of_core = "allow"
-
-# don't panic
+# Don't panic
 arithmetic_side_effects = "deny"
 cast_abs_to_unsigned = "deny"
 expect_used = "deny"
@@ -73,6 +43,43 @@ unchecked_time_subtraction = "deny"
 unimplemented = "deny"
 unreachable = "deny"
 unwrap_used = "deny"
+
+# Readable code and best practices from `restriction`
+restriction = { level = "warn", priority = -1 }
+arbitrary_source_item_ordering = "allow"
+assertions_on_result_states = "allow"
+big_endian_bytes = "allow"
+blanket_clippy_restriction_lints = "allow"
+clone_on_ref_ptr = "allow"
+default_numeric_fallback = "allow"
+float_arithmetic = "allow"
+impl_trait_in_params = "allow"
+implicit_return = "allow"
+inline_trait_bounds = "allow"
+integer_division_remainder_used = "allow"
+let_underscore_must_use = "allow"
+let_underscore_untyped = "allow"
+missing_docs_in_private_items = "allow"
+missing_inline_in_public_items = "allow"
+missing_trait_methods = "allow"
+mod_module_files = "deny"
+non_ascii_literal = "allow"
+pattern_type_mismatch = "allow"
+pub_use = "allow"
+pub_with_shorthand = "allow"
+question_mark_used = "allow"
+rest_pattern_accessible_field = "allow"
+self_named_module_files = "allow"
+separated_literal_suffix = "allow"
+shadow_reuse = "allow"
+single_call_fn = "allow"
+std_instead_of_alloc = "allow"
+std_instead_of_core = "allow"
+string_add = "allow"
+
+# Relax until the v1.0
+exhaustive_enums = "allow"
+exhaustive_structs = "allow"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
