@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -74,10 +75,10 @@ impl FilesDestination {
     /// Picks a filename: `{dir}.{ext}` if `single_file`, else `part-NNNNN.{ext}`.
     fn output_filename(&self, part: usize) -> String {
         let ext = self.format.file_extension();
-        let base_name = self
-            .path
-            .file_name()
-            .map_or("data".to_owned(), |n| n.to_string_lossy().into_owned());
+        let base_name = self.path.file_name().map_or_else(
+            || "data".to_owned(),
+            |name| name.to_string_lossy().into_owned(),
+        );
 
         if self.single_file {
             format!("{base_name}.{ext}")
@@ -156,7 +157,7 @@ async fn cleanup(tmp_dir: &Path) {
 fn make_tmp(final_path: &Path) -> PathBuf {
     let mut name = final_path
         .file_name()
-        .map(std::ffi::OsStr::to_os_string)
+        .map(OsStr::to_os_string)
         .unwrap_or_default();
     name.push(".tmp");
 
