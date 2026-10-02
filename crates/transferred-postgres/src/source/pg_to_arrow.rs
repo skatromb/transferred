@@ -485,7 +485,8 @@ fn month_day_nano(interval: PgInterval) -> Result<IntervalMonthDayNano> {
 
 #[cfg(test)]
 mod tests {
-    use arrow::array::{Array as _, AsArray as _};
+    use arrow::array::AsArray as _;
+    use arrow::util::display::{ArrayFormatter, FormatOptions};
     use arrow_schema::extension::ExtensionType as _;
 
     use super::*;
@@ -507,34 +508,23 @@ mod tests {
         Ok(int4_range().array(&[bytes])?.as_struct().clone())
     }
 
-    /// The five fields of a one-row range struct: both bounds, then the three tag bits.
-    fn parts(range: &StructArray) -> (Option<i32>, Option<i32>, bool, bool, bool) {
-        let bound = |i: usize| {
-            let column = range
-                .column(i)
-                .as_any()
-                .downcast_ref::<Int32Array>()
-                .unwrap();
-            column.is_valid(0).then(|| column.value(0))
-        };
-        let flag = |i: usize| {
-            range
-                .column(i)
-                .as_any()
-                .downcast_ref::<BooleanArray>()
-                .unwrap()
-                .value(0)
-        };
-
-        (bound(0), bound(1), flag(2), flag(3), flag(4))
+    /// A one-row range struct as Arrow prints it, every field by name.
+    fn text(range: &StructArray) -> String {
+        let options = FormatOptions::default().with_null("NULL");
+        ArrayFormatter::try_new(range, &options)
+            .unwrap()
+            .value(0)
+            .to_string()
     }
 
     #[test]
     fn decodes_a_bounded_range() {
         let range = decode_range(Some(&BOUNDED)).unwrap();
 
-        assert!(range.is_valid(0));
-        assert_eq!(parts(&range), (Some(1), Some(6), true, false, false));
+        assert_eq!(
+            text(&range),
+            "{lower: 1, upper: 6, lower_inc: true, upper_inc: false, empty: false}"
+        );
     }
 
     /// An infinite bound is a null bound, and neither infinite bound counts as inclusive.
@@ -542,8 +532,10 @@ mod tests {
     fn decodes_an_unbounded_range() {
         let range = decode_range(Some(&UNBOUNDED)).unwrap();
 
-        assert!(range.is_valid(0));
-        assert_eq!(parts(&range), (None, None, false, false, false));
+        assert_eq!(
+            text(&range),
+            "{lower: NULL, upper: NULL, lower_inc: false, upper_inc: false, empty: false}"
+        );
     }
 
     /// Empty is the one state the bounds cannot express, which is why it gets a field of its own.
@@ -551,8 +543,10 @@ mod tests {
     fn decodes_an_empty_range() {
         let range = decode_range(Some(&EMPTY_RANGE)).unwrap();
 
-        assert!(range.is_valid(0));
-        assert_eq!(parts(&range), (None, None, false, false, true));
+        assert_eq!(
+            text(&range),
+            "{lower: NULL, upper: NULL, lower_inc: false, upper_inc: false, empty: true}"
+        );
     }
 
     /// A SQL NULL range carries no tag at all, so it must not arrive looking `empty`.
@@ -560,8 +554,8 @@ mod tests {
     fn separates_a_null_range_from_an_empty_one() {
         let range = decode_range(None).unwrap();
 
-        assert!(range.is_null(0));
-        assert_eq!(parts(&range), (None, None, false, false, false));
+        assert_eq!(text(&range), "NULL");
+        assert!(!range.column_by_name("empty").unwrap().as_boolean().value(0));
     }
 
     #[test]
