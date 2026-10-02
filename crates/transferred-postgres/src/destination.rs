@@ -64,7 +64,7 @@ impl Destination for PostgresDestination {
         Ok(RunReport {
             rows,
             bytes_written: 0,
-            written_objects: vec![loader.qualified.clone()],
+            written_objects: vec![loader.target.clone()],
             duration: start.elapsed(),
         })
     }
@@ -75,11 +75,11 @@ struct Loader {
     /// Connection every statement of the load runs on.
     client: Client,
     /// Quoted, schema-qualified target, ready to interpolate into SQL.
-    qualified: String,
+    target: String,
     /// Quoted, schema-qualified staging table.
     staging: String,
-    /// Quoted bare name the staging table is renamed to, which `ALTER TABLE` wants unqualified.
-    bare: String,
+    /// Quoted bare target name the staging table is renamed to, which `ALTER TABLE` wants unqualified.
+    target_name: String,
 }
 
 impl Loader {
@@ -104,9 +104,9 @@ impl Loader {
         }
 
         Ok(Self {
-            qualified: qualify(schema, name),
+            target: qualify(schema, name),
             staging: qualify(schema, &staging),
-            bare: escape_identifier(name),
+            target_name: escape_identifier(name),
             client,
         })
     }
@@ -143,10 +143,10 @@ impl Loader {
         transaction
             .batch_execute(&format!(
                 "drop table if exists {target}; \
-                 alter table {staging} rename to {bare};",
-                target = self.qualified,
+                 alter table {staging} rename to {target_name};",
+                target = self.target,
                 staging = self.staging,
-                bare = self.bare,
+                target_name = self.target_name,
             ))
             .await
             .map_err(TransferredError::in_destination)?;
