@@ -39,10 +39,13 @@ unsafe fn reap() {
 const IMAGE: &str = "imresamu/postgis";
 const IMAGE_TAG: &str = "18-3.6";
 
+/// A running container and the DSN that reaches it.
+pub(crate) type RunningPostgres = (ContainerAsync<Postgres>, String);
+
 /// Boots `request` on this suite's image, registers it for reaping, and returns it with its DSN.
 pub(crate) async fn start_pg_container(
     request: impl Into<ContainerRequest<Postgres>>,
-) -> (ContainerAsync<Postgres>, String) {
+) -> RunningPostgres {
     let container = request
         .with_name(IMAGE)
         .with_tag(IMAGE_TAG)
@@ -65,7 +68,7 @@ pub(crate) async fn start_pg_container(
 }
 
 /// Postgres container, started once per test binary and seeded on first boot.
-static POSTGRES: OnceCell<(ContainerAsync<Postgres>, String)> = OnceCell::const_new();
+static POSTGRES: OnceCell<RunningPostgres> = OnceCell::const_new();
 
 /// Starts this binary's seeded Postgres, once, and hands back its connection string.
 pub(crate) async fn start_seeded_postgres() -> String {
