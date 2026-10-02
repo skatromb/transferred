@@ -4,10 +4,10 @@
 #![cfg(test)]
 #![expect(clippy::arithmetic_side_effects, reason = "tests code")]
 
+use std::iter;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, mpsc};
 use std::time::Duration;
-use std::{iter, mem};
 
 use arrow::array::{
     ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float64Array,
@@ -81,21 +81,20 @@ async fn write_parquet(input: Vec<RecordBatch>, path: &Path) -> RunReport {
 /// Reads the parts a write reported back into memory, alongside the read's own report.
 async fn read_parquet(written: &RunReport) -> (RunReport, Vec<RecordBatch>) {
     let parts = written.written_objects.iter().map(PathBuf::from).collect();
-    let destination = MemoryDestination::default();
-    let collected = destination.batches.clone();
+    let (sender, receiver) = mpsc::channel();
 
     let report = Transfer::new(
         Box::new(FilesSource::new(
             GlobOrPaths::Paths(parts),
             Arc::new(Parquet::default()),
         )),
-        Box::new(destination),
+        Box::new(MemoryDestination(sender)),
     )
     .run()
     .await
     .unwrap();
 
-    (report, mem::take(&mut *collected.lock().unwrap()))
+    (report, receiver.iter().collect())
 }
 
 fn input_schema() -> Arc<Schema> {
@@ -222,11 +221,8 @@ impl Source for MemorySource {
     }
 }
 
-/// Collects batches into a shared `Vec`; clone `batches` before moving it into a `Transfer`.
-#[derive(Default)]
-struct MemoryDestination {
-    batches: Arc<Mutex<Vec<RecordBatch>>>,
-}
+/// Sends every batch down a channel; the run drops the sender, which ends the receiver's iterator.
+struct MemoryDestination(mpsc::Sender<RecordBatch>);
 
 #[async_trait]
 impl Destination for MemoryDestination {
@@ -236,10 +232,7 @@ impl Destination for MemoryDestination {
             while let Some(batch) = partition.next().await {
                 let batch = batch?;
                 rows += u64::try_from(batch.num_rows()).expect("row count fits u64");
-                self.batches
-                    .lock()
-                    .expect("MemoryDestination mutex")
-                    .push(batch);
+                self.0.send(batch).expect("receiver outlives the run");
             }
         }
         Ok(RunReport {
