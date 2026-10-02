@@ -30,6 +30,7 @@ use transferred_core::{AnyError, Result, TransferredError};
 
 use crate::geoarrow::{self, GEOGRAPHY, GEOMETRY};
 use crate::pg_range::PgRange;
+use crate::{NANOS_PER_MICRO, UUID_BYTES};
 
 /// PG stores `timestamptz` as UTC; the original client offset is not retained.
 const UTC: &str = "UTC";
@@ -46,14 +47,11 @@ const BARE_NUMERIC_TYPMOD: i32 = -1;
 /// Varlena header PG adds to every typmod it encodes.
 const VARHDRSZ: i32 = 4;
 
-/// PG counts sub-second time in microseconds; Arrow intervals count nanoseconds.
-const NANOS_PER_MICRO: i64 = 1_000;
+/// The only `jsonb` binary format version PG sends.
+const JSONB_VERSION: u8 = 1;
 
 /// The `arrow.opaque` fallback's `vendor_name`: the system an unmapped type came from.
 const VENDOR: &str = "PostgreSQL";
-
-/// Bytes an Arrow `uuid` holds, which is also what PG sends.
-const UUID_BYTES: i32 = 16;
 
 /// Arrow schema + per-column decodings, mapped once from PG column metadata.
 pub(crate) struct Decoder {
@@ -441,10 +439,10 @@ where
 /// Strips the format version byte `jsonb` leads with, leaving the document text.
 fn jsonb(bytes: &[u8]) -> Result<&[u8]> {
     match bytes.split_first() {
-        Some((1, text)) => Ok(text),
-        _ => Err(TransferredError::in_source(
-            "`jsonb` arrived in an encoding version other than 1",
-        )),
+        Some((&JSONB_VERSION, text)) => Ok(text),
+        _ => Err(TransferredError::in_source(format!(
+            "`jsonb` arrived in an encoding version other than {JSONB_VERSION}"
+        ))),
     }
 }
 

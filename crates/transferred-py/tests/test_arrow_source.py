@@ -10,21 +10,21 @@ from transferred import ArrowSource
 _ID = "id"
 
 
-def test_rejects_non_arrow_data() -> None:
+def test_rejects_non_arrow_data():
     with pytest.raises(TypeError, match="`PyCapsule` interface"):
         ArrowSource("not arrow data")  # ty: ignore[invalid-argument-type]
 
 
-def test_accepts_record_batch_reader(out: Path) -> None:
+def test_accepts_record_batch_reader(out_dir: Path):
     rows = [{_ID: 1}, {_ID: 2}, {_ID: 3}]
     batch = pa.RecordBatch.from_pylist(rows)
     reader = pa.RecordBatchReader.from_batches(batch.schema, [batch])
 
-    assert run_transfer(ArrowSource(reader), out) == 3
+    assert run_transfer(ArrowSource(reader), out_dir) == 3
 
 
-def test_accepts_table(out: Path) -> None:
+def test_accepts_table(out_dir: Path):
     """A table exposes the same capsule interface a reader does, materialised."""
     table = pa.table({_ID: [1, 2, 3]})
 
-    assert run_transfer(ArrowSource(table), out) == 3
+    assert run_transfer(ArrowSource(table), out_dir) == 3

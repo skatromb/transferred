@@ -20,7 +20,7 @@ def _write_seed(path: Path, ids: list[int]) -> None:
     pq.write_table(table, path)
 
 
-def test_single_file_flattens_partitions(tmp_path: Path, out_dir: Path) -> None:
+def test_single_file_flattens_partitions(tmp_path: Path, out_dir: Path):
     _write_seed(tmp_path / "a.parquet", [1, 2, 3])
     _write_seed(tmp_path / "b.parquet", [4, 5])
 
@@ -34,7 +34,7 @@ def test_single_file_flattens_partitions(tmp_path: Path, out_dir: Path) -> None:
     assert pq.read_table(out_dir).num_rows == 5
 
 
-def test_existing_output_is_overwritten(tmp_path: Path, out_dir: Path) -> None:
+def test_existing_output_is_overwritten(tmp_path: Path, out_dir: Path):
     _write_seed(tmp_path / "a.parquet", [1, 2, 3])
 
     for _ in range(2):
@@ -47,7 +47,7 @@ def test_existing_output_is_overwritten(tmp_path: Path, out_dir: Path) -> None:
     assert list(out_dir.glob("*.parquet")) == [out_dir / "part-00001.parquet"]
 
 
-def test_empty_source_raises(out_dir: Path) -> None:
+def test_empty_source_raises(out_dir: Path):
     schema = pa.schema([("id", pa.int64())])
     reader = pa.RecordBatchReader.from_batches(schema, [])
 

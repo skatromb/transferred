@@ -8,8 +8,9 @@ use geoarrow_schema::{Crs, CrsType, Edges, Metadata, WkbType};
 /// user-defined SRID may belong to another authority, which 0.1 does not look up.
 const EPSG: &str = "EPSG:";
 
-/// The `PostGIS` type names, which carry no fixed OID: `CREATE EXTENSION` assigns one per database.
+/// The planar `PostGIS` type. It has no fixed OID: `CREATE EXTENSION` assigns one per database.
 pub(crate) const GEOMETRY: &str = "geometry";
+/// The spherical `PostGIS` type, its OID assigned per database too.
 pub(crate) const GEOGRAPHY: &str = "geography";
 
 /// PG Typmod for a `geo...` without a coordinate system. Each value's own EWKB can name one.

@@ -13,7 +13,7 @@ create_exception!(
     PyException,
     r#"Base exception for all `transferred` failures.
 
-Subclasses: `SourceError`, `DestinationError`, `ArrowError`, `IoError`.
+Subclasses: `SourceError` (and `EmptySourceError`), `DestinationError`, `ArrowError`, `IoError`.
 
 Example:
     ```py

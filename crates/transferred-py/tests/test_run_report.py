@@ -15,15 +15,15 @@ _REPR = (
 """Every field, in order, with the byte count and the timing left open."""
 
 
-def _run(out: Path) -> RunReport:
+def _run(out_dir: Path) -> RunReport:
     source = [{"id": row_id} for row_id in range(_ROWS)]
-    return Transfer(source=source, destination=FilesDestination(out)).run()
+    return Transfer(source=source, destination=FilesDestination(out_dir)).run()
 
 
-def test_duration_is_measured(out: Path) -> None:
-    assert _run(out).duration_seconds > 0
+def test_duration_is_measured(out_dir: Path):
+    assert _run(out_dir).duration_seconds > 0
 
 
-def test_repr_renders_one_line_of_fields(out: Path) -> None:
+def test_repr_renders_one_line_of_fields(out_dir: Path):
     """`repr` is what a debugger and a failed assert show; `str` is the run summary."""
-    assert re.fullmatch(_REPR, repr(_run(out)))
+    assert re.fullmatch(_REPR, repr(_run(out_dir)))

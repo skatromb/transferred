@@ -125,7 +125,7 @@ fn parquet_arg(format: &Bound<'_, PyAny>) -> PyResult<Parquet> {
 
 fn parse_compression(compression: Option<&str>) -> PyResult<Compression> {
     match compression {
-        None => Ok(Compression::None),
+        None => Ok(Compression::Uncompressed),
         Some("zstd") => Ok(Compression::Zstd),
         Some("snappy") => Ok(Compression::Snappy),
         Some(other) => Err(PyValueError::new_err(format!(

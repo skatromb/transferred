@@ -107,11 +107,10 @@ cannot take is dropped with `skip_columns=` on the source.
 
 ```python
 report = transfer.run()
-report.rows            # 12_481_902
-report.bytes_written   # 1_503_948_211
-report.written_objects # ["out/part-00001.parquet", ...] — paths/URIs/tables written
-report.duration        # timedelta
-report.coercions       # list[Coercion] — column, original type, target, level
+report.rows             # 12_481_902
+report.bytes_written    # 1_503_948_211
+report.written_objects  # ["out/part-00001.parquet", ...] — paths/URIs/tables written
+report.duration_seconds # 4.218
 ```
 
 No staging inventory. Staging artifacts are an implementation detail of each destination's

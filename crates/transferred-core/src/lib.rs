@@ -7,5 +7,5 @@ mod report;
 mod transfer;
 
 pub use error::{AnyError, Result, TransferredError};
-pub use report::{Coercion, CoercionLevel, RunReport};
+pub use report::RunReport;
 pub use transfer::{BatchStream, BoxedDestination, BoxedSource, Destination, Source, Transfer};

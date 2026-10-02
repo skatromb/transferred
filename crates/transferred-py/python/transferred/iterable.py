@@ -5,7 +5,7 @@ Arrow seam. Requires pyarrow — install via `pip install transferred[iterable]`
 """
 
 import dataclasses
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable
 from itertools import batched, chain
 from typing import TYPE_CHECKING, Any
 
@@ -43,28 +43,22 @@ def _iterable_to_reader(iterable: Iterable[Row]) -> pa.RecordBatchReader:
             "Install with: `pip install transferred[iterable]`"
         ) from error
 
-    chunks = batched(_to_dicts(iterable), _BATCH_SIZE)
-    first = pa.RecordBatch.from_pylist(next(chunks))
-    rest = (pa.RecordBatch.from_pylist(chunk, schema=first.schema) for chunk in chunks)
+    chunks = batched(iterable, _BATCH_SIZE)
+    first_chunk = next(chunks, None)
+    if first_chunk is None:
+        raise EmptySourceError("iterable is empty")
+
+    convert = _converter_for(first_chunk[0])
+    first = pa.RecordBatch.from_pylist(list(map(convert, first_chunk)))
+    rest = (
+        pa.RecordBatch.from_pylist(list(map(convert, chunk)), schema=first.schema)
+        for chunk in chunks
+    )
 
     return pa.RecordBatchReader.from_batches(first.schema, chain([first], rest))
 
 
-def _to_dicts(iterable: Iterable[Row]) -> Iterator[dict[str, Any]]:
-    """Normalise rows to dicts, sniffing the row type once off the first row."""
-    iterator = iter(iterable)
-
-    try:
-        first_row = next(iterator)
-    except StopIteration:
-        raise EmptySourceError("iterable is empty") from None
-
-    convert = _converter_for(first_row)
-
-    return map(convert, chain([first_row], iterator))
-
-
-def _converter_for(row: Any) -> Callable[[Any], dict[str, Any]]:
+def _converter_for(row: Row) -> Callable[[Any], dict[str, Any]]:
     """Return a `row` → `dict[str, Any]` converter for `row`'s type.
 
     Supported row types: `dict`, `@dataclass` instance, `pydantic.BaseModel`.

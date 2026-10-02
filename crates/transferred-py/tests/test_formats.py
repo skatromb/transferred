@@ -19,7 +19,7 @@ def test_none_compression_is_accepted():
 
 
 def test_unknown_compression_raises():
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="unknown compression: lz4"):
         Parquet(compression="lz4")  # ty: ignore[invalid-argument-type]
 
 

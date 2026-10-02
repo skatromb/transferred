@@ -1,5 +1,6 @@
 //! Throwaway Postgres container, seeded by `pg_seed.sql`, shared by the integration tests.
 
+use std::error::Error as _;
 use std::mem;
 use std::process::Command;
 use std::sync::Mutex;
@@ -11,7 +12,7 @@ use testcontainers_modules::postgres::Postgres;
 use testcontainers_modules::testcontainers::runners::AsyncRunner as _;
 use testcontainers_modules::testcontainers::{ContainerAsync, ContainerRequest, ImageExt as _};
 use tokio::sync::OnceCell;
-use transferred_core::BoxedSource;
+use transferred_core::{BoxedSource, Result, TransferredError};
 use transferred_postgres::PostgresSource;
 
 /// Ids of the containers this run started, for [`reap`] to remove.
@@ -37,42 +38,43 @@ unsafe fn reap() {
 
 /// Image every fixture runs: Postgres with `PostGIS`, published for arm64 as well as amd64.
 const IMAGE: &str = "imresamu/postgis";
+/// Postgres 18 with `PostGIS` 3.6.
 const IMAGE_TAG: &str = "18-3.6";
 
-/// A running container and the DSN that reaches it.
-pub(crate) type RunningPostgres = (ContainerAsync<Postgres>, String);
-
-/// Boots `request` on this suite's image, registers it for reaping, and returns it with its DSN.
+/// Boots `request` on this suite's image and registers it for reaping.
 pub(crate) async fn start_pg_container(
     request: impl Into<ContainerRequest<Postgres>>,
-) -> RunningPostgres {
+) -> ContainerAsync<Postgres> {
     let container = request
         .with_name(IMAGE)
         .with_tag(IMAGE_TAG)
         .start()
         .await
         .expect("start postgres");
-    let port = container
-        .get_host_port_ipv4(5432)
-        .await
-        .expect("map postgres port");
     RUNNING
         .lock()
         .expect("reaper lock")
         .push(container.id().to_owned());
 
-    (
-        container,
-        format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres"),
-    )
+    container
+}
+
+/// DSN that reaches `container` from the host.
+pub(crate) async fn dsn(container: &ContainerAsync<Postgres>) -> String {
+    let port = container
+        .get_host_port_ipv4(5432)
+        .await
+        .expect("map postgres port");
+
+    format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres")
 }
 
 /// Postgres container, started once per test binary and seeded on first boot.
-static POSTGRES: OnceCell<RunningPostgres> = OnceCell::const_new();
+static POSTGRES: OnceCell<ContainerAsync<Postgres>> = OnceCell::const_new();
 
 /// Starts this binary's seeded Postgres, once, and hands back its connection string.
 pub(crate) async fn start_seeded_postgres() -> String {
-    let (_container, dsn) = POSTGRES
+    let container = POSTGRES
         .get_or_init(|| {
             start_pg_container(
                 Postgres::default().with_init_sql(include_bytes!("../pg_seed.sql").to_vec()),
@@ -80,7 +82,7 @@ pub(crate) async fn start_seeded_postgres() -> String {
         })
         .await;
 
-    dsn.clone()
+    dsn(container).await
 }
 
 /// Connects to this binary's Postgres container, driving the connection in the background.
@@ -119,15 +121,27 @@ pub(crate) async fn read_table(table: &str) -> RecordBatch {
 
 /// Drains every partition of `source` into one `RecordBatch`.
 pub(crate) async fn collect(source: BoxedSource) -> RecordBatch {
-    let partitions = source.stream_partitions().await.expect("stream partitions");
+    try_collect(source).await.expect("collect batches")
+}
+
+/// Drains every partition of `source` into one `RecordBatch`, handing back failures.
+pub(crate) async fn try_collect(source: BoxedSource) -> Result<RecordBatch> {
+    let partitions = source.stream_partitions().await?;
 
     // `flatten` keeps partitions sequential, so row order stays deterministic.
-    let batches: Vec<RecordBatch> = stream::iter(partitions)
-        .flatten()
-        .try_collect()
-        .await
-        .expect("collect batches");
+    let batches: Vec<RecordBatch> = stream::iter(partitions).flatten().try_collect().await?;
 
     let schema = batches.first().expect("at least one batch").schema();
-    concat_batches(&schema, &batches).expect("concat batches")
+    Ok(concat_batches(&schema, &batches)?)
+}
+
+/// Asserts `copy` holds `original` unchanged, and the run counted every row of it.
+pub(crate) fn assert_copied(original: &RecordBatch, rows: u64, copy: &RecordBatch) {
+    assert_eq!(usize::try_from(rows), Ok(original.num_rows()));
+    assert_eq!(copy, original);
+}
+
+/// Text of the connector error underneath a `TransferredError`.
+pub(crate) fn detail(error: &TransferredError) -> String {
+    error.source().map(ToString::to_string).unwrap_or_default()
 }

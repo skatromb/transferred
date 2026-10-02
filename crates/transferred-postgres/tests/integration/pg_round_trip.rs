@@ -2,7 +2,6 @@
 //! so the destination is checked against the source mapping rather than hand-written SQL.
 //! Needs Docker.
 
-use std::error::Error as _;
 use std::sync::Arc;
 
 use arrow::array::{Int64Array, RecordBatch};
@@ -14,7 +13,9 @@ use transferred_core::{
 };
 use transferred_postgres::{PostgresDestination, PostgresSource, STAGING_SUFFIX};
 
-use crate::common::{client, exec, read_table, start_seeded_postgres, table_exists};
+use crate::common::{
+    assert_copied, client, detail, exec, read_table, start_seeded_postgres, table_exists,
+};
 
 /// Runs a transfer from `source` into `into`, handing back the result so failures stay assertable.
 async fn try_transfer(source: BoxedSource, into: &str) -> Result<RunReport> {
@@ -68,19 +69,16 @@ async fn staging_exists(table: &str) -> bool {
     table_exists(&format!("{table}{STAGING_SUFFIX}")).await
 }
 
-/// Text of the connector error underneath a `TransferredError`.
-fn detail(error: &TransferredError) -> String {
-    error.source().map(ToString::to_string).unwrap_or_default()
+/// Copies `table` into `into` and checks the copy against the original.
+async fn assert_round_trips_into(table: &str, into: &str) {
+    let rows = transfer_run(table, into).await;
+
+    assert_copied(&read_table(table).await, rows, &read_table(into).await);
 }
 
 /// Every fixture table must survive a round trip with the same schema and values.
 async fn assert_round_trips(table: &str) {
-    let into = format!("{table}_copy");
-    let rows = transfer_run(table, &into).await;
-
-    let original = read_table(table).await;
-    assert_eq!(usize::try_from(rows), Ok(original.num_rows()));
-    assert_eq!(read_table(&into).await, original);
+    assert_round_trips_into(table, &format!("{table}_copy")).await;
 }
 
 #[tokio::test]
@@ -204,8 +202,7 @@ async fn a_batch_wider_than_the_copy_buffer_arrives_whole() {
         .expect("run transfer")
         .rows;
 
-    assert_eq!(usize::try_from(rows), Ok(batch.num_rows()));
-    assert_eq!(read_table(into).await, batch);
+    assert_copied(&batch, rows, &read_table(into).await);
 }
 
 /// Source that yields one batch, then fails — staging exists by then, built from that schema.
@@ -267,10 +264,5 @@ async fn a_failed_swap_spares_the_target_and_its_dependents() {
 async fn round_trips_into_a_qualified_schema() {
     exec("create schema if not exists it_elsewhere").await;
 
-    let into = "it_elsewhere.it_primitives_copy";
-    let rows = transfer_run("it_primitives", into).await;
-
-    let original = read_table("it_primitives").await;
-    assert_eq!(usize::try_from(rows), Ok(original.num_rows()));
-    assert_eq!(read_table(into).await, original);
+    assert_round_trips_into("it_primitives", "it_elsewhere.it_primitives_copy").await;
 }

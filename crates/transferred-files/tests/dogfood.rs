@@ -230,7 +230,6 @@ impl Destination for MemoryDestination {
             bytes_written: 0,
             written_objects: vec![],
             duration: Duration::ZERO,
-            coercions: vec![],
         })
     }
 }

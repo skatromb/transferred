@@ -59,9 +59,9 @@ class FilesDestination(Destination):
     Args:
         path: Output directory, replacing any existing one.
         format: Output format. Defaults to `Parquet()`.
-        single_file: When `false`, outputs to many files,
+        single_file: When `False`, outputs to many files,
             improving throughput from parallelization.
-            When `true`, writes all partitions to one file.
+            When `True`, writes all partitions to one file.
 
     Example:
         >>> from transferred import FilesSource, FilesDestination, Transfer
@@ -81,6 +81,7 @@ class FilesDestination(Destination):
         self,
         path: StrPath,
         format: Format = _PARQUET,
+        *,
         single_file: bool = False,
     ) -> None:
         self._native_destination = _FilesDestination(
