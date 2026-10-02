@@ -440,10 +440,10 @@ fn geo_sql_type(wkb: &WkbType) -> String {
         GEOMETRY
     };
 
-    match geoarrow::epsg(wkb) {
-        Some(epsg) => format!("{name}(Geometry,{epsg})"),
-        None => name.to_owned(),
-    }
+    geoarrow::epsg(wkb).map_or_else(
+        || name.to_owned(),
+        |epsg| format!("{name}(Geometry,{epsg})"),
+    )
 }
 
 /// Restates an Arrow count of `10^-scale` units as a decimal, as PG `numeric` carries it.
