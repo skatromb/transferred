@@ -1,14 +1,13 @@
 //! Throwaway Postgres container, seeded by `pg_seed.sql`, shared by the integration tests.
-#![allow(clippy::expect_used, unsafe_code)]
 
 use std::sync::Mutex;
 
 use arrow::array::RecordBatch;
 use arrow::compute::concat_batches;
-use futures::{StreamExt, TryStreamExt, stream};
+use futures::{StreamExt as _, TryStreamExt as _, stream};
 use testcontainers_modules::postgres::Postgres;
-use testcontainers_modules::testcontainers::runners::AsyncRunner;
-use testcontainers_modules::testcontainers::{ContainerAsync, ContainerRequest, ImageExt};
+use testcontainers_modules::testcontainers::runners::AsyncRunner as _;
+use testcontainers_modules::testcontainers::{ContainerAsync, ContainerRequest, ImageExt as _};
 use tokio::sync::OnceCell;
 use transferred_core::Source;
 use transferred_postgres::PostgresSource;
@@ -69,8 +68,7 @@ pub async fn start_seeded_postgres() -> String {
     let (_container, dsn) = POSTGRES
         .get_or_init(|| {
             start_pg_container(
-                Postgres::default()
-                    .with_init_sql(include_str!("../pg_seed.sql").as_bytes().to_vec()),
+                Postgres::default().with_init_sql(include_bytes!("../pg_seed.sql").to_vec()),
             )
         })
         .await;

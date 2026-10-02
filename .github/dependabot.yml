@@ -12,6 +12,11 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
 
+  - package-ecosystem: rust-toolchain
+    directory: /
+    schedule:
+      interval: weekly
+
   - package-ecosystem: uv
     directory: /crates/transferred-py
     schedule:

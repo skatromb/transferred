@@ -10,9 +10,9 @@ use arrow::array::{
     RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
 };
 use arrow::datatypes::{Date32Type, IntervalMonthDayNano};
-use arrow_schema::extension::{ExtensionType, Json, Uuid};
+use arrow_schema::extension::{ExtensionType as _, Json, Uuid};
 use arrow_schema::{DataType as ArrowType, Field as ArrowField, IntervalUnit, SchemaRef, TimeUnit};
-use bytes::{BufMut, BytesMut};
+use bytes::{BufMut as _, BytesMut};
 use chrono::{DateTime, NaiveDate, Utc};
 use geoarrow_schema::WkbType;
 use pg_interval::Interval as PgInterval;
@@ -29,12 +29,15 @@ use crate::pg_range::{LOWER, PgRange};
 /// PG counts sub-second time in microseconds; Arrow intervals count nanoseconds.
 const NANOS_PER_MICRO: i64 = 1_000;
 
+/// Field length that means NULL.
+const NULL_FIELD: i32 = -1;
+
 /// Postgres column definitions + value encoders, mapped once from an Arrow schema.
 pub struct Encoder {
     schema: SchemaRef,
-    pub(crate) columns: Vec<ColumnEncoder>,
+    columns: Vec<ColumnEncoder>,
     /// Fields in every COPY row, which the wire format counts in an `i16`.
-    pub(crate) field_count: i16,
+    field_count: i16,
 }
 
 impl Encoder {
@@ -51,8 +54,8 @@ impl Encoder {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let field_count = i16::try_from(columns.len()).map_err(|_| {
-            TransferredError::destination(format!(
+        let field_count = i16::try_from(columns.len()).map_err(|_err| {
+            TransferredError::in_destination(format!(
                 "a COPY row holds at most {} columns, not {}",
                 i16::MAX,
                 columns.len()
@@ -80,7 +83,7 @@ impl Encoder {
     pub fn check(&self, batch: &RecordBatch) -> Result<()> {
         // The table was created from the first batch, so a later partition may not fit it.
         if batch.schema().fields() != self.schema.fields() {
-            return Err(TransferredError::destination(format!(
+            return Err(TransferredError::in_destination(format!(
                 "batch schema `{}` does not match the target table's `{}`",
                 batch.schema(),
                 self.schema
@@ -89,19 +92,54 @@ impl Encoder {
 
         Ok(())
     }
+
+    /// Appends one COPY row: the field count, then every field.
+    pub fn write_row(&self, batch: &RecordBatch, row_num: usize, buf: &mut BytesMut) -> Result<()> {
+        buf.put_i16(self.field_count);
+        for (column, array) in self.columns.iter().zip(batch.columns()) {
+            column.write_field(array.as_ref(), row_num, buf)?;
+        }
+
+        Ok(())
+    }
 }
 
 /// One column of the target table: its quoted name and the encoding of its values.
-pub struct ColumnEncoder {
+struct ColumnEncoder {
     name: String,
     encoding: Encoding,
 }
 
 impl ColumnEncoder {
-    /// Writes value `row` of `array` into the COPY buffer, or reports it null.
-    pub fn write(&self, array: &dyn Array, row_num: usize, buf: &mut BytesMut) -> Result<IsNull> {
+    /// Appends value `row_num` of `array` as one COPY field: its length, then its bytes.
+    fn write_field(&self, array: &dyn Array, row_num: usize, buf: &mut BytesMut) -> Result<()> {
+        // The length is only known once the value is written, so leave a hole and come back.
+        let start_at = buf.len();
+        buf.put_i32(0);
+        let value_at = buf.len();
+
+        let len = match self.write(array, row_num, buf)? {
+            IsNull::Yes => NULL_FIELD,
+            // Whatever the encoder appended past the hole is the value.
+            IsNull::No => i32::try_from(buf.len().saturating_sub(value_at)).map_err(|_err| {
+                TransferredError::in_destination("value is too large for a COPY field")
+            })?,
+        };
+
+        let Some(slot) = buf.get_mut(start_at..value_at) else {
+            return Err(TransferredError::in_destination(
+                "COPY field length slot is out of bounds",
+            ));
+        };
+        slot.copy_from_slice(&len.to_be_bytes());
+
+        Ok(())
+    }
+
+    /// Writes value `row_num` of `array`, or reports it null.
+    fn write(&self, array: &dyn Array, row_num: usize, buf: &mut BytesMut) -> Result<IsNull> {
         self.encoding.write(array, row_num, buf).map_err(|error| {
-            TransferredError::destination(format!("column {}: {error}", self.name))
+            TransferredError::in_destination(format!("column {}: {error}", self.name))
         })
     }
 }
@@ -131,12 +169,16 @@ enum Encoding {
     /// A range writes as a tag byte plus bounds, each bound through the element's own encoding.
     Range {
         pg_type: PgType,
-        element: Box<Encoding>,
+        element: Box<Self>,
     },
 }
 
 impl Encoding {
     /// Decides what a Postgres column an Arrow field becomes.
+    #[expect(
+        clippy::wildcard_enum_match_arm,
+        reason = "every Arrow type not listed is refused"
+    )]
     fn new(field: &ArrowField) -> Result<Self> {
         let extension = field.extension_type_name();
         Ok(match field.data_type() {
@@ -153,7 +195,7 @@ impl Encoding {
             ArrowType::Binary if extension == Some(WkbType::NAME) => Self::Geo(
                 field
                     .try_extension_type()
-                    .map_err(TransferredError::destination)?,
+                    .map_err(TransferredError::in_destination)?,
             ),
             // Plain bytes, and `arrow.opaque`, whose type name the destination deliberately drops.
             ArrowType::Binary => Self::Bytea,
@@ -165,24 +207,24 @@ impl Encoding {
             ArrowType::Interval(IntervalUnit::MonthDayNano) => Self::Interval,
             &ArrowType::Decimal128(precision, scale) => Self::Numeric {
                 precision,
-                scale: u8::try_from(scale).map_err(|_| {
-                    TransferredError::destination(
+                scale: u8::try_from(scale).map_err(|_err| {
+                    TransferredError::in_destination(
                         "`Decimal128` with negative scale is not supported",
                     )
                 })?,
             },
             ArrowType::Struct(_) if extension == Some(PgRange::NAME) => {
-                let bounds_type =
-                    PgRange::type_of(field.data_type()).map_err(TransferredError::destination)?;
+                let bounds_type = PgRange::type_of(field.data_type())
+                    .map_err(TransferredError::in_destination)?;
                 let element = Self::new(&ArrowField::new(LOWER, bounds_type.clone(), true))?;
 
                 Self::Range {
-                    pg_type: range_type(&element)?,
+                    pg_type: element.range_type()?,
                     element: Box::new(element),
                 }
             }
             other => {
-                return Err(TransferredError::destination(format!(
+                return Err(TransferredError::in_destination(format!(
                     "Arrow type `{other}` is not supported by the Postgres destination in 0.1"
                 )));
             }
@@ -194,7 +236,21 @@ impl Encoding {
         match self {
             Self::Numeric { precision, scale } => format!("numeric({precision},{scale})"),
             Self::Geo(wkb) => geo_sql_type(wkb),
-            other => other.pg_type().name().to_owned(),
+            other @ (Self::Bool
+            | Self::Int2
+            | Self::Int4
+            | Self::Int8
+            | Self::Float4
+            | Self::Float8
+            | Self::Text
+            | Self::Json
+            | Self::Bytea
+            | Self::Uuid
+            | Self::Date
+            | Self::Timestamp
+            | Self::Timestamptz
+            | Self::Interval
+            | Self::Range { .. }) => other.pg_type().name().to_owned(),
         }
     }
 
@@ -218,6 +274,34 @@ impl Encoding {
             Self::Numeric { .. } => PgType::NUMERIC,
             Self::Range { pg_type, .. } => pg_type.clone(),
         }
+    }
+
+    /// Picks the Postgres range over this element; a range outside these six is defined per database.
+    fn range_type(&self) -> Result<PgType> {
+        Ok(match self {
+            Self::Int4 => PgType::INT4_RANGE,
+            Self::Int8 => PgType::INT8_RANGE,
+            Self::Numeric { .. } => PgType::NUM_RANGE,
+            Self::Date => PgType::DATE_RANGE,
+            Self::Timestamp => PgType::TS_RANGE,
+            Self::Timestamptz => PgType::TSTZ_RANGE,
+            other @ (Self::Bool
+            | Self::Int2
+            | Self::Float4
+            | Self::Float8
+            | Self::Text
+            | Self::Json
+            | Self::Bytea
+            | Self::Uuid
+            | Self::Interval
+            | Self::Geo(_)
+            | Self::Range { .. }) => {
+                return Err(TransferredError::in_destination(format!(
+                    "Postgres has no built-in range over `{}`",
+                    other.sql_type()
+                )));
+            }
+        })
     }
 
     /// Writes one value in Postgres binary form; nulls stop here, before any downcast.
@@ -285,32 +369,14 @@ impl Encoding {
             }
         };
 
-        written.map_err(TransferredError::destination)
+        written.map_err(TransferredError::in_destination)
     }
 }
 
 /// Downcasts an Arrow column; a mismatch is unreachable, as the encoding came from the same field.
 fn cast<A: 'static>(array: &dyn Array) -> Result<&A> {
     array.as_any().downcast_ref::<A>().ok_or_else(|| {
-        TransferredError::destination(format!("column is not a {}", type_name::<A>()))
-    })
-}
-
-/// Picks the Postgres range over `element`; a range outside these six is defined per database.
-fn range_type(element: &Encoding) -> Result<PgType> {
-    Ok(match element {
-        Encoding::Int4 => PgType::INT4_RANGE,
-        Encoding::Int8 => PgType::INT8_RANGE,
-        Encoding::Numeric { .. } => PgType::NUM_RANGE,
-        Encoding::Date => PgType::DATE_RANGE,
-        Encoding::Timestamp => PgType::TS_RANGE,
-        Encoding::Timestamptz => PgType::TSTZ_RANGE,
-        other => {
-            return Err(TransferredError::destination(format!(
-                "Postgres has no built-in range over `{}`",
-                other.sql_type()
-            )));
-        }
+        TransferredError::in_destination(format!("column is not a {}", type_name::<A>()))
     })
 }
 
@@ -322,28 +388,28 @@ fn write_range(
     buf: &mut BytesMut,
 ) -> Result<IsNull> {
     // In the order `PgRange::fields` declares them, as `PgRange::type_of` has already checked.
-    let [lower, upper, lower_inc, upper_inc, empty] = ranges.columns() else {
-        return Err(TransferredError::destination(format!(
+    let [lowers, uppers, lower_incs, upper_incs, empties] = ranges.columns() else {
+        return Err(TransferredError::in_destination(format!(
             "a range column holds five children, not {}",
             ranges.num_columns()
         )));
     };
 
     // `PgRange::fields` declares the flags non-nullable, so they read straight off.
-    if cast::<BooleanArray>(empty.as_ref())?.value(row_num) {
+    if cast::<BooleanArray>(empties.as_ref())?.value(row_num) {
         empty_range_to_sql(buf);
         return Ok(IsNull::No);
     }
 
-    let lower_inc = cast::<BooleanArray>(lower_inc.as_ref())?.value(row_num);
-    let upper_inc = cast::<BooleanArray>(upper_inc.as_ref())?.value(row_num);
+    let lower_inc = cast::<BooleanArray>(lower_incs.as_ref())?.value(row_num);
+    let upper_inc = cast::<BooleanArray>(upper_incs.as_ref())?.value(row_num);
 
     range_to_sql(
-        |buf| write_bound(element, lower.as_ref(), row_num, lower_inc, buf),
-        |buf| write_bound(element, upper.as_ref(), row_num, upper_inc, buf),
+        |buf| write_bound(element, lowers.as_ref(), row_num, lower_inc, buf),
+        |buf| write_bound(element, uppers.as_ref(), row_num, upper_inc, buf),
         buf,
     )
-    .map_err(TransferredError::destination)?;
+    .map_err(TransferredError::in_destination)?;
 
     Ok(IsNull::No)
 }
@@ -374,27 +440,28 @@ fn geo_sql_type(wkb: &WkbType) -> String {
         GEOMETRY
     };
 
-    match geoarrow::epsg(wkb) {
-        Some(epsg) => format!("{name}(Geometry,{epsg})"),
-        None => name.to_owned(),
-    }
+    geoarrow::epsg(wkb).map_or_else(
+        || name.to_owned(),
+        |epsg| format!("{name}(Geometry,{epsg})"),
+    )
 }
 
 /// Restates an Arrow count of `10^-scale` units as a decimal, as PG `numeric` carries it.
 fn pg_numeric(units: i128, scale: u8) -> Result<Decimal> {
     Decimal::try_from_i128_with_scale(units, u32::from(scale))
-        .map_err(TransferredError::destination)
+        .map_err(TransferredError::in_destination)
 }
 
 /// PG counts interval time in microseconds, so anything finer than a microsecond has nowhere to go.
 fn pg_interval(interval: IntervalMonthDayNano) -> Result<PgInterval> {
     if interval.nanoseconds % NANOS_PER_MICRO != 0 {
-        return Err(TransferredError::destination(format!(
+        return Err(TransferredError::in_destination(format!(
             "`interval` of {}ns is finer than the microsecond Postgres stores",
             interval.nanoseconds
         )));
     }
 
+    #[expect(clippy::integer_division, reason = "remainder is checked to be zero")]
     Ok(PgInterval::new(
         interval.months,
         interval.days,
@@ -405,26 +472,24 @@ fn pg_interval(interval: IntervalMonthDayNano) -> Result<PgInterval> {
 /// Restates a count of days from the epoch as a date, as PG stores it.
 fn pg_date(days: i32) -> Result<NaiveDate> {
     Date32Type::to_naive_date_opt(days).ok_or_else(|| {
-        TransferredError::destination(format!("`date` {days} days from epoch is out of range"))
+        TransferredError::in_destination(format!("`date` {days} days from epoch is out of range"))
     })
 }
 
 /// Restates a count of microseconds from the epoch as a UTC instant, as PG stores it.
 fn pg_timestamp(micros: i64) -> Result<DateTime<Utc>> {
     DateTime::from_timestamp_micros(micros).ok_or_else(|| {
-        TransferredError::destination(format!("timestamp {micros}µs from epoch is out of range"))
+        TransferredError::in_destination(format!("timestamp {micros}µs from epoch is out of range"))
     })
 }
 
 /// Reads 16 Arrow bytes as a uuid.
 fn pg_uuid(bytes: &[u8]) -> Result<uuid::Uuid> {
-    uuid::Uuid::from_slice(bytes).map_err(TransferredError::destination)
+    uuid::Uuid::from_slice(bytes).map_err(TransferredError::in_destination)
 }
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
-
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -476,12 +541,12 @@ mod tests {
     /// Writes the first row of a one-column batch, as the COPY stream would.
     fn write_first(field: ArrowField, array: ArrayRef) -> Result<BytesMut> {
         let schema = Schema::new(vec![field]);
-        let batch = RecordBatch::try_new(Arc::new(schema.clone()), vec![array]).unwrap();
+        let batch = RecordBatch::try_new(Arc::new(schema.clone()), vec![array])?;
         let mut buf = BytesMut::new();
 
         let encoder = Encoder::new(schema.into())?;
         encoder.check(&batch)?;
-        let column = encoder.columns.first().unwrap();
+        let column = &encoder.columns[0];
         column.write(batch.column(0).as_ref(), 0, &mut buf)?;
         Ok(buf)
     }

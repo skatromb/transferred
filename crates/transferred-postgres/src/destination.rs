@@ -6,7 +6,7 @@ mod copy_in;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use futures::{StreamExt, TryStreamExt, stream};
+use futures::{StreamExt as _, TryStreamExt as _, stream};
 use tokio_postgres::Client;
 use tracing::warn;
 use transferred_core::{BatchStream, Destination, Result, RunReport, TransferredError};
@@ -21,7 +21,7 @@ use crate::connection::connect;
 pub const STAGING_SUFFIX: &str = "__transferred_staging";
 
 /// PG truncates identifiers past `NAMEDATALEN - 1`, which would let staging collide with its target.
-/// <https://www.postgresql.org/docs/17/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS>
+/// See <https://www.postgresql.org/docs/17/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS>.
 const MAX_IDENTIFIER_BYTES: usize = 63;
 
 /// A `Destination` that replaces a Postgres table, loading into staging and swapping in one transaction.
@@ -35,7 +35,7 @@ pub struct PostgresDestination {
 impl PostgresDestination {
     /// Constructs a `PostgresDestination`. No I/O performed.
     #[must_use]
-    pub fn new(dsn: String, table: String) -> Self {
+    pub const fn new(dsn: String, table: String) -> Self {
         Self { dsn, table }
     }
 }
@@ -46,7 +46,7 @@ impl Destination for PostgresDestination {
         let start = Instant::now();
         let client = connect(&self.dsn)
             .await
-            .map_err(TransferredError::destination)?;
+            .map_err(TransferredError::in_destination)?;
         let mut loader = Loader::new(client, &self.table).await?;
 
         let result: Result<u64> = async {
@@ -89,16 +89,16 @@ impl Loader {
         let parts: Vec<String> = client
             .query_one("select parse_ident($1)", &[&table])
             .await
-            .map_err(TransferredError::destination)?
+            .map_err(TransferredError::in_destination)?
             .get(0);
 
         let (name, schema) = parts
             .split_last()
-            .ok_or_else(|| TransferredError::destination("target table name is empty"))?;
+            .ok_or_else(|| TransferredError::in_destination("target table name is empty"))?;
 
         let staging = format!("{name}{STAGING_SUFFIX}");
         if staging.len() > MAX_IDENTIFIER_BYTES {
-            return Err(TransferredError::destination(format!(
+            return Err(TransferredError::in_destination(format!(
                 "staging table name `{staging}` exceeds the \
                  {MAX_IDENTIFIER_BYTES}-byte Postgres identifier limit"
             )));
@@ -139,7 +139,7 @@ impl Loader {
             .client
             .transaction()
             .await
-            .map_err(TransferredError::destination)?;
+            .map_err(TransferredError::in_destination)?;
 
         transaction
             .batch_execute(&format!(
@@ -150,12 +150,12 @@ impl Loader {
                 bare = self.bare,
             ))
             .await
-            .map_err(TransferredError::destination)?;
+            .map_err(TransferredError::in_destination)?;
 
         transaction
             .commit()
             .await
-            .map_err(TransferredError::destination)
+            .map_err(TransferredError::in_destination)
     }
 
     /// Creates the staging table, replacing whatever an interrupted load left behind.
@@ -166,7 +166,7 @@ impl Loader {
                 staging = self.staging,
             ))
             .await
-            .map_err(TransferredError::destination)
+            .map_err(TransferredError::in_destination)
     }
 
     /// Removes a leftover staging table, logging failures rather than masking the error that got us here.

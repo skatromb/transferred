@@ -1,5 +1,10 @@
 //! Files source/destination + Parquet format Python wrappers.
 
+#![expect(
+    clippy::multiple_inherent_impl,
+    reason = "Rust-only methods stay out of `#[pymethods]`"
+)]
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -15,7 +20,7 @@ use transferred_files::{
 #[gen_stub_pyclass]
 #[pyclass(name = "_Parquet", module = "transferred._native", unsendable)]
 pub struct PyParquet {
-    pub(crate) inner: Parquet,
+    inner: Parquet,
 }
 
 #[gen_stub_pymethods]
@@ -35,7 +40,7 @@ impl PyParquet {
 #[gen_stub_pyclass]
 #[pyclass(name = "_FilesSource", module = "transferred._native", unsendable)]
 pub struct PyFilesSource {
-    pub(crate) inner: Option<FilesSource>,
+    inner: Option<FilesSource>,
 }
 
 #[gen_stub_pymethods]
@@ -69,11 +74,18 @@ impl PyFilesSource {
     }
 }
 
+impl PyFilesSource {
+    /// Takes the wrapped source, leaving `None` behind.
+    pub(crate) const fn take(&mut self) -> Option<FilesSource> {
+        self.inner.take()
+    }
+}
+
 /// Internal `PyO3` wrapper around `transferred_files::FilesDestination`.
 #[gen_stub_pyclass]
 #[pyclass(name = "_FilesDestination", module = "transferred._native", unsendable)]
 pub struct PyFilesDestination {
-    pub(crate) inner: Option<FilesDestination>,
+    inner: Option<FilesDestination>,
 }
 
 #[gen_stub_pymethods]
@@ -93,14 +105,21 @@ impl PyFilesDestination {
     }
 }
 
+impl PyFilesDestination {
+    /// Takes the wrapped destination, leaving `None` behind.
+    pub(crate) const fn take(&mut self) -> Option<FilesDestination> {
+        self.inner.take()
+    }
+}
+
 /// Extracts a `Parquet` codec from the `format=` argument. Parquet is the only
 /// format today, so any `Parquet` instance resolves here.
 fn parquet_arg(format: &Bound<'_, PyAny>) -> PyResult<Parquet> {
     Ok(format.extract::<PyRef<'_, PyParquet>>()?.inner.clone())
 }
 
-fn parse_compression(s: Option<&str>) -> PyResult<Compression> {
-    match s {
+fn parse_compression(compression: Option<&str>) -> PyResult<Compression> {
+    match compression {
         None => Ok(Compression::None),
         Some("zstd") => Ok(Compression::Zstd),
         Some("snappy") => Ok(Compression::Snappy),

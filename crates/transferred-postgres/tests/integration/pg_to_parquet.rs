@@ -1,6 +1,5 @@
 //! PG → Parquet. Writes each fixture table out and reads the part file back, so the schema the
 //! source derives is checked against what a Parquet file can actually carry. Needs Docker.
-#![allow(clippy::expect_used)]
 
 use std::error::Error as _;
 use std::path::PathBuf;
@@ -45,7 +44,7 @@ async fn assert_survives_parquet(table: &str) {
     .await;
 
     let original = read_table(table).await;
-    assert_eq!(report.rows, original.num_rows() as u64);
+    assert_eq!(usize::try_from(report.rows), Ok(original.num_rows()));
     assert_eq!(back, original);
 }
 

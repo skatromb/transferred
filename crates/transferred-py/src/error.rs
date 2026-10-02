@@ -54,9 +54,9 @@ create_exception!(
 );
 
 /// Joins an error with everything that caused it, a driver's own message often being a bare category.
-fn causes(err: &dyn std::error::Error) -> String {
-    let mut message = err.to_string();
-    let mut cause = err.source();
+fn causes(error: &dyn std::error::Error) -> String {
+    let mut message = error.to_string();
+    let mut cause = error.source();
     while let Some(err) = cause {
         message.push_str(": ");
         message.push_str(&err.to_string());
@@ -75,13 +75,13 @@ pub fn to_pyerr(err: CoreError) -> PyErr {
     }
 }
 
-pub fn register(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add("TransferredError", py.get_type::<TransferredError>())?;
-    m.add("SourceError", py.get_type::<SourceError>())?;
-    m.add("EmptySourceError", py.get_type::<EmptySourceError>())?;
-    m.add("DestinationError", py.get_type::<DestinationError>())?;
-    m.add("ArrowError", py.get_type::<ArrowError>())?;
-    m.add("IoError", py.get_type::<IoError>())?;
+pub fn register(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add("TransferredError", py.get_type::<TransferredError>())?;
+    module.add("SourceError", py.get_type::<SourceError>())?;
+    module.add("EmptySourceError", py.get_type::<EmptySourceError>())?;
+    module.add("DestinationError", py.get_type::<DestinationError>())?;
+    module.add("ArrowError", py.get_type::<ArrowError>())?;
+    module.add("IoError", py.get_type::<IoError>())?;
     Ok(())
 }
 
@@ -94,7 +94,7 @@ mod tests {
 
     /// One link of a cause chain, printing its own message only.
     #[derive(Debug)]
-    struct Layer(&'static str, Option<Box<Layer>>);
+    struct Layer(&'static str, Option<Box<Self>>);
 
     impl fmt::Display for Layer {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -104,7 +104,7 @@ mod tests {
 
     impl Error for Layer {
         fn source(&self) -> Option<&(dyn Error + 'static)> {
-            self.1.as_deref().map(|layer| layer as &dyn Error)
+            Some(self.1.as_deref()?)
         }
     }
 

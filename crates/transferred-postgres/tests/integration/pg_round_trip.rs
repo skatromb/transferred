@@ -1,7 +1,6 @@
 //! PG → PG round trip. Copies each fixture table through `Transfer` and reads both sides back,
 //! so the destination is checked against the source mapping rather than hand-written SQL.
 //! Needs Docker.
-#![allow(clippy::expect_used)]
 
 use std::error::Error as _;
 use std::sync::Arc;
@@ -9,7 +8,7 @@ use std::sync::Arc;
 use arrow::array::{Int64Array, RecordBatch};
 use arrow_schema::{DataType, Field, Schema};
 use async_trait::async_trait;
-use futures::{StreamExt, stream};
+use futures::{StreamExt as _, stream};
 use transferred_core::{BatchStream, Result, RunReport, Source, Transfer, TransferredError};
 use transferred_postgres::{PostgresDestination, PostgresSource, STAGING_SUFFIX};
 
@@ -78,7 +77,7 @@ async fn assert_round_trips(table: &str) {
     let rows = transfer_run(table, &into).await;
 
     let original = read_table(table).await;
-    assert_eq!(rows, original.num_rows() as u64);
+    assert_eq!(usize::try_from(rows), Ok(original.num_rows()));
     assert_eq!(read_table(&into).await, original);
 }
 
@@ -203,7 +202,7 @@ async fn a_batch_wider_than_the_copy_buffer_arrives_whole() {
         .expect("run transfer")
         .rows;
 
-    assert_eq!(rows, batch.num_rows() as u64);
+    assert_eq!(usize::try_from(rows), Ok(batch.num_rows()));
     assert_eq!(read_table(into).await, batch);
 }
 
@@ -213,7 +212,7 @@ struct FailsAfterFirstBatch(RecordBatch);
 #[async_trait]
 impl Source for FailsAfterFirstBatch {
     async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>> {
-        let batches = vec![Ok(self.0), Err(TransferredError::source("source died"))];
+        let batches = vec![Ok(self.0), Err(TransferredError::in_source("source died"))];
         Ok(vec![stream::iter(batches).boxed()])
     }
 }
@@ -270,6 +269,6 @@ async fn round_trips_into_a_qualified_schema() {
     let rows = transfer_run("it_primitives", into).await;
 
     let original = read_table("it_primitives").await;
-    assert_eq!(rows, original.num_rows() as u64);
+    assert_eq!(usize::try_from(rows), Ok(original.num_rows()));
     assert_eq!(read_table(into).await, original);
 }

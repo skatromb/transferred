@@ -1,7 +1,7 @@
 //! Parquet codec — `FormatRead` + `FormatWrite` over the arrow-rs `parquet` crate.
 
 use async_trait::async_trait;
-use futures::{StreamExt, TryStreamExt};
+use futures::{StreamExt as _, TryStreamExt as _};
 use transferred_core::{BatchStream, Result, TransferredError};
 // Leading `::` selects the extern `parquet` crate, not this `formats::parquet` module.
 use ::parquet::arrow::AsyncArrowWriter;
@@ -26,9 +26,9 @@ pub enum Compression {
 impl From<Compression> for ParquetCompression {
     fn from(compression: Compression) -> Self {
         match compression {
-            Compression::Zstd => ParquetCompression::ZSTD(ZstdLevel::default()),
-            Compression::Snappy => ParquetCompression::SNAPPY,
-            Compression::None => ParquetCompression::UNCOMPRESSED,
+            Compression::Zstd => Self::ZSTD(ZstdLevel::default()),
+            Compression::Snappy => Self::SNAPPY,
+            Compression::None => Self::UNCOMPRESSED,
         }
     }
 }
@@ -43,7 +43,7 @@ pub struct Parquet {
 impl Parquet {
     /// Builds a Parquet codec.
     #[must_use]
-    pub fn new(compression: Compression) -> Self {
+    pub const fn new(compression: Compression) -> Self {
         Self { compression }
     }
 }
@@ -53,11 +53,11 @@ impl FormatRead for Parquet {
     async fn read(&self, reader: Box<dyn FileReader>) -> Result<BatchStream> {
         let stream = ParquetRecordBatchStreamBuilder::new(reader)
             .await
-            .map_err(|e| TransferredError::source(format!("parquet reader init: {e}")))?
+            .map_err(|err| TransferredError::in_source(format!("parquet reader init: {err}")))?
             .build()
-            .map_err(|e| TransferredError::source(format!("parquet reader build: {e}")))?
+            .map_err(|err| TransferredError::in_source(format!("parquet reader build: {err}")))?
             .map(|result| {
-                result.map_err(|e| TransferredError::source(format!("parquet read: {e}")))
+                result.map_err(|err| TransferredError::in_source(format!("parquet read: {err}")))
             });
         Ok(Box::pin(stream))
     }
@@ -80,26 +80,24 @@ impl FormatWrite for Parquet {
             .build();
 
         let mut arrow_writer = AsyncArrowWriter::try_new(writer, first.schema(), Some(properties))
-            .map_err(TransferredError::destination)?;
+            .map_err(TransferredError::in_destination)?;
 
-        let mut rows = first.num_rows() as u64;
         arrow_writer
             .write(&first)
             .await
-            .map_err(TransferredError::destination)?;
+            .map_err(TransferredError::in_destination)?;
 
         while let Some(batch) = batches.try_next().await? {
-            rows += batch.num_rows() as u64;
             arrow_writer
                 .write(&batch)
                 .await
-                .map_err(TransferredError::destination)?;
+                .map_err(TransferredError::in_destination)?;
         }
 
-        arrow_writer
+        let metadata = arrow_writer
             .close()
             .await
-            .map_err(TransferredError::destination)?;
-        Ok(rows)
+            .map_err(TransferredError::in_destination)?;
+        u64::try_from(metadata.file_metadata().num_rows()).map_err(TransferredError::in_destination)
     }
 }

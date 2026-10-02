@@ -1,5 +1,4 @@
 //! PG → Arrow mapping against a throwaway Postgres container seeded by `pg_seed.sql`. Needs Docker.
-#![allow(clippy::expect_used, clippy::unwrap_used)]
 
 use std::sync::Arc;
 
@@ -48,7 +47,7 @@ async fn primitives() {
             Arc::new(Float64Array::from(vec![Some(2.5), Some(-2.5), None])),
             Arc::new(StringArray::from(vec![Some("one"), Some(""), None])),
             Arc::new(BinaryArray::from(vec![
-                Some(&[1u8, 2][..]),
+                Some(&[1_u8, 2][..]),
                 Some(&[][..]),
                 None,
             ])),
@@ -236,12 +235,12 @@ async fn ranges_carry_their_bounds_and_tag() {
             None,
         ],
     );
-    let decimals = |units: Vec<Option<i128>>| {
+    let decimals = |units: Vec<Option<i128>>| -> ArrayRef {
         Arc::new(
             Decimal128Array::from(units)
                 .with_precision_and_scale(38, 9)
                 .unwrap(),
-        ) as ArrayRef
+        )
     };
 
     let expected = expected(

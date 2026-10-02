@@ -43,6 +43,9 @@ const BARE_NUMERIC: (u8, u8) = (DECIMAL128_MAX_PRECISION, 9);
 /// Typmod PG reports for a `numeric` declared without precision.
 const BARE_NUMERIC_TYPMOD: i32 = -1;
 
+/// Varlena header PG adds to every typmod it encodes.
+const VARHDRSZ: i32 = 4;
+
 /// PG counts sub-second time in microseconds; Arrow intervals count nanoseconds.
 const NANOS_PER_MICRO: i64 = 1_000;
 
@@ -75,8 +78,8 @@ impl Decoder {
 
     /// Appends one row, each field still exactly as Postgres sent it.
     pub fn append_row(&mut self, row: &BinaryCopyOutRow) -> Result<()> {
-        for (at, column) in self.columns.iter_mut().enumerate() {
-            let raw: Option<Raw> = row.try_get(at).map_err(TransferredError::source)?;
+        for (index, column) in self.columns.iter_mut().enumerate() {
+            let raw: Option<Raw> = row.try_get(index).map_err(TransferredError::in_source)?;
             column.append(raw.map(|raw| raw.0))?;
         }
 
@@ -92,12 +95,12 @@ impl Decoder {
 }
 
 /// A field's bytes untouched, for any type — `&[u8]`'s own `FromSql` accepts `bytea` alone.
-struct Raw<'a>(&'a [u8]);
+struct Raw<'buf>(&'buf [u8]);
 
-impl<'a> FromSql<'a> for Raw<'a> {
+impl<'buf> FromSql<'buf> for Raw<'buf> {
     fn from_sql(
         _: &PgType,
-        raw: &'a [u8],
+        raw: &'buf [u8],
     ) -> std::result::Result<Self, Box<dyn StdError + Sync + Send>> {
         Ok(Self(raw))
     }
@@ -133,7 +136,7 @@ impl ColumnDecoder {
         self.decoding
             .append(&mut *self.builder, bytes)
             .map_err(|error| {
-                TransferredError::source(format!("column {}: {error}", self.field.name()))
+                TransferredError::in_source(format!("column {}: {error}", self.field.name()))
             })
     }
 
@@ -166,7 +169,7 @@ enum Decoding {
     /// `PostGIS` sends EWKB, which `geoarrow.wkb` takes verbatim; only the field names the geo type.
     Geo(WkbType),
     /// A range arrives as a tag byte plus bounds, each bound through the element's own decoding.
-    Range(Box<Decoding>),
+    Range(Box<Self>),
     /// No mapping: the bytes pass through, tagged with the Postgres type they came from.
     Opaque(Opaque),
 }
@@ -174,8 +177,8 @@ enum Decoding {
 impl Decoding {
     /// Decides what Arrow column a Postgres column becomes.
     fn new(column: &PgColumn) -> Result<Self> {
-        let (name, typmod) = (column.name(), column.type_modifier());
-        Ok(match *column.type_() {
+        let (name, typmod, pg_type) = (column.name(), column.type_modifier(), column.type_());
+        Ok(match *pg_type {
             PgType::BOOL => Self::Bool,
             PgType::INT2 => Self::Int2,
             PgType::INT4 => Self::Int4,
@@ -200,24 +203,22 @@ impl Decoding {
             // A range constrains no precision on its bounds, so they can only be bare.
             PgType::NUM_RANGE => Self::Range(Box::new(Self::numeric(BARE_NUMERIC_TYPMOD, name)?)),
             // Extension-type OIDs differ per database, so `citext` and `PostGIS` match on a name.
-            ref text if matches!(text.kind(), Kind::Enum(_)) || text.name() == CITEXT => Self::Text,
+            _ if matches!(pg_type.kind(), Kind::Enum(_)) || pg_type.name() == CITEXT => Self::Text,
             // `geoarrow.wkb` holds EWKB, so the bytes pass through untouched, SRID per value and all.
-            ref geo if geo.name() == GEOMETRY => {
-                Self::Geo(geoarrow::planar(geoarrow::srid(typmod)))
-            }
-            ref geo if geo.name() == GEOGRAPHY => {
+            _ if pg_type.name() == GEOMETRY => Self::Geo(geoarrow::planar(geoarrow::srid(typmod))),
+            _ if pg_type.name() == GEOGRAPHY => {
                 Self::Geo(geoarrow::spherical(geoarrow::srid(typmod)))
             }
-            ref other => {
+            _ => {
                 warn!(
                     target: "postgres::source",
                     column = name,
                     "no Arrow mapping for Postgres type `{}` (oid {}); \
                      passing its bytes through as opaque binary",
-                    other.name(),
-                    other.oid()
+                    pg_type.name(),
+                    pg_type.oid()
                 );
-                Self::Opaque(Opaque::new(other.name(), VENDOR))
+                Self::Opaque(Opaque::new(pg_type.name(), VENDOR))
             }
         })
     }
@@ -270,7 +271,19 @@ impl Decoding {
             Self::Geo(wkb) => field.try_with_extension_type(wkb.clone())?,
             Self::Opaque(opaque) => field.try_with_extension_type(opaque.clone())?,
             Self::Range(_) => field.try_with_extension_type(PgRange)?,
-            _ => {}
+            Self::Bool
+            | Self::Int2
+            | Self::Int4
+            | Self::Int8
+            | Self::Float4
+            | Self::Float8
+            | Self::Text
+            | Self::Bytea
+            | Self::Date
+            | Self::Timestamp
+            | Self::Timestamptz
+            | Self::Interval
+            | Self::Numeric { .. } => {}
         }
 
         Ok(field)
@@ -317,11 +330,11 @@ impl Decoding {
             ),
             Self::Timestamp => cast::<TimestampMicrosecondBuilder>(builder)?.append_option(
                 decode::<NaiveDateTime>(&PgType::TIMESTAMP, bytes)?
-                    .map(|ts| ts.and_utc().timestamp_micros()),
+                    .map(|timestamp| timestamp.and_utc().timestamp_micros()),
             ),
             Self::Timestamptz => cast::<TimestampMicrosecondBuilder>(builder)?.append_option(
                 decode::<DateTime<Utc>>(&PgType::TIMESTAMPTZ, bytes)?
-                    .map(|ts| ts.timestamp_micros()),
+                    .map(|timestamp| timestamp.timestamp_micros()),
             ),
             Self::Interval => cast::<IntervalMonthDayNanoBuilder>(builder)?.append_option(
                 decode::<PgInterval>(&PgType::INTERVAL, bytes)?
@@ -345,10 +358,10 @@ fn append_range(bounds: &Decoding, range: &mut StructBuilder, bytes: Option<&[u8
     let parsed = bytes
         .map(range_from_sql)
         .transpose()
-        .map_err(TransferredError::source)?;
+        .map_err(TransferredError::in_source)?;
 
     let [lower, upper, lower_inc, upper_inc, empty] = range.field_builders_mut() else {
-        return Err(TransferredError::source(
+        return Err(TransferredError::in_source(
             "a `transferred.pg_range` column does not build the five fields it declares",
         ));
     };
@@ -386,18 +399,21 @@ fn tag(builder: &mut Box<dyn ArrayBuilder>, set: bool) -> Result<()> {
 }
 
 /// Decodes one value from its Postgres binary form; `None` is a NULL, which PG sends no bytes for.
-fn decode<'a, T: FromSql<'a>>(pg_type: &PgType, bytes: Option<&'a [u8]>) -> Result<Option<T>> {
+fn decode<'buf, T: FromSql<'buf>>(
+    pg_type: &PgType,
+    bytes: Option<&'buf [u8]>,
+) -> Result<Option<T>> {
     bytes
         .map(|bytes| T::from_sql(pg_type, bytes))
         .transpose()
-        .map_err(TransferredError::source)
+        .map_err(TransferredError::in_source)
 }
 
 /// Strips the format version byte `jsonb` leads with, leaving the document text.
 fn jsonb(bytes: &[u8]) -> Result<&[u8]> {
     match bytes.split_first() {
         Some((1, text)) => Ok(text),
-        _ => Err(TransferredError::source(
+        _ => Err(TransferredError::in_source(
             "`jsonb` arrived in an encoding version other than 1",
         )),
     }
@@ -408,11 +424,11 @@ fn text(bytes: Option<&[u8]>) -> Result<Option<&str>> {
     bytes
         .map(str::from_utf8)
         .transpose()
-        .map_err(TransferredError::source)
+        .map_err(TransferredError::in_source)
 }
 
 /// A bound's bytes; `None` is an infinite bound, the only kind Postgres sends no value for.
-fn bound<'a>(bound: &RangeBound<Option<&'a [u8]>>) -> Option<&'a [u8]> {
+const fn bound<'buf>(bound: &RangeBound<Option<&'buf [u8]>>) -> Option<&'buf [u8]> {
     match bound {
         RangeBound::Inclusive(value) | RangeBound::Exclusive(value) => *value,
         RangeBound::Unbounded => None,
@@ -428,8 +444,9 @@ fn numeric_precision_scale(typmod: i32) -> Result<(u8, u8)> {
     // `numeric_typmod_precision`/`numeric_typmod_scale`, minus `VARHDRSZ`; the XOR sign-extends the
     // 11-bit scale, which PG 15+ allows to be negative.
     // https://github.com/postgres/postgres/blob/REL_17_10/src/backend/utils/adt/numeric.c#L925
-    let precision = ((typmod - 4) >> 16) & 0xffff;
-    let scale = (((typmod - 4) & 0x7ff) ^ 0x400) - 0x400;
+    let typmod = typmod.wrapping_sub(VARHDRSZ);
+    let precision = (typmod >> 16) & 0xffff;
+    let scale = ((typmod & 0x7ff) ^ 0x400).wrapping_sub(0x400);
 
     // PG holds 1000 digits to Arrow's 38, and PG 15+ lets scale go negative or past precision.
     match (u8::try_from(precision), u8::try_from(scale)) {
@@ -438,7 +455,7 @@ fn numeric_precision_scale(typmod: i32) -> Result<(u8, u8)> {
         {
             Ok((precision, scale))
         }
-        _ => Err(TransferredError::source(format!(
+        _ => Err(TransferredError::in_source(format!(
             "`numeric({precision},{scale})` is not supported: it needs at most \
              {DECIMAL128_MAX_PRECISION} digits and a scale from 0 to its precision"
         ))),
@@ -450,7 +467,7 @@ fn decimal_units(mut decimal: Decimal, scale: u8) -> Result<i128> {
     let scale = u32::from(scale);
     decimal.rescale(scale);
     if decimal.scale() != scale {
-        return Err(TransferredError::source(format!(
+        return Err(TransferredError::in_source(format!(
             "`numeric` value {decimal} does not fit scale {scale}"
         )));
     }
@@ -464,7 +481,7 @@ fn month_day_nano(interval: PgInterval) -> Result<IntervalMonthDayNano> {
         .microseconds
         .checked_mul(NANOS_PER_MICRO)
         .ok_or_else(|| {
-            TransferredError::source(
+            TransferredError::in_source(
                 "`interval` exceeds the nanosecond range of Arrow `Interval(MonthDayNano)`",
             )
         })?;
@@ -481,15 +498,13 @@ fn cast<B: ArrayBuilder>(builder: &mut dyn ArrayBuilder) -> Result<&mut B> {
     builder
         .as_any_mut()
         .downcast_mut::<B>()
-        .ok_or_else(|| TransferredError::source(format!("column is not a {}", type_name::<B>())))
+        .ok_or_else(|| TransferredError::in_source(format!("column is not a {}", type_name::<B>())))
 }
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::unwrap_used)]
-
-    use arrow::array::{Array, BooleanArray, Int32Array, StructArray};
-    use arrow_schema::extension::ExtensionType;
+    use arrow::array::{Array as _, BooleanArray, Int32Array, StructArray};
+    use arrow_schema::extension::ExtensionType as _;
 
     use super::*;
 

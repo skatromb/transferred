@@ -4,11 +4,16 @@
 //! Python wrapper exposing `_native_source`) constructs a pyarrow reader and
 //! feeds it through here.
 
+#![expect(
+    clippy::multiple_inherent_impl,
+    reason = "Rust-only methods stay out of `#[pymethods]`"
+)]
+
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use arrow::ffi_stream::ArrowArrayStreamReader;
-use arrow::pyarrow::FromPyArrow;
+use arrow::pyarrow::FromPyArrow as _;
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use futures::Stream;
@@ -21,7 +26,7 @@ use transferred_core::{BatchStream, Result, Source, TransferredError};
 #[gen_stub_pyclass]
 #[pyclass(name = "_ArrowSource", module = "transferred._native", unsendable)]
 pub struct PyArrowSource {
-    pub(crate) inner: Option<ArrowSource>,
+    inner: Option<ArrowSource>,
 }
 
 #[gen_stub_pymethods]
@@ -40,7 +45,14 @@ impl PyArrowSource {
     }
 }
 
-/// Rust-side source over a pyarrow `RecordBatchReader` that gives us `Send`
+impl PyArrowSource {
+    /// Takes the wrapped source, leaving `None` behind.
+    pub(crate) const fn take(&mut self) -> Option<ArrowSource> {
+        self.inner.take()
+    }
+}
+
+/// Rust-side source over a pyarrow `RecordBatchReader` that gives us `Send`.
 pub struct ArrowSource {
     reader: ArrowArrayStreamReader,
 }
@@ -55,7 +67,7 @@ impl Source for ArrowSource {
     }
 }
 
-/// Struct for implementing `async Stream`
+/// Adapts the reader to an async `Stream`.
 struct ArrowReaderStream {
     reader: ArrowArrayStreamReader,
 }
@@ -68,7 +80,7 @@ impl Stream for ArrowReaderStream {
         Poll::Ready(match next {
             None => None,
             Some(Ok(batch)) => Some(Ok(batch)),
-            Some(Err(e)) => Some(Err(TransferredError::Arrow(e))),
+            Some(Err(err)) => Some(Err(TransferredError::Arrow(err))),
         })
     }
 }

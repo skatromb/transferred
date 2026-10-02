@@ -1,11 +1,16 @@
 //! `RunReport` Python class.
 
+#![expect(
+    clippy::multiple_inherent_impl,
+    reason = "Rust-only methods stay out of `#[pymethods]`"
+)]
+
 use humansize::{BINARY, format_size};
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-use std::fmt::Write;
+use std::fmt::Write as _;
 use std::time::Duration;
-use thousands::Separable;
+use thousands::Separable as _;
 use transferred_core::RunReport;
 
 /// Post-run statistics returned by `Transfer.run()`.
@@ -35,7 +40,7 @@ pub struct PyRunReport {
 }
 
 impl PyRunReport {
-    pub fn new(inner: RunReport) -> Self {
+    pub const fn new(inner: RunReport) -> Self {
         Self { inner }
     }
 }
@@ -45,13 +50,13 @@ impl PyRunReport {
 impl PyRunReport {
     /// Total rows written.
     #[getter]
-    fn rows(&self) -> u64 {
+    const fn rows(&self) -> u64 {
         self.inner.rows
     }
 
     /// Total bytes written to the destination.
     #[getter]
-    fn bytes_written(&self) -> u64 {
+    const fn bytes_written(&self) -> u64 {
         self.inner.bytes_written
     }
 
@@ -63,7 +68,7 @@ impl PyRunReport {
 
     /// Wall-clock duration of the transfer, in seconds.
     #[getter]
-    fn duration_seconds(&self) -> f64 {
+    const fn duration_seconds(&self) -> f64 {
         self.inner.duration.as_secs_f64()
     }
 
@@ -78,8 +83,8 @@ impl PyRunReport {
     }
 
     fn __str__(&self) -> String {
-        let ms = u64::try_from(self.inner.duration.as_millis()).unwrap_or(u64::MAX);
-        let duration = Duration::from_millis(ms);
+        let millis = u64::try_from(self.inner.duration.as_millis()).unwrap_or(u64::MAX);
+        let duration = Duration::from_millis(millis);
         let written_objects: String =
             self.inner
                 .written_objects

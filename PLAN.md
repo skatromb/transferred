@@ -110,6 +110,10 @@ Goal: state what the Arrow types layer between a source and a destination *is*, 
 
 Not before here: hiding a `pub` type is a breaking change, so this cannot be a patch, and S3/GCS then incremental are wanted first.
 
+## 1.0 — Stable API
+
+- Decide `#[non_exhaustive]` per public type, then drop the `exhaustive_structs`/`exhaustive_enums` allows. It costs struct literals across crates (`RunReport`), exhaustive matches in `transferred-py` (`TransferredError`) and unit-struct construction (`PgRange`).
+
 ## Backlog
 
 - Postgres source `query=` — an arbitrary SELECT in place of `table=`, compiled to the same COPY.

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures::{TryStreamExt, stream};
+use futures::{TryStreamExt as _, stream};
 use tokio::fs::File;
 use transferred_core::{BatchStream, Result, Source, TransferredError};
 
@@ -49,14 +49,14 @@ impl GlobOrPaths {
     /// Resolves to concrete paths. Glob walks the filesystem; empty results error.
     fn resolve(self) -> Result<Vec<PathBuf>> {
         let paths = match self {
-            GlobOrPaths::Glob(pattern) => expand_glob(&pattern)?,
-            GlobOrPaths::Paths(paths) if paths.is_empty() => {
-                return Err(TransferredError::source("no input paths provided"));
+            Self::Glob(pattern) => expand_glob(&pattern)?,
+            Self::Paths(paths) if paths.is_empty() => {
+                return Err(TransferredError::in_source("no input paths provided"));
             }
-            GlobOrPaths::Paths(paths) => paths,
+            Self::Paths(paths) => paths,
         };
         if let Some(dir) = paths.iter().find(|path| path.is_dir()) {
-            return Err(TransferredError::source(format!(
+            return Err(TransferredError::in_source(format!(
                 concat!(
                     "{} is a directory, not a file. ",
                     r#"Pass a list of filenames or glob pattern ("directory/*.parquet")"#
@@ -72,13 +72,13 @@ impl GlobOrPaths {
 fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>> {
     let paths: Vec<PathBuf> = glob::glob(pattern)
         .map_err(|err| {
-            TransferredError::source(format!("invalid glob pattern '{pattern}': {err}"))
+            TransferredError::in_source(format!("invalid glob pattern '{pattern}': {err}"))
         })?
         .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|err| TransferredError::source(format!("glob walk error: {err}")))?;
+        .map_err(|err| TransferredError::in_source(format!("glob walk error: {err}")))?;
 
     if paths.is_empty() {
-        return Err(TransferredError::source(format!(
+        return Err(TransferredError::in_source(format!(
             "glob '{pattern}' matched no files"
         )));
     }
@@ -97,7 +97,6 @@ async fn open_file_stream(path: PathBuf, format: Arc<dyn FormatRead>) -> Result<
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use crate::Parquet;
     use tempfile::tempdir;

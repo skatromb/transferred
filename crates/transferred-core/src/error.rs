@@ -32,12 +32,12 @@ pub enum TransferredError {
 
 impl TransferredError {
     /// Constructs a [`TransferredError::Source`] from any error.
-    pub fn source(err: impl Into<AnyError>) -> Self {
+    pub fn in_source(err: impl Into<AnyError>) -> Self {
         Self::Source(err.into())
     }
 
     /// Constructs a [`TransferredError::Destination`] from any message.
-    pub fn destination(err: impl Into<AnyError>) -> Self {
+    pub fn in_destination(err: impl Into<AnyError>) -> Self {
         Self::Destination(err.into())
     }
 }

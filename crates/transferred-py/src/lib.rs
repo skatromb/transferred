@@ -22,17 +22,17 @@ fn install_logging(py: Python<'_>) -> PyResult<()> {
 }
 
 #[pymodule]
-fn _native(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _native(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     install_logging(py)?;
-    error::register(py, m)?;
-    m.add_class::<report::PyRunReport>()?;
-    m.add_class::<files::PyParquet>()?;
-    m.add_class::<files::PyFilesSource>()?;
-    m.add_class::<files::PyFilesDestination>()?;
-    m.add_class::<arrow::PyArrowSource>()?;
-    m.add_class::<postgres::PyPostgresSource>()?;
-    m.add_class::<postgres::PyPostgresDestination>()?;
-    m.add_class::<transfer::PyTransfer>()?;
+    error::register(py, module)?;
+    module.add_class::<report::PyRunReport>()?;
+    module.add_class::<files::PyParquet>()?;
+    module.add_class::<files::PyFilesSource>()?;
+    module.add_class::<files::PyFilesDestination>()?;
+    module.add_class::<arrow::PyArrowSource>()?;
+    module.add_class::<postgres::PyPostgresSource>()?;
+    module.add_class::<postgres::PyPostgresDestination>()?;
+    module.add_class::<transfer::PyTransfer>()?;
     Ok(())
 }
 

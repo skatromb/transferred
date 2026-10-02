@@ -1,5 +1,10 @@
 //! Postgres source + destination Python wrappers.
 
+#![expect(
+    clippy::multiple_inherent_impl,
+    reason = "Rust-only methods stay out of `#[pymethods]`"
+)]
+
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use transferred_postgres::{PostgresDestination, PostgresSource};
@@ -8,7 +13,7 @@ use transferred_postgres::{PostgresDestination, PostgresSource};
 #[gen_stub_pyclass]
 #[pyclass(name = "_PostgresSource", module = "transferred._native", unsendable)]
 pub struct PyPostgresSource {
-    pub(crate) inner: Option<PostgresSource>,
+    inner: Option<PostgresSource>,
 }
 
 #[gen_stub_pymethods]
@@ -20,10 +25,17 @@ impl PyPostgresSource {
     ))]
     #[new]
     #[pyo3(signature = (dsn, table))]
-    fn new(dsn: String, table: String) -> Self {
+    const fn new(dsn: String, table: String) -> Self {
         Self {
             inner: Some(PostgresSource::new(dsn, table)),
         }
+    }
+}
+
+impl PyPostgresSource {
+    /// Takes the wrapped source, leaving `None` behind.
+    pub(crate) const fn take(&mut self) -> Option<PostgresSource> {
+        self.inner.take()
     }
 }
 
@@ -35,7 +47,7 @@ impl PyPostgresSource {
     unsendable
 )]
 pub struct PyPostgresDestination {
-    pub(crate) inner: Option<PostgresDestination>,
+    inner: Option<PostgresDestination>,
 }
 
 #[gen_stub_pymethods]
@@ -47,9 +59,16 @@ impl PyPostgresDestination {
     ))]
     #[new]
     #[pyo3(signature = (dsn, table))]
-    fn new(dsn: String, table: String) -> Self {
+    const fn new(dsn: String, table: String) -> Self {
         Self {
             inner: Some(PostgresDestination::new(dsn, table)),
         }
+    }
+}
+
+impl PyPostgresDestination {
+    /// Takes the wrapped destination, leaving `None` behind.
+    pub(crate) const fn take(&mut self) -> Option<PostgresDestination> {
+        self.inner.take()
     }
 }

@@ -1,20 +1,20 @@
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use futures::StreamExt;
+use futures::StreamExt as _;
 use tokio::fs::File;
 use tracing::warn;
 use transferred_core::{BatchStream, Destination, Result, RunReport, TransferredError};
 
 use crate::formats::FormatWrite;
 
-/// Local files destination. Writes `part-NNNNN.{extension}` files to a directory,
-/// or one `{dir}.{extension}` when `single_file`.
-/// Write is atomic via tmp dir + rename.
-/// Written paths land in `RunReport.written_objects`.
+/// Writes `part-NNNNN.{extension}` files to a directory, or one `{dir}.{extension}` when `single_file`.
+///
+/// Write is atomic via tmp dir + rename. Written paths land in `RunReport.written_objects`.
 #[derive(Clone)]
 pub struct FilesDestination {
     path: PathBuf,
@@ -42,17 +42,18 @@ impl Destination for FilesDestination {
             return Err(err);
         }
 
-        let mut bytes_written = 0;
+        let mut bytes_written: u64 = 0;
         for written in &writtens {
-            bytes_written += tokio::fs::metadata(&written.path).await?.len();
+            bytes_written =
+                bytes_written.saturating_add(tokio::fs::metadata(&written.path).await?.len());
         }
 
         Ok(RunReport {
-            rows: writtens.iter().map(|w| w.rows).sum(),
+            rows: writtens.iter().map(|written| written.rows).sum(),
             bytes_written,
             written_objects: writtens
                 .iter()
-                .map(|w| w.path.display().to_string())
+                .map(|written| written.path.display().to_string())
                 .collect(),
             duration: start.elapsed(),
             coercions: vec![],
@@ -74,10 +75,10 @@ impl FilesDestination {
     /// Picks a filename: `{dir}.{ext}` if `single_file`, else `part-NNNNN.{ext}`.
     fn output_filename(&self, part: usize) -> String {
         let ext = self.format.file_extension();
-        let base_name = self
-            .path
-            .file_name()
-            .map_or("data".to_string(), |n| n.to_string_lossy().to_string());
+        let base_name = self.path.file_name().map_or_else(
+            || "data".to_owned(),
+            |name| name.to_string_lossy().into_owned(),
+        );
 
         if self.single_file {
             format!("{base_name}.{ext}")
@@ -105,7 +106,7 @@ impl FilesDestination {
                 continue; // skip empty partitions — no stray part file
             }
 
-            let name = self.output_filename(written.len() + 1);
+            let name = self.output_filename(written.len().saturating_add(1));
             let file = File::create(tmp_dir.join(&name)).await?;
 
             let rows = self.format.write(Box::new(file), Box::pin(stream)).await?;
@@ -156,7 +157,7 @@ async fn cleanup(tmp_dir: &Path) {
 fn make_tmp(final_path: &Path) -> PathBuf {
     let mut name = final_path
         .file_name()
-        .map(std::ffi::OsStr::to_os_string)
+        .map(OsStr::to_os_string)
         .unwrap_or_default();
     name.push(".tmp");
 

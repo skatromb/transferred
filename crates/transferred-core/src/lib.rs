@@ -3,8 +3,6 @@
 
 mod error;
 mod report;
-#[cfg(feature = "dev")]
-pub mod test_utils;
 mod transfer;
 
 pub use error::{Result, TransferredError};

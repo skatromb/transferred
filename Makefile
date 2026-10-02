@@ -28,12 +28,12 @@ fmt:
 .PHONY: clippy
 clippy:
 	@cargo clippy --workspace --tests \
-		--features transferred-core/dev,transferred-postgres/integration -- -D warnings
+		--features transferred-postgres/integration -- -D warnings
 
 # Run Rust tests.
 .PHONY: cargo-test
 cargo-test:
-	@cargo test --workspace --features transferred-core/dev
+	@cargo test --workspace
 
 # Install cargo-deny for supply chain audits.
 .PHONY: deny-install
@@ -139,7 +139,7 @@ llvm-cov-install:
 coverage-rust: llvm-cov-install
 	@eval "$$(cargo llvm-cov show-env --sh)" && \
 		cargo llvm-cov clean --profraw-only && \
-		cargo test --workspace --features transferred-core/dev && \
+		cargo test --workspace && \
 		cargo test -p transferred-postgres --features integration && \
 		cargo llvm-cov report --lcov --output-path coverage-rust.lcov $(COVERAGE_IGNORE)
 
