@@ -14,17 +14,16 @@ workspace = true
 
 [dependencies]
 transferred-core = { workspace = true }
-arrow = { workspace = true }
-arrow-schema = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
 parquet = { version = "59", features = ["arrow", "async", "arrow_canonical_extension_types"] }
 glob = "0.3"
 
 [dev-dependencies]
+arrow = { workspace = true }
+arrow-schema = { workspace = true }
 tempfile = "3"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 futures = { workspace = true }

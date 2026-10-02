@@ -3569,12 +3569,9 @@ name = "transferred-core"
 version = "0.1.3"
 dependencies = [
  "arrow",
- "arrow-schema",
  "async-trait",
  "futures",
  "thiserror 2.0.21",
- "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -3589,7 +3586,6 @@ dependencies = [
  "parquet",
  "tempfile",
  "tokio",
- "tokio-stream",
  "tracing",
  "transferred-core",
 ]
@@ -3615,7 +3611,6 @@ dependencies = [
  "testcontainers-modules",
  "tokio",
  "tokio-postgres",
- "tokio-stream",
  "tracing",
  "transferred-core",
  "transferred-files",

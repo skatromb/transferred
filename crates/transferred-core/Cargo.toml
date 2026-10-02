@@ -14,9 +14,6 @@ workspace = true
 
 [dependencies]
 arrow = { workspace = true }
-arrow-schema = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 thiserror = "2"
-tracing = { workspace = true }
-tokio = { workspace = true }

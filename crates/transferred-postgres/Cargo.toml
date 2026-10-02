@@ -19,7 +19,6 @@ arrow = { workspace = true }
 arrow-schema = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1"] }
