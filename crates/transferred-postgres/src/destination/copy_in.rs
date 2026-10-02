@@ -19,9 +19,12 @@ const COPY_TRAILER: i16 = -1;
 /// Bytes buffered before a chunk goes out; 4 KB costs a third more client CPU, 64 KB is the plateau.
 const CHUNK_BYTES: usize = 64 << 10;
 
+/// COPY stream, boxed to pin it: `CopyInSink` is not `Unpin`.
+type PinnedSink = Pin<Box<CopyInSink<Bytes>>>;
+
 /// Writes rows a chunk at a time, unlike `BinaryCopyInWriter`, which boxes every value.
 pub(crate) struct CopyIn {
-    sink: Pin<Box<CopyInSink<Bytes>>>,
+    sink: PinnedSink,
     buf: BytesMut,
 }
 
