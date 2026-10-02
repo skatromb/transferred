@@ -34,7 +34,7 @@ impl From<Compression> for ParquetCompression {
 }
 
 /// Parquet file format. Carries encoder knobs; decoding needs none.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Parquet {
     /// Compression codec for column chunks.
     pub compression: Compression,

@@ -15,7 +15,7 @@ pub(crate) const UPPER_INC: &str = "upper_inc";
 pub(crate) const EMPTY: &str = "empty";
 
 /// A Postgres range, spread over the struct fields that hold its bounds and its tag.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PgRange;
 
 impl PgRange {

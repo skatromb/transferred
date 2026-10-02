@@ -19,6 +19,7 @@ use transferred_files::{
 /// Internal `PyO3` wrapper around `transferred_files::Parquet`.
 #[gen_stub_pyclass]
 #[pyclass(name = "_Parquet", module = "transferred._native", unsendable)]
+#[expect(missing_copy_implementations, reason = "No need in it")]
 pub struct PyParquet {
     inner: Parquet,
 }
@@ -115,7 +116,7 @@ impl PyFilesDestination {
 /// Extracts a `Parquet` codec from the `format=` argument. Parquet is the only
 /// format today, so any `Parquet` instance resolves here.
 fn parquet_arg(format: &Bound<'_, PyAny>) -> PyResult<Parquet> {
-    Ok(format.extract::<PyRef<'_, PyParquet>>()?.inner.clone())
+    Ok(format.extract::<PyRef<'_, PyParquet>>()?.inner)
 }
 
 fn parse_compression(compression: Option<&str>) -> PyResult<Compression> {
