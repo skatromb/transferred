@@ -121,20 +121,13 @@ fn input_schema() -> Arc<Schema> {
     ]))
 }
 
-#[expect(clippy::too_many_lines, reason = "tests code")]
 fn input_batch(schema: &Arc<Schema>, rows: u8, offset: u8) -> RecordBatch {
     let i32_arr: ArrayRef = Arc::new(Int32Array::from(
         (0..rows).map(|i| i32::from(i + offset)).collect::<Vec<_>>(),
     ));
     let i64_arr: ArrayRef = Arc::new(Int64Array::from(
         (0..rows)
-            .map(|i| {
-                if i % 3 == 0 {
-                    None
-                } else {
-                    Some(i64::from(i + offset))
-                }
-            })
+            .map(|i| (i % 3 != 0).then(|| i64::from(i + offset)))
             .collect::<Vec<_>>(),
     ));
     let u16_arr: ArrayRef = Arc::new(UInt16Array::from(
@@ -142,13 +135,7 @@ fn input_batch(schema: &Arc<Schema>, rows: u8, offset: u8) -> RecordBatch {
     ));
     let f64_arr: ArrayRef = Arc::new(Float64Array::from(
         (0..rows)
-            .map(|i| {
-                if i % 2 == 0 {
-                    Some(f64::from(i) * 1.25)
-                } else {
-                    None
-                }
-            })
+            .map(|i| (i % 2 == 0).then(|| f64::from(i) * 1.25))
             .collect::<Vec<_>>(),
     ));
     let bool_arr: ArrayRef = Arc::new(BooleanArray::from(
@@ -162,13 +149,7 @@ fn input_batch(schema: &Arc<Schema>, rows: u8, offset: u8) -> RecordBatch {
     ));
     let utf8_arr: ArrayRef = Arc::new(StringArray::from(
         (0..rows)
-            .map(|i| {
-                if i % 4 == 0 {
-                    None
-                } else {
-                    Some(format!("s{}", i + offset))
-                }
-            })
+            .map(|i| (i % 4 != 0).then(|| format!("s{}", i + offset)))
             .collect::<Vec<_>>(),
     ));
     let bin_arr: ArrayRef = Arc::new(
@@ -178,13 +159,7 @@ fn input_batch(schema: &Arc<Schema>, rows: u8, offset: u8) -> RecordBatch {
     );
     let date_arr: ArrayRef = Arc::new(Date32Array::from(
         (0..rows)
-            .map(|i| {
-                if i % 5 == 0 {
-                    None
-                } else {
-                    Some(19_000 + i32::from(i))
-                }
-            })
+            .map(|i| (i % 5 != 0).then(|| 19_000 + i32::from(i)))
             .collect::<Vec<_>>(),
     ));
     let ts_arr: ArrayRef = Arc::new(
