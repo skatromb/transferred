@@ -10,7 +10,7 @@ use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
 use arrow::array::{
-    ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float64Array,
+    Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float64Array,
     Int32Array, Int64Array, ListArray, StringArray, TimestampMicrosecondArray, UInt16Array,
 };
 use arrow::buffer::OffsetBuffer;
@@ -134,31 +134,11 @@ fn input_batch(schema: &Arc<Schema>, rows: u8, offset: u8) -> RecordBatch {
 
 /// Columns of the schema's built-in Arrow types, nulls sprinkled at different strides.
 fn plain_columns(rows: u8, offset: u8) -> Vec<ArrayRef> {
-    let i32_arr = Int32Array::from_iter_values((0..rows).map(|i| i32::from(i + offset)));
-    let i64_arr: Int64Array = (0..rows)
-        .map(|i| (i % 3 != 0).then(|| i64::from(i + offset)))
-        .collect();
-    let u16_arr = UInt16Array::from_iter_values((0..rows).map(u16::from));
-    let f64_arr: Float64Array = (0..rows)
-        .map(|i| (i % 2 == 0).then(|| f64::from(i) * 1.25))
-        .collect();
-    let bool_arr: BooleanArray = (0..rows)
-        .map(|i| (i % 3 != 2).then_some(i % 3 == 0))
-        .collect();
-    let utf8_arr: StringArray = (0..rows)
-        .map(|i| (i % 4 != 0).then(|| format!("s{}", i + offset)))
-        .collect();
-    let bin_arr: BinaryArray = (0..rows)
-        .map(|i| (i % 2 == 0).then_some([i, i + 1, i + 2]))
-        .collect();
-    let date_arr: Date32Array = (0..rows)
-        .map(|i| (i % 5 != 0).then(|| 19_000 + i32::from(i)))
-        .collect();
-    let ts_arr = TimestampMicrosecondArray::from_iter_values(
+    let timestamps = TimestampMicrosecondArray::from_iter_values(
         (0..rows).map(|i| 1_700_000_000_000_000 + i64::from(i) * 1_000_000),
     )
     .with_timezone("UTC");
-    let list_arr = ListArray::new(
+    let lists = ListArray::new(
         Arc::new(Field::new("item", DataType::Int32, true)),
         OffsetBuffer::from_lengths(iter::repeat_n(2, rows.into())),
         Arc::new(Int32Array::from_iter_values(0..i32::from(rows) * 2)),
@@ -166,35 +146,47 @@ fn plain_columns(rows: u8, offset: u8) -> Vec<ArrayRef> {
     );
 
     vec![
-        Arc::new(i32_arr),
-        Arc::new(i64_arr),
-        Arc::new(u16_arr),
-        Arc::new(f64_arr),
-        Arc::new(bool_arr),
-        Arc::new(utf8_arr),
-        Arc::new(bin_arr),
-        Arc::new(date_arr),
-        Arc::new(ts_arr),
-        Arc::new(list_arr),
+        Arc::new(Int32Array::from_iter_values(
+            (0..rows).map(|i| i32::from(i + offset)),
+        )),
+        sparse::<Int64Array, _>(rows, 3, |i| i64::from(i + offset)),
+        Arc::new(UInt16Array::from_iter_values((0..rows).map(u16::from))),
+        sparse::<Float64Array, _>(rows, 2, |i| f64::from(i) * 1.25),
+        sparse::<BooleanArray, _>(rows, 3, |i| i % 2 == 0),
+        sparse::<StringArray, _>(rows, 4, |i| format!("s{}", i + offset)),
+        sparse::<BinaryArray, _>(rows, 2, |i| [i, i + 1, i + 2]),
+        sparse::<Date32Array, _>(rows, 5, |i| 19_000 + i32::from(i)),
+        Arc::new(timestamps),
+        Arc::new(lists),
     ]
 }
 
 /// Columns whose type lives in field metadata, which the Parquet round-trip must carry through.
 fn extension_columns(rows: u8, offset: u8) -> Vec<ArrayRef> {
-    let uuid_arr = FixedSizeBinaryArray::try_from_sparse_iter_with_size(
+    let uuids = FixedSizeBinaryArray::try_from_sparse_iter_with_size(
         (0..rows).map(|i| (i % 3 != 0).then_some([i; 16])),
         16,
     )
     .unwrap();
-    let json_arr: StringArray = (0..rows)
-        .map(|i| (i % 2 == 0).then(|| format!(r#"{{"i": {}}}"#, i + offset)))
-        .collect();
-    // Six macaddr bytes, as an unmapped Postgres type reaches Arrow.
-    let opaque_arr: BinaryArray = (0..rows)
-        .map(|i| (i % 2 == 0).then_some(b"\x08\x00\x2b\x01\x02\x03"))
-        .collect();
 
-    vec![Arc::new(uuid_arr), Arc::new(json_arr), Arc::new(opaque_arr)]
+    vec![
+        Arc::new(uuids),
+        sparse::<StringArray, _>(rows, 2, |i| format!(r#"{{"i": {}}}"#, i + offset)),
+        // Six macaddr bytes, as an unmapped Postgres type reaches Arrow.
+        sparse::<BinaryArray, _>(rows, 2, |_| b"\x08\x00\x2b\x01\x02\x03"),
+    ]
+}
+
+/// `rows` values from `value`, null on every multiple of `stride`, row 0 included.
+fn sparse<Column, Value>(rows: u8, stride: u8, value: impl Fn(u8) -> Value) -> ArrayRef
+where
+    Column: Array + FromIterator<Option<Value>> + 'static,
+{
+    Arc::new(
+        (0..rows)
+            .map(|i| (i % stride != 0).then(|| value(i)))
+            .collect::<Column>(),
+    )
 }
 
 /// Canonical Arrow extension name a field carries in its metadata, if any.
