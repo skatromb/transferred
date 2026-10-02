@@ -49,17 +49,17 @@ impl Destination for PostgresDestination {
             .map_err(TransferredError::in_destination)?;
         let mut loader = Loader::new(client, &self.table).await?;
 
-        let result: Result<u64> = async {
+        let attempt: Result<u64> = async {
             let rows = loader.load(partitions).await?;
             loader.swap().await?;
             Ok(rows)
         }
         .await;
 
-        if result.is_err() {
+        if attempt.is_err() {
             loader.drop_staging().await;
         }
-        let rows = result?;
+        let rows = attempt?;
 
         Ok(RunReport {
             rows,

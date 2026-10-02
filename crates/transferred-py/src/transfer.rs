@@ -80,10 +80,10 @@ macro_rules! try_take_inner {
     };
 }
 
-fn extract_source(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Source + Send>> {
-    try_take_inner!(obj, PyFilesSource, PyArrowSource, PyPostgresSource);
+fn extract_source(source: &Bound<'_, PyAny>) -> PyResult<Box<dyn Source + Send>> {
+    try_take_inner!(source, PyFilesSource, PyArrowSource, PyPostgresSource);
     // PyO3 convention: Python wrappers expose a `_native_source` attr holding a native source.
-    if let Ok(inner) = obj.getattr("_native_source") {
+    if let Ok(inner) = source.getattr("_native_source") {
         return extract_source(&inner);
     }
     Err(PyTypeError::new_err(
@@ -91,10 +91,10 @@ fn extract_source(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Source + Send>> {
     ))
 }
 
-fn extract_destination(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Destination + Send>> {
-    try_take_inner!(obj, PyFilesDestination, PyPostgresDestination);
+fn extract_destination(destination: &Bound<'_, PyAny>) -> PyResult<Box<dyn Destination + Send>> {
+    try_take_inner!(destination, PyFilesDestination, PyPostgresDestination);
     // PyO3 convention: Python wrappers expose a `_native_destination` attr holding a native destination.
-    if let Ok(inner) = obj.getattr("_native_destination") {
+    if let Ok(inner) = destination.getattr("_native_destination") {
         return extract_destination(&inner);
     }
     Err(PyTypeError::new_err(

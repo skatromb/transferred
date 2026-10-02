@@ -427,7 +427,7 @@ fn text(bytes: Option<&[u8]>) -> Result<Option<&str>> {
 /// A bound's bytes; `None` is an infinite bound, the only kind Postgres sends no value for.
 const fn bound<'buf>(bound: &RangeBound<Option<&'buf [u8]>>) -> Option<&'buf [u8]> {
     match bound {
-        RangeBound::Inclusive(value) | RangeBound::Exclusive(value) => *value,
+        RangeBound::Inclusive(bytes) | RangeBound::Exclusive(bytes) => *bytes,
         RangeBound::Unbounded => None,
     }
 }

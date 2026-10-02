@@ -56,8 +56,8 @@ impl FormatRead for Parquet {
             .map_err(|err| TransferredError::in_source(format!("parquet reader init: {err}")))?
             .build()
             .map_err(|err| TransferredError::in_source(format!("parquet reader build: {err}")))?
-            .map(|result| {
-                result.map_err(|err| TransferredError::in_source(format!("parquet read: {err}")))
+            .map(|batch| {
+                batch.map_err(|err| TransferredError::in_source(format!("parquet read: {err}")))
             });
         Ok(Box::pin(stream))
     }
