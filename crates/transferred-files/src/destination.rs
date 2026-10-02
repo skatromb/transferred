@@ -30,34 +30,17 @@ impl Destination for FilesDestination {
         let tmp_dir = make_tmp(&self.path);
         fs::create_dir_all(&tmp_dir).await?;
 
-        let writtens = match self.write_files(&tmp_dir, partitions).await {
-            Ok(written) => written,
-            Err(err) => {
-                cleanup(&tmp_dir).await;
-                return Err(err);
-            }
-        };
-
-        if let Err(err) = self.atomic_replace(&tmp_dir).await {
+        let written: Result<_> = async {
+            let written = self.write_files(&tmp_dir, partitions).await?;
+            self.atomic_replace(&tmp_dir).await?;
+            Ok(written)
+        }
+        .await;
+        if written.is_err() {
             cleanup(&tmp_dir).await;
-            return Err(err);
         }
 
-        let mut bytes_written: u64 = 0;
-        for written in &writtens {
-            bytes_written = bytes_written.saturating_add(fs::metadata(&written.path).await?.len());
-        }
-
-        Ok(RunReport {
-            rows: writtens.iter().map(|written| written.rows).sum(),
-            bytes_written,
-            written_objects: writtens
-                .iter()
-                .map(|written| written.path.display().to_string())
-                .collect(),
-            duration: start.elapsed(),
-            coercions: vec![],
-        })
+        report(&written?, start).await
     }
 }
 
@@ -142,6 +125,25 @@ impl FilesDestination {
 struct Written {
     path: PathBuf,
     rows: u64,
+}
+
+/// Sums up the files a run wrote: rows, bytes on disk, and their paths.
+async fn report(written: &[Written], start: Instant) -> Result<RunReport> {
+    let mut bytes_written: u64 = 0;
+    for file in written {
+        bytes_written = bytes_written.saturating_add(fs::metadata(&file.path).await?.len());
+    }
+
+    Ok(RunReport {
+        rows: written.iter().map(|file| file.rows).sum(),
+        bytes_written,
+        written_objects: written
+            .iter()
+            .map(|file| file.path.display().to_string())
+            .collect(),
+        duration: start.elapsed(),
+        coercions: vec![],
+    })
 }
 
 /// Removes a leftover tmp directory, logging non-`NotFound` failures.
