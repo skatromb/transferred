@@ -207,17 +207,41 @@ impl Decoding {
 
     /// Decodes a `numeric` typmod into the `Decimal128` its values are restated at.
     fn numeric(typmod: i32, name: &str) -> Result<Self> {
-        let (precision, scale) = numeric_precision_scale(typmod)?;
         if typmod == BARE_NUMERIC_TYPMOD {
+            let (precision, scale) = BARE_NUMERIC;
             warn!(
                 target: "postgres::source",
                 column = name,
                 "`numeric` without declared precision; mapping to \
                  Decimal128({precision}, {scale}) and rounding beyond {scale} decimals"
             );
+            return Ok(Self::Numeric { precision, scale });
         }
 
-        Ok(Self::Numeric { precision, scale })
+        Self::declared_numeric(typmod)
+    }
+
+    /// Decodes the precision and scale a `numeric(p,s)` typmod packs, if `Decimal128` can hold them.
+    fn declared_numeric(typmod: i32) -> Result<Self> {
+        // `numeric_typmod_precision`/`numeric_typmod_scale`, minus `VARHDRSZ`; the XOR sign-extends the
+        // 11-bit scale, which PG 15+ allows to be negative.
+        // https://github.com/postgres/postgres/blob/REL_17_10/src/backend/utils/adt/numeric.c#L925
+        let typmod = typmod.wrapping_sub(VARHDRSZ);
+        let precision = (typmod >> 16) & 0xffff;
+        let scale = ((typmod & 0x7ff) ^ 0x400).wrapping_sub(0x400);
+
+        // PG holds 1000 digits to Arrow's 38, and PG 15+ lets scale go negative or past precision.
+        match (u8::try_from(precision), u8::try_from(scale)) {
+            (Ok(precision), Ok(scale))
+                if precision <= DECIMAL128_MAX_PRECISION && scale <= precision =>
+            {
+                Ok(Self::Numeric { precision, scale })
+            }
+            _ => Err(TransferredError::in_source(format!(
+                "`numeric({precision},{scale})` is not supported: it needs at most \
+                 {DECIMAL128_MAX_PRECISION} digits and a scale from 0 to its precision"
+            ))),
+        }
     }
 
     /// Arrow type the column's values land in; the test suite pins every one.
@@ -428,33 +452,6 @@ const fn bound<'buf>(bound: &RangeBound<Cell<'buf>>) -> Cell<'buf> {
     }
 }
 
-/// Decodes a `numeric` typmod, defaulting bare `numeric` `-1` to (38,9).
-fn numeric_precision_scale(typmod: i32) -> Result<(u8, u8)> {
-    if typmod == BARE_NUMERIC_TYPMOD {
-        return Ok(BARE_NUMERIC);
-    }
-
-    // `numeric_typmod_precision`/`numeric_typmod_scale`, minus `VARHDRSZ`; the XOR sign-extends the
-    // 11-bit scale, which PG 15+ allows to be negative.
-    // https://github.com/postgres/postgres/blob/REL_17_10/src/backend/utils/adt/numeric.c#L925
-    let typmod = typmod.wrapping_sub(VARHDRSZ);
-    let precision = (typmod >> 16) & 0xffff;
-    let scale = ((typmod & 0x7ff) ^ 0x400).wrapping_sub(0x400);
-
-    // PG holds 1000 digits to Arrow's 38, and PG 15+ lets scale go negative or past precision.
-    match (u8::try_from(precision), u8::try_from(scale)) {
-        (Ok(precision), Ok(scale))
-            if precision <= DECIMAL128_MAX_PRECISION && scale <= precision =>
-        {
-            Ok((precision, scale))
-        }
-        _ => Err(TransferredError::in_source(format!(
-            "`numeric({precision},{scale})` is not supported: it needs at most \
-             {DECIMAL128_MAX_PRECISION} digits and a scale from 0 to its precision"
-        ))),
-    }
-}
-
 /// Restates a decimal as an integer count of `10^-scale` units, as Arrow `Decimal128` stores it.
 fn decimal_units(mut decimal: Decimal, scale: u8) -> Result<i128> {
     let scale = u32::from(scale);
@@ -595,33 +592,47 @@ mod tests {
     /// Largest mantissa `rust_decimal` can hold: 2^96 - 1, with no room to zero-pad.
     const U96_MAX: Decimal = Decimal::from_parts(u32::MAX, u32::MAX, u32::MAX, false, 0);
 
+    /// Arrow type a `numeric` column declared with `typmod` lands in.
+    fn numeric_type(typmod: i32) -> Result<ArrowType> {
+        Decoding::numeric(typmod, "amount").map(|decoding| decoding.arrow_type())
+    }
+
     #[test]
     fn typmod_decodes_declared_precision_and_scale() {
-        assert_eq!(numeric_precision_scale(NUMERIC_18_4).unwrap(), (18, 4));
-        assert_eq!(numeric_precision_scale(NUMERIC_38_9).unwrap(), (38, 9));
+        assert_eq!(
+            numeric_type(NUMERIC_18_4).unwrap(),
+            ArrowType::Decimal128(18, 4)
+        );
+        assert_eq!(
+            numeric_type(NUMERIC_38_9).unwrap(),
+            ArrowType::Decimal128(38, 9)
+        );
     }
 
     #[test]
     fn bare_numeric_defaults_to_bq_numeric_shape() {
-        assert_eq!(numeric_precision_scale(NUMERIC_BARE).unwrap(), (38, 9));
+        assert_eq!(
+            numeric_type(NUMERIC_BARE).unwrap(),
+            ArrowType::Decimal128(38, 9)
+        );
     }
 
     /// PG 15+ allows negative scale; the decode must not read it as a large positive one.
     #[test]
     fn typmod_rejects_negative_scale_by_its_value() {
-        let error = numeric_precision_scale(NUMERIC_5_NEG2).unwrap_err();
+        let error = numeric_type(NUMERIC_5_NEG2).unwrap_err();
         assert!(format!("{error:?}").contains("numeric(5,-2)"));
     }
 
     #[test]
     fn typmod_rejects_precision_past_decimal128() {
-        assert!(numeric_precision_scale(NUMERIC_1000_500).is_err());
+        assert!(numeric_type(NUMERIC_1000_500).is_err());
     }
 
     /// PG takes `numeric(5,10)`; Arrow `Decimal128` does not, and would build a broken array from it.
     #[test]
     fn typmod_rejects_scale_wider_than_precision() {
-        assert!(numeric_precision_scale(NUMERIC_5_10).is_err());
+        assert!(numeric_type(NUMERIC_5_10).is_err());
     }
 
     #[test]
