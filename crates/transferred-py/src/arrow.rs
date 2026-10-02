@@ -25,7 +25,7 @@ use transferred_core::{BatchStream, Result, Source, TransferredError};
 /// the user-facing Python `ArrowSource`; not intended to be used directly.
 #[gen_stub_pyclass]
 #[pyclass(name = "_ArrowSource", module = "transferred._native", unsendable)]
-pub struct PyArrowSource {
+pub(crate) struct PyArrowSource {
     inner: Option<ArrowSource>,
 }
 
@@ -38,9 +38,10 @@ impl PyArrowSource {
     ))]
     #[new]
     fn new(reader: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let reader = ArrowArrayStreamReader::from_pyarrow_bound(reader)?;
         Ok(Self {
-            inner: Some(ArrowSource { reader }),
+            inner: Some(ArrowSource {
+                reader: ArrowArrayStreamReader::from_pyarrow_bound(reader)?,
+            }),
         })
     }
 }
@@ -53,7 +54,7 @@ impl PyArrowSource {
 }
 
 /// Rust-side source over a pyarrow `RecordBatchReader` that gives us `Send`.
-pub struct ArrowSource {
+pub(crate) struct ArrowSource {
     reader: ArrowArrayStreamReader,
 }
 

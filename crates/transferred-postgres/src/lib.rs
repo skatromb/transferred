@@ -1,4 +1,6 @@
 //! Postgres source + destination. tokio-postgres + binary COPY, both directions.
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
+
 mod connection;
 mod destination;
 pub mod geoarrow;

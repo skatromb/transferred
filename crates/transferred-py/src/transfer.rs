@@ -1,10 +1,10 @@
 //! `Transfer` Python class. Single-shot: consumes source + destination on `run()`.
 
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use tokio::runtime::Builder;
-use transferred_core::{Destination, Source, Transfer};
+use transferred_core::{BoxedDestination, BoxedSource, Transfer};
 
 use crate::arrow::PyArrowSource;
 use crate::error::to_pyerr;
@@ -21,9 +21,9 @@ use crate::report::PyRunReport;
     unsendable,
     subclass
 )]
-pub struct PyTransfer {
-    source: Option<Box<dyn Source + Send>>,
-    destination: Option<Box<dyn Destination + Send>>,
+pub(crate) struct PyTransfer {
+    source: Option<BoxedSource>,
+    destination: Option<BoxedDestination>,
 }
 
 #[gen_stub_pymethods]
@@ -35,11 +35,9 @@ impl PyTransfer {
     ))]
     #[new]
     fn new(source: &Bound<'_, PyAny>, destination: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let source = extract_source(source)?;
-        let destination = extract_destination(destination)?;
         Ok(Self {
-            source: Some(source),
-            destination: Some(destination),
+            source: Some(extract_source(source)?),
+            destination: Some(extract_destination(destination)?),
         })
     }
 
@@ -80,24 +78,24 @@ macro_rules! try_take_inner {
     };
 }
 
-fn extract_source(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Source + Send>> {
-    try_take_inner!(obj, PyFilesSource, PyArrowSource, PyPostgresSource);
+fn extract_source(source: &Bound<'_, PyAny>) -> PyResult<BoxedSource> {
+    try_take_inner!(source, PyFilesSource, PyArrowSource, PyPostgresSource);
     // PyO3 convention: Python wrappers expose a `_native_source` attr holding a native source.
-    if let Ok(inner) = obj.getattr("_native_source") {
+    if let Ok(inner) = source.getattr("_native_source") {
         return extract_source(&inner);
     }
-    Err(pyo3::exceptions::PyTypeError::new_err(
+    Err(PyTypeError::new_err(
         "source must be a transferred source object",
     ))
 }
 
-fn extract_destination(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Destination + Send>> {
-    try_take_inner!(obj, PyFilesDestination, PyPostgresDestination);
+fn extract_destination(destination: &Bound<'_, PyAny>) -> PyResult<BoxedDestination> {
+    try_take_inner!(destination, PyFilesDestination, PyPostgresDestination);
     // PyO3 convention: Python wrappers expose a `_native_destination` attr holding a native destination.
-    if let Ok(inner) = obj.getattr("_native_destination") {
+    if let Ok(inner) = destination.getattr("_native_destination") {
         return extract_destination(&inner);
     }
-    Err(pyo3::exceptions::PyTypeError::new_err(
+    Err(PyTypeError::new_err(
         "destination must be a transferred destination object",
     ))
 }

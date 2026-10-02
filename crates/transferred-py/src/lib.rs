@@ -1,5 +1,6 @@
 //! Python bindings for `transferred`. Exposes `_native` extension module.
 #![doc(html_logo_url = "https://raw.githubusercontent.com/skatromb/transferred/main/logo.png")]
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 mod arrow;
 mod error;
@@ -17,7 +18,7 @@ fn install_logging(py: Python<'_>) -> PyResult<()> {
     // Not the default `LoggersAndLevels`: caching levels would freeze `setLevel` calls made later.
     let logger = Logger::new(py, Caching::Loggers)?.set_prefix("transferred");
     // Already installed means an earlier import wired this up.
-    let _ = logger.install();
+    drop(logger.install());
     Ok(())
 }
 

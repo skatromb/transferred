@@ -6,17 +6,17 @@ use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite};
 use transferred_core::{BatchStream, Result};
 
-pub mod parquet;
+pub(crate) mod parquet;
 
 pub use parquet::Parquet;
 
 /// A readable file handle trait marker for random-access bytes.
 pub trait FileReader: AsyncRead + AsyncSeek + Send + Unpin {}
-impl<T: AsyncRead + AsyncSeek + Send + Unpin> FileReader for T {}
+impl<Reader: AsyncRead + AsyncSeek + Send + Unpin> FileReader for Reader {}
 
 /// A writable file handle trait.
 pub trait FileWriter: AsyncWrite + Send + Unpin {}
-impl<T: AsyncWrite + Send + Unpin> FileWriter for T {}
+impl<Writer: AsyncWrite + Send + Unpin> FileWriter for Writer {}
 
 /// Decodes a file's bytes into Arrow batches.
 #[async_trait]

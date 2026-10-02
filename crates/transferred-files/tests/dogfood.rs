@@ -5,20 +5,21 @@
 #![expect(clippy::arithmetic_side_effects, reason = "tests code")]
 
 use std::iter;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
 use arrow::array::{
-    ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float64Array,
+    Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float64Array,
     Int32Array, Int64Array, ListArray, StringArray, TimestampMicrosecondArray, UInt16Array,
 };
 use arrow::buffer::OffsetBuffer;
+use arrow::compute;
 use arrow::record_batch::RecordBatch;
 use arrow_schema::extension::{ExtensionType as _, Json, Opaque, Uuid};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use async_trait::async_trait;
-use futures::{StreamExt as _, stream};
+use futures::{TryStreamExt as _, stream};
 use tempfile::tempdir;
 use transferred_core::{BatchStream, Destination, Result, RunReport, Source, Transfer};
 use transferred_files::{Compression, FilesDestination, FilesSource, GlobOrPaths, Parquet};
@@ -30,41 +31,11 @@ async fn parquet_dogfood() {
     let path = dir.path().join("out");
     let schema = input_schema();
     let input = vec![input_batch(&schema, 5, 0), input_batch(&schema, 3, 100)];
-    let total_rows: usize = input.iter().map(RecordBatch::num_rows).sum();
-    let total_rows = u64::try_from(total_rows).unwrap();
-    let memory_destination = MemoryDestination::default();
-    let collected = memory_destination.batches.clone();
+    let total_rows = u64::try_from(input.iter().map(RecordBatch::num_rows).sum::<usize>()).unwrap();
 
     // Act
-    // Dump to directory
-    let write_report = Transfer::new(
-        Box::new(MemorySource(input.clone())),
-        Box::new(FilesDestination::new(
-            path.clone(),
-            Arc::new(Parquet::new(Compression::Zstd)),
-            false,
-        )),
-    )
-    .run()
-    .await
-    .unwrap();
-
-    // Read the written parts back to memory
-    let parts: Vec<PathBuf> = write_report
-        .written_objects
-        .iter()
-        .map(PathBuf::from)
-        .collect();
-    let read_report = Transfer::new(
-        Box::new(FilesSource::new(
-            GlobOrPaths::Paths(parts),
-            Arc::new(Parquet::default()),
-        )),
-        Box::new(memory_destination),
-    )
-    .run()
-    .await
-    .unwrap();
+    let write_report = write_parquet(input.clone(), &path).await;
+    let (read_report, read) = read_parquet(&write_report).await;
 
     // Assert
     assert!(path.is_dir());
@@ -73,7 +44,6 @@ async fn parquet_dogfood() {
     assert!(write_report.bytes_written > 0);
     assert_eq!(read_report.rows, total_rows);
 
-    let read = std::mem::take(&mut *collected.lock().unwrap());
     let read_schema = read[0].schema();
     assert_eq!(read_schema.fields(), schema.fields());
 
@@ -87,9 +57,43 @@ async fn parquet_dogfood() {
         Some(r#"{"type_name":"macaddr","vendor_name":"PostgreSQL"}"#)
     );
 
-    let concat_in = arrow::compute::concat_batches(&schema, &input).unwrap();
-    let concat_read = arrow::compute::concat_batches(&read_schema, read.iter()).unwrap();
+    let concat_in = compute::concat_batches(&schema, &input).unwrap();
+    let concat_read = compute::concat_batches(&read_schema, read.iter()).unwrap();
     assert_eq!(concat_in, concat_read);
+}
+
+/// Dumps in-memory batches to zstd Parquet parts under `path`.
+async fn write_parquet(input: Vec<RecordBatch>, path: &Path) -> RunReport {
+    Transfer::new(
+        Box::new(MemorySource(input)),
+        Box::new(FilesDestination::new(
+            path.to_path_buf(),
+            Arc::new(Parquet::new(Compression::Zstd)),
+            false,
+        )),
+    )
+    .run()
+    .await
+    .unwrap()
+}
+
+/// Reads the parts a write reported back into memory, alongside the read's own report.
+async fn read_parquet(written: &RunReport) -> (RunReport, Vec<RecordBatch>) {
+    let parts = written.written_objects.iter().map(PathBuf::from).collect();
+    let (sender, receiver) = mpsc::channel();
+
+    let report = Transfer::new(
+        Box::new(FilesSource::new(
+            GlobOrPaths::Paths(parts),
+            Arc::new(Parquet::default()),
+        )),
+        Box::new(MemoryDestination(sender)),
+    )
+    .run()
+    .await
+    .unwrap();
+
+    (report, receiver.iter().collect())
 }
 
 fn input_schema() -> Arc<Schema> {
@@ -123,92 +127,65 @@ fn input_schema() -> Arc<Schema> {
 }
 
 fn input_batch(schema: &Arc<Schema>, rows: u8, offset: u8) -> RecordBatch {
-    let i32_arr: ArrayRef = Arc::new(Int32Array::from(
-        (0..rows).map(|i| i32::from(i + offset)).collect::<Vec<_>>(),
-    ));
-    let i64_arr: ArrayRef = Arc::new(Int64Array::from(
-        (0..rows)
-            .map(|i| (i % 3 != 0).then(|| i64::from(i + offset)))
-            .collect::<Vec<_>>(),
-    ));
-    let u16_arr: ArrayRef = Arc::new(UInt16Array::from(
-        (0..rows).map(u16::from).collect::<Vec<_>>(),
-    ));
-    let f64_arr: ArrayRef = Arc::new(Float64Array::from(
-        (0..rows)
-            .map(|i| (i % 2 == 0).then(|| f64::from(i) * 1.25))
-            .collect::<Vec<_>>(),
-    ));
-    let bool_arr: ArrayRef = Arc::new(BooleanArray::from(
-        (0..rows)
-            .map(|i| match i % 3 {
-                0 => Some(true),
-                1 => Some(false),
-                _ => None,
-            })
-            .collect::<Vec<_>>(),
-    ));
-    let utf8_arr: ArrayRef = Arc::new(StringArray::from(
-        (0..rows)
-            .map(|i| (i % 4 != 0).then(|| format!("s{}", i + offset)))
-            .collect::<Vec<_>>(),
-    ));
-    let bin_arr: ArrayRef = Arc::new(
-        (0..rows)
-            .map(|i| (i % 2 == 0).then_some([i, i + 1, i + 2]))
-            .collect::<BinaryArray>(),
-    );
-    let date_arr: ArrayRef = Arc::new(Date32Array::from(
-        (0..rows)
-            .map(|i| (i % 5 != 0).then(|| 19_000 + i32::from(i)))
-            .collect::<Vec<_>>(),
-    ));
-    let ts_arr: ArrayRef = Arc::new(
-        TimestampMicrosecondArray::from(
-            (0..rows)
-                .map(|i| Some(1_700_000_000_000_000 + i64::from(i) * 1_000_000))
-                .collect::<Vec<_>>(),
-        )
-        .with_timezone("UTC"),
-    );
+    let columns = [plain_columns(rows, offset), extension_columns(rows, offset)].concat();
+    RecordBatch::try_new(schema.clone(), columns).unwrap()
+}
 
-    let list_values = Int32Array::from((0..i32::from(rows) * 2).collect::<Vec<_>>());
-    let list_offsets = OffsetBuffer::from_lengths(iter::repeat_n(2, rows.into()));
-    let list_field = Arc::new(Field::new("item", DataType::Int32, true));
-    let list_arr: ArrayRef = Arc::new(ListArray::new(
-        list_field,
-        list_offsets,
-        Arc::new(list_values),
-        None,
-    ));
-
-    let uuid_arr: ArrayRef = Arc::new(
-        FixedSizeBinaryArray::try_from_sparse_iter_with_size(
-            (0..rows).map(|i| (i % 3 != 0).then_some([i; 16])),
-            16,
-        )
-        .unwrap(),
-    );
-    let json_arr: ArrayRef = Arc::new(StringArray::from(
-        (0..rows)
-            .map(|i| (i % 2 == 0).then(|| format!(r#"{{"i": {}}}"#, i + offset)))
-            .collect::<Vec<_>>(),
-    ));
-    // Six macaddr bytes, as an unmapped Postgres type reaches Arrow.
-    let opaque_arr: ArrayRef = Arc::new(BinaryArray::from_opt_vec(
-        (0..rows)
-            .map(|i| (i % 2 == 0).then_some(&b"\x08\x00\x2b\x01\x02\x03"[..]))
-            .collect::<Vec<_>>(),
-    ));
-
-    RecordBatch::try_new(
-        schema.clone(),
-        vec![
-            i32_arr, i64_arr, u16_arr, f64_arr, bool_arr, utf8_arr, bin_arr, date_arr, ts_arr,
-            list_arr, uuid_arr, json_arr, opaque_arr,
-        ],
+/// Columns of the schema's built-in Arrow types, nulls sprinkled at different strides.
+fn plain_columns(rows: u8, offset: u8) -> Vec<ArrayRef> {
+    let timestamps = TimestampMicrosecondArray::from_iter_values(
+        (0..rows).map(|i| 1_700_000_000_000_000 + i64::from(i) * 1_000_000),
     )
-    .unwrap()
+    .with_timezone("UTC");
+    let lists = ListArray::new(
+        Arc::new(Field::new("item", DataType::Int32, true)),
+        OffsetBuffer::from_lengths(iter::repeat_n(2, rows.into())),
+        Arc::new(Int32Array::from_iter_values(0..i32::from(rows) * 2)),
+        None,
+    );
+
+    vec![
+        Arc::new(Int32Array::from_iter_values(
+            (0..rows).map(|i| i32::from(i + offset)),
+        )),
+        sparse::<Int64Array, _>(rows, 3, |i| i64::from(i + offset)),
+        Arc::new(UInt16Array::from_iter_values((0..rows).map(u16::from))),
+        sparse::<Float64Array, _>(rows, 2, |i| f64::from(i) * 1.25),
+        sparse::<BooleanArray, _>(rows, 3, |i| i % 2 == 0),
+        sparse::<StringArray, _>(rows, 4, |i| format!("s{}", i + offset)),
+        sparse::<BinaryArray, _>(rows, 2, |i| [i, i + 1, i + 2]),
+        sparse::<Date32Array, _>(rows, 5, |i| 19_000 + i32::from(i)),
+        Arc::new(timestamps),
+        Arc::new(lists),
+    ]
+}
+
+/// Columns whose type lives in field metadata, which the Parquet round-trip must carry through.
+fn extension_columns(rows: u8, offset: u8) -> Vec<ArrayRef> {
+    let uuids = FixedSizeBinaryArray::try_from_sparse_iter_with_size(
+        (0..rows).map(|i| (i % 3 != 0).then_some([i; 16])),
+        16,
+    )
+    .unwrap();
+
+    vec![
+        Arc::new(uuids),
+        sparse::<StringArray, _>(rows, 2, |i| format!(r#"{{"i": {}}}"#, i + offset)),
+        // Six macaddr bytes, as an unmapped Postgres type reaches Arrow.
+        sparse::<BinaryArray, _>(rows, 2, |_| b"\x08\x00\x2b\x01\x02\x03"),
+    ]
+}
+
+/// `rows` values from `value`, null on every multiple of `stride`, row 0 included.
+fn sparse<Column, Value>(rows: u8, stride: u8, value: impl Fn(u8) -> Value) -> ArrayRef
+where
+    Column: Array + FromIterator<Option<Value>> + 'static,
+{
+    Arc::new(
+        (0..rows)
+            .map(|i| (i % stride != 0).then(|| value(i)))
+            .collect::<Column>(),
+    )
 }
 
 /// Canonical Arrow extension name a field carries in its metadata, if any.
@@ -235,24 +212,17 @@ impl Source for MemorySource {
     }
 }
 
-/// Collects batches into a shared `Vec`; clone `batches` before moving it into a `Transfer`.
-#[derive(Default)]
-struct MemoryDestination {
-    batches: Arc<Mutex<Vec<RecordBatch>>>,
-}
+/// Sends every batch down a channel; the run drops the sender, which ends the receiver's iterator.
+struct MemoryDestination(mpsc::Sender<RecordBatch>);
 
 #[async_trait]
 impl Destination for MemoryDestination {
     async fn write_partitions(self: Box<Self>, partitions: Vec<BatchStream>) -> Result<RunReport> {
         let mut rows: u64 = 0;
         for mut partition in partitions {
-            while let Some(batch) = partition.next().await {
-                let batch = batch?;
+            while let Some(batch) = partition.try_next().await? {
                 rows += u64::try_from(batch.num_rows()).expect("row count fits u64");
-                self.batches
-                    .lock()
-                    .expect("MemoryDestination mutex")
-                    .push(batch);
+                self.0.send(batch).expect("receiver outlives the run");
             }
         }
         Ok(RunReport {

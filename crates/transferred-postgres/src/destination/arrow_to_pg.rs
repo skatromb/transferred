@@ -3,6 +3,7 @@
 //! A schema maps once into `ColumnEncoder`s; every value writes itself through its `Encoding`.
 
 use std::any::type_name;
+use std::result;
 
 use arrow::array::{
     Array, BinaryArray, BooleanArray, Date32Array, Decimal128Array, FixedSizeBinaryArray,
@@ -21,10 +22,10 @@ use postgres_protocol::escape::escape_identifier;
 use postgres_protocol::types::{RangeBound, empty_range_to_sql, range_to_sql};
 use rust_decimal::Decimal;
 use tokio_postgres::types::{IsNull, ToSql, Type as PgType};
-use transferred_core::{Result, TransferredError};
+use transferred_core::{AnyError, Result, TransferredError};
 
 use crate::geoarrow::{self, GEOGRAPHY, GEOMETRY};
-use crate::pg_range::{LOWER, PgRange};
+use crate::pg_range::PgRange;
 
 /// PG counts sub-second time in microseconds; Arrow intervals count nanoseconds.
 const NANOS_PER_MICRO: i64 = 1_000;
@@ -33,7 +34,7 @@ const NANOS_PER_MICRO: i64 = 1_000;
 const NULL_FIELD: i32 = -1;
 
 /// Postgres column definitions + value encoders, mapped once from an Arrow schema.
-pub struct Encoder {
+pub(crate) struct Encoder {
     schema: SchemaRef,
     columns: Vec<ColumnEncoder>,
     /// Fields in every COPY row, which the wire format counts in an `i16`.
@@ -42,7 +43,7 @@ pub struct Encoder {
 
 impl Encoder {
     /// Maps an Arrow schema onto Postgres columns. All columns nullable.
-    pub fn new(schema: SchemaRef) -> Result<Self> {
+    pub(crate) fn new(schema: SchemaRef) -> Result<Self> {
         let columns = schema
             .fields()
             .iter()
@@ -71,7 +72,7 @@ impl Encoder {
 
     /// Column-type list for `CREATE TABLE`, quoted and comma-separated.
     /// E.g. `"id" int4, "total" numeric(38,9)`.
-    pub fn declarations(&self) -> String {
+    pub(crate) fn declarations(&self) -> String {
         self.columns
             .iter()
             .map(|column| format!("{} {}", column.name, column.encoding.sql_type()))
@@ -80,7 +81,7 @@ impl Encoder {
     }
 
     /// Checks a batch against the mapped schema.
-    pub fn check(&self, batch: &RecordBatch) -> Result<()> {
+    pub(crate) fn check(&self, batch: &RecordBatch) -> Result<()> {
         // The table was created from the first batch, so a later partition may not fit it.
         if batch.schema().fields() != self.schema.fields() {
             return Err(TransferredError::in_destination(format!(
@@ -94,7 +95,12 @@ impl Encoder {
     }
 
     /// Appends one COPY row: the field count, then every field.
-    pub fn write_row(&self, batch: &RecordBatch, row_num: usize, buf: &mut BytesMut) -> Result<()> {
+    pub(crate) fn write_row(
+        &self,
+        batch: &RecordBatch,
+        row_num: usize,
+        buf: &mut BytesMut,
+    ) -> Result<()> {
         buf.put_i16(self.field_count);
         for (column, array) in self.columns.iter().zip(batch.columns()) {
             column.write_field(array.as_ref(), row_num, buf)?;
@@ -175,59 +181,72 @@ enum Encoding {
 
 impl Encoding {
     /// Decides what a Postgres column an Arrow field becomes.
+    fn new(field: &ArrowField) -> Result<Self> {
+        Ok(match (field.data_type(), field.extension_type_name()) {
+            // `json` stores the document verbatim; `jsonb` would reorder keys and drop whitespace.
+            (ArrowType::Utf8, Some(Json::NAME)) => Self::Json,
+            // `PostGIS` gets its OIDs per database, so no `PgType` names it and only the DDL can.
+            (ArrowType::Binary, Some(WkbType::NAME)) => Self::Geo(
+                field
+                    .try_extension_type()
+                    .map_err(TransferredError::in_destination)?,
+            ),
+            (ArrowType::FixedSizeBinary(16), Some(Uuid::NAME)) => Self::Uuid,
+            (ArrowType::Struct(_), Some(PgRange::NAME)) => Self::range(field.data_type())?,
+            // Untagged types, and `arrow.opaque`, whose type name the destination deliberately drops.
+            (data_type, _) => Self::plain(data_type)?,
+        })
+    }
+
+    /// Decides for a type whose extension tag, if any, the destination ignores.
     #[expect(
         clippy::wildcard_enum_match_arm,
         reason = "every Arrow type not listed is refused"
     )]
-    fn new(field: &ArrowField) -> Result<Self> {
-        let extension = field.extension_type_name();
-        Ok(match field.data_type() {
+    fn plain(data_type: &ArrowType) -> Result<Self> {
+        Ok(match data_type {
             ArrowType::Boolean => Self::Bool,
             ArrowType::Int16 => Self::Int2,
             ArrowType::Int32 => Self::Int4,
             ArrowType::Int64 => Self::Int8,
             ArrowType::Float32 => Self::Float4,
             ArrowType::Float64 => Self::Float8,
-            // `json` stores the document verbatim; `jsonb` would reorder keys and drop whitespace.
-            ArrowType::Utf8 if extension == Some(Json::NAME) => Self::Json,
             ArrowType::Utf8 => Self::Text,
-            // `PostGIS` gets its OIDs per database, so no `PgType` names it and only the DDL can.
-            ArrowType::Binary if extension == Some(WkbType::NAME) => Self::Geo(
-                field
-                    .try_extension_type()
-                    .map_err(TransferredError::in_destination)?,
-            ),
-            // Plain bytes, and `arrow.opaque`, whose type name the destination deliberately drops.
             ArrowType::Binary => Self::Bytea,
-            ArrowType::FixedSizeBinary(16) if extension == Some(Uuid::NAME) => Self::Uuid,
             ArrowType::Date32 => Self::Date,
             ArrowType::Timestamp(TimeUnit::Microsecond, None) => Self::Timestamp,
             // Arrow timestamps are UTC instants whatever the zone name, so the zone needs no lookup.
             ArrowType::Timestamp(TimeUnit::Microsecond, Some(_)) => Self::Timestamptz,
             ArrowType::Interval(IntervalUnit::MonthDayNano) => Self::Interval,
-            &ArrowType::Decimal128(precision, scale) => Self::Numeric {
-                precision,
-                scale: u8::try_from(scale).map_err(|_err| {
-                    TransferredError::in_destination(
-                        "`Decimal128` with negative scale is not supported",
-                    )
-                })?,
-            },
-            ArrowType::Struct(_) if extension == Some(PgRange::NAME) => {
-                let bounds_type = PgRange::type_of(field.data_type())
-                    .map_err(TransferredError::in_destination)?;
-                let element = Self::new(&ArrowField::new(LOWER, bounds_type.clone(), true))?;
-
-                Self::Range {
-                    pg_type: element.range_type()?,
-                    element: Box::new(element),
-                }
-            }
+            &ArrowType::Decimal128(precision, scale) => Self::numeric(precision, scale)?,
             other => {
                 return Err(TransferredError::in_destination(format!(
                     "Arrow type `{other}` is not supported by the Postgres destination in 0.1"
                 )));
             }
+        })
+    }
+
+    /// Decides for a range struct: its bounds' own encoding, wrapped in the range type over it.
+    fn range(data_type: &ArrowType) -> Result<Self> {
+        let bounds_type = PgRange::type_of(data_type).map_err(TransferredError::in_destination)?;
+        let element = Self::plain(bounds_type)?;
+
+        Ok(Self::Range {
+            pg_type: element.range_type()?,
+            element: Box::new(element),
+        })
+    }
+
+    /// Decides for a decimal, refusing a negative scale.
+    fn numeric(precision: u8, scale: i8) -> Result<Self> {
+        Ok(Self::Numeric {
+            precision,
+            scale: u8::try_from(scale).map_err(|_err| {
+                TransferredError::in_destination(
+                    "`Decimal128` with negative scale is not supported",
+                )
+            })?,
         })
     }
 
@@ -305,6 +324,7 @@ impl Encoding {
     }
 
     /// Writes one value in Postgres binary form; nulls stop here, before any downcast.
+    #[expect(clippy::too_many_lines, reason = "handles many types")]
     fn write(&self, array: &dyn Array, row_num: usize, buf: &mut BytesMut) -> Result<IsNull> {
         if array.is_null(row_num) {
             return Ok(IsNull::Yes);
@@ -374,9 +394,9 @@ impl Encoding {
 }
 
 /// Downcasts an Arrow column; a mismatch is unreachable, as the encoding came from the same field.
-fn cast<A: 'static>(array: &dyn Array) -> Result<&A> {
-    array.as_any().downcast_ref::<A>().ok_or_else(|| {
-        TransferredError::in_destination(format!("column is not a {}", type_name::<A>()))
+fn cast<Column: 'static>(array: &dyn Array) -> Result<&Column> {
+    array.as_any().downcast_ref::<Column>().ok_or_else(|| {
+        TransferredError::in_destination(format!("column is not a {}", type_name::<Column>()))
     })
 }
 
@@ -405,8 +425,8 @@ fn write_range(
     let upper_inc = cast::<BooleanArray>(upper_incs.as_ref())?.value(row_num);
 
     range_to_sql(
-        |buf| write_bound(element, lowers.as_ref(), row_num, lower_inc, buf),
-        |buf| write_bound(element, uppers.as_ref(), row_num, upper_inc, buf),
+        |out| bound(element.write(lowers.as_ref(), row_num, out), lower_inc),
+        |out| bound(element.write(uppers.as_ref(), row_num, out), upper_inc),
         buf,
     )
     .map_err(TransferredError::in_destination)?;
@@ -414,16 +434,13 @@ fn write_range(
     Ok(IsNull::No)
 }
 
-/// Writes a bound, reporting it infinite when its value is null: Postgres allows no NULL bound.
-fn write_bound(
-    element: &Encoding,
-    array: &dyn Array,
-    row_num: usize,
-    inclusive: bool,
-    buf: &mut BytesMut,
-) -> std::result::Result<RangeBound<ProtocolIsNull>, Box<dyn std::error::Error + Sync + Send>> {
+/// What `range_to_sql` wants back for each bound it has us write.
+type BoundResult = result::Result<RangeBound<ProtocolIsNull>, AnyError>;
+
+/// Bound for a value just written; a null one is infinite, as Postgres allows no NULL bound.
+fn bound(written: Result<IsNull>, inclusive: bool) -> BoundResult {
     // The two `IsNull`s belong to different crates; only a bound we did write reaches the protocol's.
-    Ok(match element.write(array, row_num, buf)? {
+    Ok(match written? {
         IsNull::Yes => RangeBound::Unbounded,
         IsNull::No if inclusive => RangeBound::Inclusive(ProtocolIsNull::No),
         IsNull::No => RangeBound::Exclusive(ProtocolIsNull::No),
@@ -531,10 +548,11 @@ mod tests {
     fn maps_every_source_type_back_to_a_pg_declaration() {
         assert_eq!(
             Encoder::new(source_schema().into()).unwrap().declarations(),
-            r#""b" bool, "i2" int2, "i4" int4, "i8" int8, "f4" float4, "f8" float8, "t" text, "#
-                .to_owned()
-                + r#""bin" bytea, "d" date, "ts" timestamp, "tstz" timestamptz, "iv" interval, "#
-                + r#""n" numeric(38,9), "u" uuid, "j" json"#
+            concat!(
+                r#""b" bool, "i2" int2, "i4" int4, "i8" int8, "f4" float4, "f8" float8, "t" text, "#,
+                r#""bin" bytea, "d" date, "ts" timestamp, "tstz" timestamptz, "iv" interval, "#,
+                r#""n" numeric(38,9), "u" uuid, "j" json"#,
+            )
         );
     }
 
@@ -547,7 +565,7 @@ mod tests {
         let encoder = Encoder::new(schema.into())?;
         encoder.check(&batch)?;
         let column = &encoder.columns[0];
-        column.write(batch.column(0).as_ref(), 0, &mut buf)?;
+        _ = column.write(batch.column(0).as_ref(), 0, &mut buf)?;
         Ok(buf)
     }
 
@@ -581,8 +599,10 @@ mod tests {
 
         assert_eq!(
             Encoder::new(schema.into()).unwrap().declarations(),
-            r#""i4" int4range, "i8" int8range, "n" numrange, "d" daterange, "#.to_owned()
-                + r#""ts" tsrange, "tstz" tstzrange"#
+            concat!(
+                r#""i4" int4range, "i8" int8range, "n" numrange, "d" daterange, "#,
+                r#""ts" tsrange, "tstz" tstzrange"#,
+            )
         );
     }
 

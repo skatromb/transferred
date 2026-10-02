@@ -1,5 +1,7 @@
 //! Throwaway Postgres container, seeded by `pg_seed.sql`, shared by the integration tests.
 
+use std::mem;
+use std::process::Command;
 use std::sync::Mutex;
 
 use arrow::array::RecordBatch;
@@ -9,7 +11,7 @@ use testcontainers_modules::postgres::Postgres;
 use testcontainers_modules::testcontainers::runners::AsyncRunner as _;
 use testcontainers_modules::testcontainers::{ContainerAsync, ContainerRequest, ImageExt as _};
 use tokio::sync::OnceCell;
-use transferred_core::Source;
+use transferred_core::BoxedSource;
 use transferred_postgres::PostgresSource;
 
 /// Ids of the containers this run started, for [`reap`] to remove.
@@ -18,27 +20,32 @@ static RUNNING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// Runs after `main` off the `atexit` chain — the teardown libtest lacks, since `static`s never drop.
 #[dtor::dtor]
 unsafe fn reap() {
-    let ids = std::mem::take(&mut *RUNNING.lock().expect("reaper lock"));
+    let ids = mem::take(&mut *RUNNING.lock().expect("reaper lock"));
     if ids.is_empty() {
         return;
     }
 
     // Shelling out, because Rust destroys the main thread's locals before atexit runs and tokio
     // cannot start without them.
-    let _ = std::process::Command::new("docker")
-        .args(["rm", "--force", "--volumes"])
-        .args(ids)
-        .output();
+    drop(
+        Command::new("docker")
+            .args(["rm", "--force", "--volumes"])
+            .args(ids)
+            .output(),
+    );
 }
 
 /// Image every fixture runs: Postgres with `PostGIS`, published for arm64 as well as amd64.
 const IMAGE: &str = "imresamu/postgis";
 const IMAGE_TAG: &str = "18-3.6";
 
+/// A running container and the DSN that reaches it.
+pub(crate) type RunningPostgres = (ContainerAsync<Postgres>, String);
+
 /// Boots `request` on this suite's image, registers it for reaping, and returns it with its DSN.
-pub async fn start_pg_container(
+pub(crate) async fn start_pg_container(
     request: impl Into<ContainerRequest<Postgres>>,
-) -> (ContainerAsync<Postgres>, String) {
+) -> RunningPostgres {
     let container = request
         .with_name(IMAGE)
         .with_tag(IMAGE_TAG)
@@ -61,10 +68,10 @@ pub async fn start_pg_container(
 }
 
 /// Postgres container, started once per test binary and seeded on first boot.
-static POSTGRES: OnceCell<(ContainerAsync<Postgres>, String)> = OnceCell::const_new();
+static POSTGRES: OnceCell<RunningPostgres> = OnceCell::const_new();
 
 /// Starts this binary's seeded Postgres, once, and hands back its connection string.
-pub async fn start_seeded_postgres() -> String {
+pub(crate) async fn start_seeded_postgres() -> String {
     let (_container, dsn) = POSTGRES
         .get_or_init(|| {
             start_pg_container(
@@ -77,23 +84,23 @@ pub async fn start_seeded_postgres() -> String {
 }
 
 /// Connects to this binary's Postgres container, driving the connection in the background.
-pub async fn client() -> tokio_postgres::Client {
+pub(crate) async fn client() -> tokio_postgres::Client {
     let dsn = start_seeded_postgres().await;
 
     let (client, connection) = tokio_postgres::connect(&dsn, tokio_postgres::NoTls)
         .await
         .expect("connect");
-    tokio::spawn(connection);
+    drop(tokio::spawn(connection));
     client
 }
 
 /// Runs one statement against this binary's container.
-pub async fn exec(sql: &str) {
+pub(crate) async fn exec(sql: &str) {
     client().await.batch_execute(sql).await.expect("exec");
 }
 
 /// Whether `table` exists, optionally schema-qualified. `to_regclass` yields null instead of erroring.
-pub async fn table_exists(table: &str) -> bool {
+pub(crate) async fn table_exists(table: &str) -> bool {
     let name: Option<String> = client()
         .await
         .query_one("select to_regclass($1)::text", &[&table])
@@ -104,14 +111,14 @@ pub async fn table_exists(table: &str) -> bool {
 }
 
 /// Reads a whole table as one `RecordBatch`.
-pub async fn read_table(table: &str) -> RecordBatch {
+pub(crate) async fn read_table(table: &str) -> RecordBatch {
     let dsn = start_seeded_postgres().await;
 
     collect(Box::new(PostgresSource::new(dsn, table.to_owned()))).await
 }
 
 /// Drains every partition of `source` into one `RecordBatch`.
-pub async fn collect(source: Box<dyn Source + Send>) -> RecordBatch {
+pub(crate) async fn collect(source: BoxedSource) -> RecordBatch {
     let partitions = source.stream_partitions().await.expect("stream partitions");
 
     // `flatten` keeps partitions sequential, so row order stays deterministic.

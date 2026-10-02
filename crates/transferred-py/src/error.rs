@@ -1,5 +1,7 @@
 //! Map `TransferredError` to Python exception hierarchy.
 
+use std::error::Error;
+
 use pyo3::create_exception;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
@@ -54,7 +56,7 @@ create_exception!(
 );
 
 /// Joins an error with everything that caused it, a driver's own message often being a bare category.
-fn causes(error: &dyn std::error::Error) -> String {
+fn causes(error: &dyn Error) -> String {
     let mut message = error.to_string();
     let mut cause = error.source();
     while let Some(err) = cause {
@@ -65,17 +67,17 @@ fn causes(error: &dyn std::error::Error) -> String {
     message
 }
 
-pub fn to_pyerr(err: CoreError) -> PyErr {
+pub(crate) fn to_pyerr(err: CoreError) -> PyErr {
     match err {
-        CoreError::Source(err) => SourceError::new_err(causes(&*err)),
+        CoreError::Source(cause) => SourceError::new_err(causes(&*cause)),
         CoreError::EmptySource => EmptySourceError::new_err(err.to_string()),
-        CoreError::Destination(err) => DestinationError::new_err(causes(&*err)),
-        CoreError::Arrow(err) => ArrowError::new_err(causes(&err)),
-        CoreError::Io(err) => IoError::new_err(causes(&err)),
+        CoreError::Destination(cause) => DestinationError::new_err(causes(&*cause)),
+        CoreError::Arrow(cause) => ArrowError::new_err(causes(&cause)),
+        CoreError::Io(cause) => IoError::new_err(causes(&cause)),
     }
 }
 
-pub fn register(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
+pub(crate) fn register(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("TransferredError", py.get_type::<TransferredError>())?;
     module.add("SourceError", py.get_type::<SourceError>())?;
     module.add("EmptySourceError", py.get_type::<EmptySourceError>())?;

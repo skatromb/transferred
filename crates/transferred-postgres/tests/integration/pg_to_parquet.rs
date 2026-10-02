@@ -33,8 +33,8 @@ async fn try_parquet(table: &str) -> (Result<RunReport>, TempDir) {
 
 /// Every fixture table must reach Parquet and come back with the same schema and values.
 async fn assert_survives_parquet(table: &str) {
-    let (report, _dir) = try_parquet(table).await;
-    let report = report.expect("write parquet");
+    let (run, _dir) = try_parquet(table).await;
+    let report = run.expect("write parquet");
 
     let parts = report.written_objects.iter().map(PathBuf::from).collect();
     let back = collect(Box::new(FilesSource::new(

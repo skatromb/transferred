@@ -8,14 +8,14 @@ use arrow_schema::extension::ExtensionType;
 use arrow_schema::{ArrowError, DataType as ArrowType, Field as ArrowField, Fields as ArrowFields};
 
 /// The bounds, then the three things a pair of bounds cannot say on its own.
-pub const LOWER: &str = "lower";
-pub const UPPER: &str = "upper";
-pub const LOWER_INC: &str = "lower_inc";
-pub const UPPER_INC: &str = "upper_inc";
-pub const EMPTY: &str = "empty";
+pub(crate) const LOWER: &str = "lower";
+pub(crate) const UPPER: &str = "upper";
+pub(crate) const LOWER_INC: &str = "lower_inc";
+pub(crate) const UPPER_INC: &str = "upper_inc";
+pub(crate) const EMPTY: &str = "empty";
 
 /// A Postgres range, spread over the struct fields that hold its bounds and its tag.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PgRange;
 
 impl PgRange {
@@ -35,7 +35,7 @@ impl PgRange {
 
     /// Reads the bounds' `ArrowType` from Range Struct, erroring unless its fields are exactly
     /// what `fields` declares, order included.
-    pub(crate) fn type_of(maybe_range: &ArrowType) -> std::result::Result<&ArrowType, ArrowError> {
+    pub(crate) fn type_of(maybe_range: &ArrowType) -> Result<&ArrowType, ArrowError> {
         // The first field's type is the only candidate, so rebuild from it and compare the shapes.
         if let ArrowType::Struct(fields) = maybe_range
             && let Some(lower) = fields.first()
@@ -66,15 +66,15 @@ impl ExtensionType for PgRange {
         None
     }
 
-    fn deserialize_metadata(_: Option<&str>) -> std::result::Result<(), ArrowError> {
+    fn deserialize_metadata(_: Option<&str>) -> Result<(), ArrowError> {
         Ok(())
     }
 
-    fn supports_data_type(&self, data_type: &ArrowType) -> std::result::Result<(), ArrowError> {
+    fn supports_data_type(&self, data_type: &ArrowType) -> Result<(), ArrowError> {
         Self::type_of(data_type).map(|_| ())
     }
 
-    fn try_new(data_type: &ArrowType, (): ()) -> std::result::Result<Self, ArrowError> {
+    fn try_new(data_type: &ArrowType, (): ()) -> Result<Self, ArrowError> {
         Self.supports_data_type(data_type).map(|()| Self)
     }
 }

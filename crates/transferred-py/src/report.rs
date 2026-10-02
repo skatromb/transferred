@@ -35,12 +35,12 @@ use transferred_core::RunReport;
 ///     ```
 #[gen_stub_pyclass]
 #[pyclass(name = "RunReport", module = "transferred._native", frozen)]
-pub struct PyRunReport {
+pub(crate) struct PyRunReport {
     inner: RunReport,
 }
 
 impl PyRunReport {
-    pub const fn new(inner: RunReport) -> Self {
+    pub(crate) const fn new(inner: RunReport) -> Self {
         Self { inner }
     }
 }

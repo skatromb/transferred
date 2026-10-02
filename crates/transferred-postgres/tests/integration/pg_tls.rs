@@ -1,14 +1,16 @@
 //! `sslmode` end to end against a Postgres started with `ssl=on`.
 
+use std::error::Error as _;
+
 use arrow::array::{AsArray as _, RecordBatch};
 use futures::{StreamExt as _, TryStreamExt as _, stream};
 use testcontainers_modules::postgres::Postgres;
-use testcontainers_modules::testcontainers::{ContainerAsync, ImageExt as _};
+use testcontainers_modules::testcontainers::ImageExt as _;
 use tokio::sync::OnceCell;
 use transferred_core::{Result, Source as _};
 use transferred_postgres::PostgresSource;
 
-use crate::common::start_pg_container;
+use crate::common::{RunningPostgres, start_pg_container};
 
 /// Entrypoint that gives the container a certificate and starts Postgres with TLS on.
 const ENABLE_SSL: &str = include_str!("../pg_enable_ssl.sh");
@@ -16,7 +18,7 @@ const ENABLE_SSL: &str = include_str!("../pg_enable_ssl.sh");
 /// View a session reads to learn whether its own socket is encrypted.
 const SESSION_SSL_VIEW: &str = "ssl_in_use";
 
-static POSTGRES: OnceCell<(ContainerAsync<Postgres>, String)> = OnceCell::const_new();
+static POSTGRES: OnceCell<RunningPostgres> = OnceCell::const_new();
 
 /// Starts this file's TLS-enabled Postgres once and hands back its connection string at `sslmode`.
 async fn start_tls_postgres(sslmode: &str) -> String {
@@ -73,6 +75,6 @@ async fn verify_full_rejects_a_self_signed_certificate() {
         .await
         .expect_err("a self-signed certificate must not verify");
 
-    let cause = std::error::Error::source(&error).map(ToString::to_string);
+    let cause = error.source().map(ToString::to_string);
     assert_eq!(cause.as_deref(), Some("error performing TLS handshake"));
 }

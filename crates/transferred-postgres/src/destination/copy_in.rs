@@ -19,15 +19,18 @@ const COPY_TRAILER: i16 = -1;
 /// Bytes buffered before a chunk goes out; 4 KB costs a third more client CPU, 64 KB is the plateau.
 const CHUNK_BYTES: usize = 64 << 10;
 
+/// COPY stream, boxed to pin it: `CopyInSink` is not `Unpin`.
+type PinnedSink = Pin<Box<CopyInSink<Bytes>>>;
+
 /// Writes rows a chunk at a time, unlike `BinaryCopyInWriter`, which boxes every value.
-pub struct CopyIn {
-    sink: Pin<Box<CopyInSink<Bytes>>>,
+pub(crate) struct CopyIn {
+    sink: PinnedSink,
     buf: BytesMut,
 }
 
 impl CopyIn {
     /// Opens a COPY into `table`. The header goes out with the first chunk.
-    pub async fn open(client: &Client, table: &str) -> Result<Self> {
+    pub(crate) async fn open(client: &Client, table: &str) -> Result<Self> {
         let sink = client
             .copy_in(&format!("copy {table} from stdin (format binary)"))
             .await
@@ -46,7 +49,11 @@ impl CopyIn {
     }
 
     /// Writes one COPY row per Arrow row, sending whenever the buffer fills.
-    pub async fn write_batch(&mut self, encoder: &Encoder, batch: &RecordBatch) -> Result<()> {
+    pub(crate) async fn write_batch(
+        &mut self,
+        encoder: &Encoder,
+        batch: &RecordBatch,
+    ) -> Result<()> {
         encoder.check(batch)?;
 
         for row_num in 0..batch.num_rows() {
@@ -61,7 +68,7 @@ impl CopyIn {
     }
 
     /// Writes the trailer, closes the stream and returns the rows Postgres took.
-    pub async fn finish(mut self) -> Result<u64> {
+    pub(crate) async fn finish(mut self) -> Result<u64> {
         self.buf.put_i16(COPY_TRAILER);
         self.send().await?;
 

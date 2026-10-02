@@ -3,15 +3,15 @@
 //! A statement's columns map once into `ColumnDecoder`s; every value decodes itself through its
 //! `Decoding`, straight into the Arrow builder its column's array comes out of.
 
-use std::any::type_name;
-use std::error::Error as StdError;
+use std::result;
+use std::sync::Arc;
 
 use arrow::array::{
-    ArrayBuilder, ArrayRef, BinaryBuilder, BooleanBuilder, Date32Builder, Decimal128Builder,
-    FixedSizeBinaryBuilder, Float32Builder, Float64Builder, Int16Builder, Int32Builder,
-    Int64Builder, IntervalMonthDayNanoBuilder, RecordBatch, StringBuilder, StructBuilder,
-    TimestampMicrosecondBuilder, make_builder,
+    ArrayRef, BinaryArray, BooleanArray, Date32Array, Decimal128Array, FixedSizeBinaryArray,
+    Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, IntervalMonthDayNanoArray,
+    RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
 };
+use arrow::buffer::NullBuffer;
 use arrow::datatypes::{DECIMAL128_MAX_PRECISION, Date32Type, IntervalMonthDayNano};
 use arrow_schema::extension::{Json, Opaque, Uuid};
 use arrow_schema::{
@@ -26,7 +26,7 @@ use tokio_postgres::Column as PgColumn;
 use tokio_postgres::binary_copy::BinaryCopyOutRow;
 use tokio_postgres::types::{FromSql, Kind, Type as PgType};
 use tracing::warn;
-use transferred_core::{Result, TransferredError};
+use transferred_core::{AnyError, Result, TransferredError};
 
 use crate::geoarrow::{self, GEOGRAPHY, GEOMETRY};
 use crate::pg_range::PgRange;
@@ -55,93 +55,71 @@ const VENDOR: &str = "PostgreSQL";
 /// Bytes an Arrow `uuid` holds, which is also what PG sends.
 const UUID_BYTES: i32 = 16;
 
-/// Arrow schema + per-column decoders, mapped once from PG column metadata.
-pub struct Decoder {
+/// Arrow schema + per-column decodings, mapped once from PG column metadata.
+pub(crate) struct Decoder {
     schema: SchemaRef,
-    columns: Vec<ColumnDecoder>,
+    decodings: Vec<Decoding>,
 }
 
 impl Decoder {
     /// Maps a prepared statement's columns onto Arrow columns. All fields nullable.
-    pub fn derive(columns: &[PgColumn]) -> Result<Self> {
-        let columns = columns
+    pub(crate) fn derive(columns: &[PgColumn]) -> Result<Self> {
+        let (fields, decodings): (Vec<_>, Vec<_>) = columns
             .iter()
-            .map(ColumnDecoder::new)
-            .collect::<Result<Vec<_>>>()?;
-        let fields: Vec<_> = columns.iter().map(|column| column.field.clone()).collect();
+            .map(|column| {
+                let decoding = Decoding::new(column)?;
+                Ok((decoding.field(column.name())?, decoding))
+            })
+            .collect::<Result<_>>()?;
 
         Ok(Self {
             schema: Schema::new(fields).into(),
-            columns,
+            decodings,
         })
     }
 
-    /// Appends one row, each field still exactly as Postgres sent it.
-    pub fn append_row(&mut self, row: &BinaryCopyOutRow) -> Result<()> {
-        for (index, column) in self.columns.iter_mut().enumerate() {
-            let raw: Option<Raw> = row.try_get(index).map_err(TransferredError::in_source)?;
-            column.append(raw.map(|raw| raw.0))?;
-        }
-
-        Ok(())
-    }
-
-    /// Takes the rows appended so far as a `RecordBatch`, leaving the builders empty again.
-    pub fn finish(&mut self) -> Result<RecordBatch> {
-        let arrays = self.columns.iter_mut().map(ColumnDecoder::finish).collect();
+    /// Decodes a batch of rows, each column straight from the bytes Postgres sent for it.
+    pub(crate) fn decode(&self, rows: &[BinaryCopyOutRow]) -> Result<RecordBatch> {
+        let arrays = self
+            .decodings
+            .iter()
+            .zip(self.schema.fields().iter())
+            .enumerate()
+            .map(|(index, (decoding, field))| {
+                decoding.array(&column(rows, index)?).map_err(|error| {
+                    TransferredError::in_source(format!("column {}: {error}", field.name()))
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(RecordBatch::try_new(self.schema.clone(), arrays)?)
     }
+}
+
+/// A value's bytes exactly as Postgres sent them; `None` where it sent none.
+type Cell<'buf> = Option<&'buf [u8]>;
+
+/// One column's cells, each exactly as Postgres sent it; `None` where it sent a NULL.
+fn column(rows: &[BinaryCopyOutRow], index: usize) -> Result<Vec<Cell<'_>>> {
+    rows.iter()
+        .map(|row| {
+            row.try_get::<Option<Raw<'_>>>(index)
+                .map(|cell| cell.map(|raw| raw.0))
+        })
+        .collect::<result::Result<_, _>>()
+        .map_err(TransferredError::in_source)
 }
 
 /// A field's bytes untouched, for any type — `&[u8]`'s own `FromSql` accepts `bytea` alone.
 struct Raw<'buf>(&'buf [u8]);
 
 impl<'buf> FromSql<'buf> for Raw<'buf> {
-    fn from_sql(
-        _: &PgType,
-        raw: &'buf [u8],
-    ) -> std::result::Result<Self, Box<dyn StdError + Sync + Send>> {
+    fn from_sql(_: &PgType, raw: &'buf [u8]) -> result::Result<Self, AnyError> {
         Ok(Self(raw))
     }
 
     fn accepts(_: &PgType) -> bool {
         true
-    }
-}
-
-/// One column of the source: the Arrow field it becomes, how its values are read, where they land.
-struct ColumnDecoder {
-    field: ArrowField,
-    decoding: Decoding,
-    builder: Box<dyn ArrayBuilder>,
-}
-
-impl ColumnDecoder {
-    fn new(column: &PgColumn) -> Result<Self> {
-        let decoding = Decoding::new(column)?;
-        let field = decoding.field(column.name())?;
-        // The builder comes off the field the batch is checked against, so the two cannot disagree.
-        let builder = make_builder(field.data_type(), 0);
-
-        Ok(Self {
-            field,
-            decoding,
-            builder,
-        })
-    }
-
-    /// Appends one value of this column, or a null where Postgres sent no bytes.
-    fn append(&mut self, bytes: Option<&[u8]>) -> Result<()> {
-        self.decoding
-            .append(&mut *self.builder, bytes)
-            .map_err(|error| {
-                TransferredError::in_source(format!("column {}: {error}", self.field.name()))
-            })
-    }
-
-    fn finish(&mut self) -> ArrayRef {
-        self.builder.finish()
     }
 }
 
@@ -176,6 +154,7 @@ enum Decoding {
 
 impl Decoding {
     /// Decides what Arrow column a Postgres column becomes.
+    #[expect(clippy::too_many_lines, reason = "handles many types")]
     fn new(column: &PgColumn) -> Result<Self> {
         let (name, typmod, pg_type) = (column.name(), column.type_modifier(), column.type_());
         Ok(match *pg_type {
@@ -202,13 +181,17 @@ impl Decoding {
             PgType::TSTZ_RANGE => Self::Range(Box::new(Self::Timestamptz)),
             // A range constrains no precision on its bounds, so they can only be bare.
             PgType::NUM_RANGE => Self::Range(Box::new(Self::numeric(BARE_NUMERIC_TYPMOD, name)?)),
-            // Extension-type OIDs differ per database, so `citext` and `PostGIS` match on a name.
-            _ if matches!(pg_type.kind(), Kind::Enum(_)) || pg_type.name() == CITEXT => Self::Text,
+            _ => Self::extension(pg_type, typmod, name),
+        })
+    }
+
+    /// Decides for types whose OID differs per database, so they match on kind or name instead.
+    fn extension(pg_type: &PgType, typmod: i32, name: &str) -> Self {
+        match (pg_type.kind(), pg_type.name()) {
+            (Kind::Enum(_), _) | (_, CITEXT) => Self::Text,
             // `geoarrow.wkb` holds EWKB, so the bytes pass through untouched, SRID per value and all.
-            _ if pg_type.name() == GEOMETRY => Self::Geo(geoarrow::planar(geoarrow::srid(typmod))),
-            _ if pg_type.name() == GEOGRAPHY => {
-                Self::Geo(geoarrow::spherical(geoarrow::srid(typmod)))
-            }
+            (_, GEOMETRY) => Self::Geo(geoarrow::planar(geoarrow::srid(typmod))),
+            (_, GEOGRAPHY) => Self::Geo(geoarrow::spherical(geoarrow::srid(typmod))),
             _ => {
                 warn!(
                     target: "postgres::source",
@@ -220,22 +203,49 @@ impl Decoding {
                 );
                 Self::Opaque(Opaque::new(pg_type.name(), VENDOR))
             }
-        })
+        }
     }
 
     /// Decodes a `numeric` typmod into the `Decimal128` its values are restated at.
     fn numeric(typmod: i32, name: &str) -> Result<Self> {
-        let (precision, scale) = numeric_precision_scale(typmod)?;
         if typmod == BARE_NUMERIC_TYPMOD {
+            let (precision, scale) = BARE_NUMERIC;
             warn!(
                 target: "postgres::source",
                 column = name,
                 "`numeric` without declared precision; mapping to \
                  Decimal128({precision}, {scale}) and rounding beyond {scale} decimals"
             );
+            return Ok(Self::Numeric { precision, scale });
         }
 
-        Ok(Self::Numeric { precision, scale })
+        Self::declared_numeric(typmod)
+    }
+
+    /// Decodes the precision and scale a `numeric(p,s)` typmod packs, if `Decimal128` can hold them.
+    fn declared_numeric(typmod: i32) -> Result<Self> {
+        // `numeric_typmod_precision`/`numeric_typmod_scale`, minus `VARHDRSZ`; the XOR sign-extends the
+        // 11-bit scale, which PG 15+ allows to be negative.
+        // https://github.com/postgres/postgres/blob/REL_17_10/src/backend/utils/adt/numeric.c#L925
+        let packed = typmod.wrapping_sub(VARHDRSZ);
+        let precision = (packed >> 16) & 0xffff;
+        let scale = ((packed & 0x7ff) ^ 0x400).wrapping_sub(0x400);
+
+        // PG holds 1000 digits to Arrow's 38, and PG 15+ lets scale go negative or past precision.
+        match (u8::try_from(precision), u8::try_from(scale)) {
+            (Ok(digits), Ok(decimals))
+                if digits <= DECIMAL128_MAX_PRECISION && decimals <= digits =>
+            {
+                Ok(Self::Numeric {
+                    precision: digits,
+                    scale: decimals,
+                })
+            }
+            _ => Err(TransferredError::in_source(format!(
+                "`numeric({precision},{scale})` is not supported: it needs at most \
+                 {DECIMAL128_MAX_PRECISION} digits and a scale from 0 to its precision"
+            ))),
+        }
     }
 
     /// Arrow type the column's values land in; the test suite pins every one.
@@ -289,124 +299,143 @@ impl Decoding {
         Ok(field)
     }
 
-    /// Appends one value in Postgres binary form into `builder`, or a null where PG sent no bytes.
-    fn append(&self, builder: &mut dyn ArrayBuilder, bytes: Option<&[u8]>) -> Result<()> {
-        match self {
-            Self::Bool => {
-                cast::<BooleanBuilder>(builder)?.append_option(decode(&PgType::BOOL, bytes)?);
+    /// Builds the column's array from its cells, each in Postgres binary form; `None` is a NULL.
+    #[expect(clippy::too_many_lines, reason = "handles many types")]
+    fn array(&self, cells: &[Cell<'_>]) -> Result<ArrayRef> {
+        Ok(match self {
+            Self::Bool => Arc::new(decoded::<BooleanArray, bool, _>(&PgType::BOOL, cells, Ok)?),
+            Self::Int2 => Arc::new(decoded::<Int16Array, i16, _>(&PgType::INT2, cells, Ok)?),
+            Self::Int4 => Arc::new(decoded::<Int32Array, i32, _>(&PgType::INT4, cells, Ok)?),
+            Self::Int8 => Arc::new(decoded::<Int64Array, i64, _>(&PgType::INT8, cells, Ok)?),
+            Self::Float4 => Arc::new(decoded::<Float32Array, f32, _>(&PgType::FLOAT4, cells, Ok)?),
+            Self::Float8 => Arc::new(decoded::<Float64Array, f64, _>(&PgType::FLOAT8, cells, Ok)?),
+            // `json` is its text, and every Postgres text type sends its own UTF-8.
+            Self::Text | Self::Json => {
+                Arc::new(decoded::<StringArray, &str, _>(&PgType::TEXT, cells, Ok)?)
             }
-            Self::Int2 => {
-                cast::<Int16Builder>(builder)?.append_option(decode(&PgType::INT2, bytes)?);
-            }
-            Self::Int4 => {
-                cast::<Int32Builder>(builder)?.append_option(decode(&PgType::INT4, bytes)?);
-            }
-            Self::Int8 => {
-                cast::<Int64Builder>(builder)?.append_option(decode(&PgType::INT8, bytes)?);
-            }
-            Self::Float4 => {
-                cast::<Float32Builder>(builder)?.append_option(decode(&PgType::FLOAT4, bytes)?);
-            }
-            Self::Float8 => {
-                cast::<Float64Builder>(builder)?.append_option(decode(&PgType::FLOAT8, bytes)?);
-            }
-            Self::Text | Self::Json => cast::<StringBuilder>(builder)?.append_option(text(bytes)?),
-            Self::Jsonb => {
-                let json = bytes.map(jsonb).transpose()?;
-                cast::<StringBuilder>(builder)?.append_option(text(json)?);
-            }
+            Self::Jsonb => Arc::new(decoded::<StringArray, &[u8], _>(
+                &PgType::JSONB,
+                cells,
+                |document| str::from_utf8(jsonb(document)?).map_err(TransferredError::in_source),
+            )?),
             Self::Bytea | Self::Geo(_) | Self::Opaque(_) => {
-                cast::<BinaryBuilder>(builder)?.append_option(bytes);
+                Arc::new(cells.iter().copied().collect::<BinaryArray>())
             }
             Self::Uuid => {
-                let builder = cast::<FixedSizeBinaryBuilder>(builder)?;
-                match decode::<uuid::Uuid>(&PgType::UUID, bytes)? {
-                    Some(uuid) => builder.append_value(uuid.into_bytes())?,
-                    None => builder.append_null(),
-                }
+                let uuids = decoded::<Vec<_>, uuid::Uuid, _>(&PgType::UUID, cells, |uuid| {
+                    Ok(uuid.into_bytes())
+                })?;
+                Arc::new(FixedSizeBinaryArray::try_from_sparse_iter_with_size(
+                    uuids.into_iter(),
+                    UUID_BYTES,
+                )?)
             }
-            Self::Date => cast::<Date32Builder>(builder)?.append_option(
-                decode::<NaiveDate>(&PgType::DATE, bytes)?.map(Date32Type::from_naive_date),
+            Self::Date => Arc::new(decoded::<Date32Array, NaiveDate, _>(
+                &PgType::DATE,
+                cells,
+                |date| Ok(Date32Type::from_naive_date(date)),
+            )?),
+            Self::Timestamp => Arc::new(decoded::<TimestampMicrosecondArray, NaiveDateTime, _>(
+                &PgType::TIMESTAMP,
+                cells,
+                |timestamp| Ok(timestamp.and_utc().timestamp_micros()),
+            )?),
+            Self::Timestamptz => Arc::new(
+                decoded::<TimestampMicrosecondArray, DateTime<Utc>, _>(
+                    &PgType::TIMESTAMPTZ,
+                    cells,
+                    |timestamp| Ok(timestamp.timestamp_micros()),
+                )?
+                .with_timezone(UTC),
             ),
-            Self::Timestamp => cast::<TimestampMicrosecondBuilder>(builder)?.append_option(
-                decode::<NaiveDateTime>(&PgType::TIMESTAMP, bytes)?
-                    .map(|timestamp| timestamp.and_utc().timestamp_micros()),
+            Self::Interval => Arc::new(decoded::<IntervalMonthDayNanoArray, PgInterval, _>(
+                &PgType::INTERVAL,
+                cells,
+                month_day_nano,
+            )?),
+            &Self::Numeric { precision, scale } => Arc::new(
+                decoded::<Decimal128Array, Decimal, _>(&PgType::NUMERIC, cells, |decimal| {
+                    decimal_units(decimal, scale)
+                })?
+                .with_precision_and_scale(precision, scale.cast_signed())?,
             ),
-            Self::Timestamptz => cast::<TimestampMicrosecondBuilder>(builder)?.append_option(
-                decode::<DateTime<Utc>>(&PgType::TIMESTAMPTZ, bytes)?
-                    .map(|timestamp| timestamp.timestamp_micros()),
-            ),
-            Self::Interval => cast::<IntervalMonthDayNanoBuilder>(builder)?.append_option(
-                decode::<PgInterval>(&PgType::INTERVAL, bytes)?
-                    .map(month_day_nano)
-                    .transpose()?,
-            ),
-            Self::Numeric { scale, .. } => cast::<Decimal128Builder>(builder)?.append_option(
-                decode::<Decimal>(&PgType::NUMERIC, bytes)?
-                    .map(|decimal| decimal_units(decimal, *scale))
-                    .transpose()?,
-            ),
-            Self::Range(bounds) => append_range(bounds, cast(builder)?, bytes)?,
-        }
-
-        Ok(())
+            Self::Range(bounds) => range_array(bounds, cells)?,
+        })
     }
 }
 
-/// Appends one range: the tag byte, then whichever bounds it says are there.
-fn append_range(bounds: &Decoding, range: &mut StructBuilder, bytes: Option<&[u8]>) -> Result<()> {
-    let parsed = bytes
-        .map(range_from_sql)
-        .transpose()
+/// Builds a range column: both bounds through the element's own decoding, then the three tag bits.
+fn range_array(bounds: &Decoding, cells: &[Cell<'_>]) -> Result<ArrayRef> {
+    let ranges = cells
+        .iter()
+        .map(|cell| cell.map(range_from_sql).transpose())
+        .collect::<result::Result<Vec<_>, _>>()
         .map_err(TransferredError::in_source)?;
 
-    let [lower, upper, lower_inc, upper_inc, empty] = range.field_builders_mut() else {
-        return Err(TransferredError::in_source(
-            "a `transferred.pg_range` column does not build the five fields it declares",
-        ));
-    };
+    let (lower, upper): (Vec<_>, Vec<_>) = ranges
+        .iter()
+        .map(|range| bound_bytes(range.as_ref()))
+        .unzip();
+    let (lower_inc, upper_inc): (Vec<_>, Vec<_>) =
+        ranges.iter().map(|range| inclusive(range.as_ref())).unzip();
+    // An empty range and a SQL NULL both leave every bound null. `empty` separates them, and
+    // the struct's own validity is the only thing that says a whole range was NULL.
+    let empty = ranges
+        .iter()
+        .map(|range| matches!(range, Some(Range::Empty)));
+    let nulls = NullBuffer::from_iter(ranges.iter().map(Option::is_some));
 
-    match parsed {
-        Some(Range::Nonempty(low, high)) => {
-            bounds.append(&mut **lower, bound(&low))?;
-            bounds.append(&mut **upper, bound(&high))?;
-            tag(lower_inc, matches!(low, RangeBound::Inclusive(_)))?;
-            tag(upper_inc, matches!(high, RangeBound::Inclusive(_)))?;
-            tag(empty, false)?;
-        }
-        // An empty range and a SQL NULL both leave every bound null. `empty` separates them, and
-        // it is `Some` for exactly the range that carried a tag saying so.
-        boundless => {
-            bounds.append(&mut **lower, None)?;
-            bounds.append(&mut **upper, None)?;
-            tag(lower_inc, false)?;
-            tag(upper_inc, false)?;
-            tag(empty, boundless.is_some())?;
-        }
+    let arrays: Vec<ArrayRef> = vec![
+        bounds.array(&lower)?,
+        bounds.array(&upper)?,
+        Arc::new(BooleanArray::from(lower_inc)),
+        Arc::new(BooleanArray::from(upper_inc)),
+        Arc::new(empty.collect::<BooleanArray>()),
+    ];
+    let fields = PgRange::fields(bounds.arrow_type());
+
+    Ok(Arc::new(StructArray::try_new(fields, arrays, Some(nulls))?))
+}
+
+/// Both bounds' bytes; an infinite bound sends none, and an empty range or a SQL NULL has no bounds.
+const fn bound_bytes<'buf>(range: Option<&Range<'buf>>) -> (Cell<'buf>, Cell<'buf>) {
+    match range {
+        Some(Range::Nonempty(low, high)) => (bound(low), bound(high)),
+        _ => (None, None),
     }
-
-    // The struct's own validity is the only thing that says a whole range was NULL.
-    range.append(bytes.is_some());
-
-    Ok(())
 }
 
-/// Appends one of a range's three tag bits, none of which is ever null.
-fn tag(builder: &mut Box<dyn ArrayBuilder>, set: bool) -> Result<()> {
-    cast::<BooleanBuilder>(&mut **builder)?.append_value(set);
-
-    Ok(())
+/// Which bounds are inclusive; an infinite one never is, and an empty range or a SQL NULL has none.
+const fn inclusive(range: Option<&Range<'_>>) -> (bool, bool) {
+    match range {
+        Some(Range::Nonempty(low, high)) => (
+            matches!(low, RangeBound::Inclusive(_)),
+            matches!(high, RangeBound::Inclusive(_)),
+        ),
+        _ => (false, false),
+    }
 }
 
-/// Decodes one value from its Postgres binary form; `None` is a NULL, which PG sends no bytes for.
-fn decode<'buf, T: FromSql<'buf>>(
+/// Decodes every cell from Postgres binary form and restates it with `convert`; `None` is a NULL.
+fn decoded<'buf, Column, Postgres, Native>(
     pg_type: &PgType,
-    bytes: Option<&'buf [u8]>,
-) -> Result<Option<T>> {
-    bytes
-        .map(|bytes| T::from_sql(pg_type, bytes))
-        .transpose()
-        .map_err(TransferredError::in_source)
+    cells: &[Cell<'buf>],
+    convert: impl Fn(Postgres) -> Result<Native>,
+) -> Result<Column>
+where
+    Column: FromIterator<Option<Native>>,
+    Postgres: FromSql<'buf>,
+{
+    cells
+        .iter()
+        .map(|cell| {
+            let parsed = cell
+                .map(|bytes| Postgres::from_sql(pg_type, bytes))
+                .transpose()
+                .map_err(TransferredError::in_source)?;
+            parsed.map(&convert).transpose()
+        })
+        .collect()
 }
 
 /// Strips the format version byte `jsonb` leads with, leaving the document text.
@@ -419,54 +448,19 @@ fn jsonb(bytes: &[u8]) -> Result<&[u8]> {
     }
 }
 
-/// Reads a text value's bytes, which every Postgres text type sends as its own UTF-8.
-fn text(bytes: Option<&[u8]>) -> Result<Option<&str>> {
-    bytes
-        .map(str::from_utf8)
-        .transpose()
-        .map_err(TransferredError::in_source)
-}
-
 /// A bound's bytes; `None` is an infinite bound, the only kind Postgres sends no value for.
-const fn bound<'buf>(bound: &RangeBound<Option<&'buf [u8]>>) -> Option<&'buf [u8]> {
+const fn bound<'buf>(bound: &RangeBound<Cell<'buf>>) -> Cell<'buf> {
     match bound {
-        RangeBound::Inclusive(value) | RangeBound::Exclusive(value) => *value,
+        RangeBound::Inclusive(bytes) | RangeBound::Exclusive(bytes) => *bytes,
         RangeBound::Unbounded => None,
-    }
-}
-
-/// Decodes a `numeric` typmod, defaulting bare `numeric` `-1` to (38,9).
-fn numeric_precision_scale(typmod: i32) -> Result<(u8, u8)> {
-    if typmod == BARE_NUMERIC_TYPMOD {
-        return Ok(BARE_NUMERIC);
-    }
-
-    // `numeric_typmod_precision`/`numeric_typmod_scale`, minus `VARHDRSZ`; the XOR sign-extends the
-    // 11-bit scale, which PG 15+ allows to be negative.
-    // https://github.com/postgres/postgres/blob/REL_17_10/src/backend/utils/adt/numeric.c#L925
-    let typmod = typmod.wrapping_sub(VARHDRSZ);
-    let precision = (typmod >> 16) & 0xffff;
-    let scale = ((typmod & 0x7ff) ^ 0x400).wrapping_sub(0x400);
-
-    // PG holds 1000 digits to Arrow's 38, and PG 15+ lets scale go negative or past precision.
-    match (u8::try_from(precision), u8::try_from(scale)) {
-        (Ok(precision), Ok(scale))
-            if precision <= DECIMAL128_MAX_PRECISION && scale <= precision =>
-        {
-            Ok((precision, scale))
-        }
-        _ => Err(TransferredError::in_source(format!(
-            "`numeric({precision},{scale})` is not supported: it needs at most \
-             {DECIMAL128_MAX_PRECISION} digits and a scale from 0 to its precision"
-        ))),
     }
 }
 
 /// Restates a decimal as an integer count of `10^-scale` units, as Arrow `Decimal128` stores it.
 fn decimal_units(mut decimal: Decimal, scale: u8) -> Result<i128> {
-    let scale = u32::from(scale);
-    decimal.rescale(scale);
-    if decimal.scale() != scale {
+    let places = u32::from(scale);
+    decimal.rescale(places);
+    if decimal.scale() != places {
         return Err(TransferredError::in_source(format!(
             "`numeric` value {decimal} does not fit scale {scale}"
         )));
@@ -493,17 +487,10 @@ fn month_day_nano(interval: PgInterval) -> Result<IntervalMonthDayNano> {
     ))
 }
 
-/// Downcasts an Arrow builder; a mismatch is unreachable, as `make_builder` took the same decoding.
-fn cast<B: ArrayBuilder>(builder: &mut dyn ArrayBuilder) -> Result<&mut B> {
-    builder
-        .as_any_mut()
-        .downcast_mut::<B>()
-        .ok_or_else(|| TransferredError::in_source(format!("column is not a {}", type_name::<B>())))
-}
-
 #[cfg(test)]
 mod tests {
-    use arrow::array::{Array as _, BooleanArray, Int32Array, StructArray};
+    use arrow::array::AsArray as _;
+    use arrow::util::display::{ArrayFormatter, FormatOptions};
     use arrow_schema::extension::ExtensionType as _;
 
     use super::*;
@@ -521,47 +508,27 @@ mod tests {
     }
 
     /// Decodes one `int4range` value into the one-row struct its column lands in.
-    fn decode_range(bytes: Option<&[u8]>) -> Result<StructArray> {
-        let decoding = int4_range();
-        let mut builder = make_builder(&decoding.arrow_type(), 0);
-        decoding.append(&mut *builder, bytes)?;
-
-        Ok(builder
-            .finish()
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .unwrap()
-            .clone())
+    fn decode_range(bytes: Cell<'_>) -> Result<StructArray> {
+        Ok(int4_range().array(&[bytes])?.as_struct().clone())
     }
 
-    /// The five fields of a one-row range struct: both bounds, then the three tag bits.
-    fn parts(range: &StructArray) -> (Option<i32>, Option<i32>, bool, bool, bool) {
-        let bound = |i: usize| {
-            let column = range
-                .column(i)
-                .as_any()
-                .downcast_ref::<Int32Array>()
-                .unwrap();
-            column.is_valid(0).then(|| column.value(0))
-        };
-        let flag = |i: usize| {
-            range
-                .column(i)
-                .as_any()
-                .downcast_ref::<BooleanArray>()
-                .unwrap()
-                .value(0)
-        };
-
-        (bound(0), bound(1), flag(2), flag(3), flag(4))
+    /// A one-row range struct as Arrow prints it, every field by name.
+    fn text(range: &StructArray) -> String {
+        let options = FormatOptions::default().with_null("NULL");
+        ArrayFormatter::try_new(range, &options)
+            .unwrap()
+            .value(0)
+            .to_string()
     }
 
     #[test]
     fn decodes_a_bounded_range() {
         let range = decode_range(Some(&BOUNDED)).unwrap();
 
-        assert!(range.is_valid(0));
-        assert_eq!(parts(&range), (Some(1), Some(6), true, false, false));
+        assert_eq!(
+            text(&range),
+            "{lower: 1, upper: 6, lower_inc: true, upper_inc: false, empty: false}"
+        );
     }
 
     /// An infinite bound is a null bound, and neither infinite bound counts as inclusive.
@@ -569,8 +536,10 @@ mod tests {
     fn decodes_an_unbounded_range() {
         let range = decode_range(Some(&UNBOUNDED)).unwrap();
 
-        assert!(range.is_valid(0));
-        assert_eq!(parts(&range), (None, None, false, false, false));
+        assert_eq!(
+            text(&range),
+            "{lower: NULL, upper: NULL, lower_inc: false, upper_inc: false, empty: false}"
+        );
     }
 
     /// Empty is the one state the bounds cannot express, which is why it gets a field of its own.
@@ -578,8 +547,10 @@ mod tests {
     fn decodes_an_empty_range() {
         let range = decode_range(Some(&EMPTY_RANGE)).unwrap();
 
-        assert!(range.is_valid(0));
-        assert_eq!(parts(&range), (None, None, false, false, true));
+        assert_eq!(
+            text(&range),
+            "{lower: NULL, upper: NULL, lower_inc: false, upper_inc: false, empty: true}"
+        );
     }
 
     /// A SQL NULL range carries no tag at all, so it must not arrive looking `empty`.
@@ -587,8 +558,8 @@ mod tests {
     fn separates_a_null_range_from_an_empty_one() {
         let range = decode_range(None).unwrap();
 
-        assert!(range.is_null(0));
-        assert_eq!(parts(&range), (None, None, false, false, false));
+        assert_eq!(text(&range), "NULL");
+        assert!(!range.column_by_name("empty").unwrap().as_boolean().value(0));
     }
 
     #[test]
@@ -619,33 +590,47 @@ mod tests {
     /// Largest mantissa `rust_decimal` can hold: 2^96 - 1, with no room to zero-pad.
     const U96_MAX: Decimal = Decimal::from_parts(u32::MAX, u32::MAX, u32::MAX, false, 0);
 
+    /// Arrow type a `numeric` column declared with `typmod` lands in.
+    fn numeric_type(typmod: i32) -> Result<ArrowType> {
+        Decoding::numeric(typmod, "amount").map(|decoding| decoding.arrow_type())
+    }
+
     #[test]
     fn typmod_decodes_declared_precision_and_scale() {
-        assert_eq!(numeric_precision_scale(NUMERIC_18_4).unwrap(), (18, 4));
-        assert_eq!(numeric_precision_scale(NUMERIC_38_9).unwrap(), (38, 9));
+        assert_eq!(
+            numeric_type(NUMERIC_18_4).unwrap(),
+            ArrowType::Decimal128(18, 4)
+        );
+        assert_eq!(
+            numeric_type(NUMERIC_38_9).unwrap(),
+            ArrowType::Decimal128(38, 9)
+        );
     }
 
     #[test]
     fn bare_numeric_defaults_to_bq_numeric_shape() {
-        assert_eq!(numeric_precision_scale(NUMERIC_BARE).unwrap(), (38, 9));
+        assert_eq!(
+            numeric_type(NUMERIC_BARE).unwrap(),
+            ArrowType::Decimal128(38, 9)
+        );
     }
 
     /// PG 15+ allows negative scale; the decode must not read it as a large positive one.
     #[test]
     fn typmod_rejects_negative_scale_by_its_value() {
-        let error = numeric_precision_scale(NUMERIC_5_NEG2).unwrap_err();
+        let error = numeric_type(NUMERIC_5_NEG2).unwrap_err();
         assert!(format!("{error:?}").contains("numeric(5,-2)"));
     }
 
     #[test]
     fn typmod_rejects_precision_past_decimal128() {
-        assert!(numeric_precision_scale(NUMERIC_1000_500).is_err());
+        assert!(numeric_type(NUMERIC_1000_500).is_err());
     }
 
     /// PG takes `numeric(5,10)`; Arrow `Decimal128` does not, and would build a broken array from it.
     #[test]
     fn typmod_rejects_scale_wider_than_precision() {
-        assert!(numeric_precision_scale(NUMERIC_5_10).is_err());
+        assert!(numeric_type(NUMERIC_5_10).is_err());
     }
 
     #[test]
