@@ -83,7 +83,7 @@ pub async fn client() -> tokio_postgres::Client {
     let (client, connection) = tokio_postgres::connect(&dsn, tokio_postgres::NoTls)
         .await
         .expect("connect");
-    tokio::spawn(connection);
+    drop(tokio::spawn(connection));
     client
 }
 

@@ -19,11 +19,11 @@ pub async fn connect(dsn: &str) -> Result<Client, AnyError> {
     })?;
     let (client, connection) = config.connect(connector(verify)?).await?;
 
-    tokio::spawn(async move {
+    drop(tokio::spawn(async move {
         if let Err(error) = connection.await {
             warn!(target: "postgres::connection", %error, "postgres connection closed");
         }
-    });
+    }));
 
     Ok(client)
 }

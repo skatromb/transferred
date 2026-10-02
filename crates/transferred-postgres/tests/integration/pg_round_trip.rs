@@ -126,7 +126,7 @@ async fn geometry_round_trips() {
 #[tokio::test]
 async fn opaque_columns_land_as_bytea() {
     let into = "it_opaque_copy";
-    transfer_run("it_opaque", into).await;
+    _ = transfer_run("it_opaque", into).await;
 
     let copy = read_table(into).await;
     assert_eq!(copy.columns(), read_table("it_opaque").await.columns());
@@ -143,8 +143,8 @@ async fn opaque_columns_land_as_bytea() {
 #[tokio::test]
 async fn replaces_an_existing_target() {
     let into = "it_primitives_replaced";
-    transfer_run("it_primitives", into).await;
-    transfer_run("it_primitives", into).await;
+    _ = transfer_run("it_primitives", into).await;
+    _ = transfer_run("it_primitives", into).await;
 
     assert_eq!(read_table(into).await, read_table("it_primitives").await);
 }
@@ -153,7 +153,7 @@ async fn replaces_an_existing_target() {
 #[tokio::test]
 async fn leaves_no_staging_table_behind() {
     let into = "it_primitives_staged";
-    transfer_run("it_primitives", into).await;
+    _ = transfer_run("it_primitives", into).await;
 
     assert!(
         !staging_exists(into).await,

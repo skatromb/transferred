@@ -547,7 +547,7 @@ mod tests {
         let encoder = Encoder::new(schema.into())?;
         encoder.check(&batch)?;
         let column = &encoder.columns[0];
-        column.write(batch.column(0).as_ref(), 0, &mut buf)?;
+        _ = column.write(batch.column(0).as_ref(), 0, &mut buf)?;
         Ok(buf)
     }
 
