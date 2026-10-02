@@ -25,7 +25,7 @@ use tokio_postgres::types::{IsNull, ToSql, Type as PgType};
 use transferred_core::{AnyError, Result, TransferredError};
 
 use crate::geoarrow::{self, GEOGRAPHY, GEOMETRY};
-use crate::pg_range::{LOWER, PgRange};
+use crate::pg_range::PgRange;
 
 /// PG counts sub-second time in microseconds; Arrow intervals count nanoseconds.
 const NANOS_PER_MICRO: i64 = 1_000;
@@ -181,59 +181,72 @@ enum Encoding {
 
 impl Encoding {
     /// Decides what a Postgres column an Arrow field becomes.
+    fn new(field: &ArrowField) -> Result<Self> {
+        Ok(match (field.data_type(), field.extension_type_name()) {
+            // `json` stores the document verbatim; `jsonb` would reorder keys and drop whitespace.
+            (ArrowType::Utf8, Some(Json::NAME)) => Self::Json,
+            // `PostGIS` gets its OIDs per database, so no `PgType` names it and only the DDL can.
+            (ArrowType::Binary, Some(WkbType::NAME)) => Self::Geo(
+                field
+                    .try_extension_type()
+                    .map_err(TransferredError::in_destination)?,
+            ),
+            (ArrowType::FixedSizeBinary(16), Some(Uuid::NAME)) => Self::Uuid,
+            (ArrowType::Struct(_), Some(PgRange::NAME)) => Self::range(field.data_type())?,
+            // Untagged types, and `arrow.opaque`, whose type name the destination deliberately drops.
+            (data_type, _) => Self::plain(data_type)?,
+        })
+    }
+
+    /// Decides for a type whose extension tag, if any, the destination ignores.
     #[expect(
         clippy::wildcard_enum_match_arm,
         reason = "every Arrow type not listed is refused"
     )]
-    fn new(field: &ArrowField) -> Result<Self> {
-        let extension = field.extension_type_name();
-        Ok(match field.data_type() {
+    fn plain(data_type: &ArrowType) -> Result<Self> {
+        Ok(match data_type {
             ArrowType::Boolean => Self::Bool,
             ArrowType::Int16 => Self::Int2,
             ArrowType::Int32 => Self::Int4,
             ArrowType::Int64 => Self::Int8,
             ArrowType::Float32 => Self::Float4,
             ArrowType::Float64 => Self::Float8,
-            // `json` stores the document verbatim; `jsonb` would reorder keys and drop whitespace.
-            ArrowType::Utf8 if extension == Some(Json::NAME) => Self::Json,
             ArrowType::Utf8 => Self::Text,
-            // `PostGIS` gets its OIDs per database, so no `PgType` names it and only the DDL can.
-            ArrowType::Binary if extension == Some(WkbType::NAME) => Self::Geo(
-                field
-                    .try_extension_type()
-                    .map_err(TransferredError::in_destination)?,
-            ),
-            // Plain bytes, and `arrow.opaque`, whose type name the destination deliberately drops.
             ArrowType::Binary => Self::Bytea,
-            ArrowType::FixedSizeBinary(16) if extension == Some(Uuid::NAME) => Self::Uuid,
             ArrowType::Date32 => Self::Date,
             ArrowType::Timestamp(TimeUnit::Microsecond, None) => Self::Timestamp,
             // Arrow timestamps are UTC instants whatever the zone name, so the zone needs no lookup.
             ArrowType::Timestamp(TimeUnit::Microsecond, Some(_)) => Self::Timestamptz,
             ArrowType::Interval(IntervalUnit::MonthDayNano) => Self::Interval,
-            &ArrowType::Decimal128(precision, scale) => Self::Numeric {
-                precision,
-                scale: u8::try_from(scale).map_err(|_err| {
-                    TransferredError::in_destination(
-                        "`Decimal128` with negative scale is not supported",
-                    )
-                })?,
-            },
-            ArrowType::Struct(_) if extension == Some(PgRange::NAME) => {
-                let bounds_type = PgRange::type_of(field.data_type())
-                    .map_err(TransferredError::in_destination)?;
-                let element = Self::new(&ArrowField::new(LOWER, bounds_type.clone(), true))?;
-
-                Self::Range {
-                    pg_type: element.range_type()?,
-                    element: Box::new(element),
-                }
-            }
+            &ArrowType::Decimal128(precision, scale) => Self::numeric(precision, scale)?,
             other => {
                 return Err(TransferredError::in_destination(format!(
                     "Arrow type `{other}` is not supported by the Postgres destination in 0.1"
                 )));
             }
+        })
+    }
+
+    /// Decides for a range struct: its bounds' own encoding, wrapped in the range type over it.
+    fn range(data_type: &ArrowType) -> Result<Self> {
+        let bounds_type = PgRange::type_of(data_type).map_err(TransferredError::in_destination)?;
+        let element = Self::plain(bounds_type)?;
+
+        Ok(Self::Range {
+            pg_type: element.range_type()?,
+            element: Box::new(element),
+        })
+    }
+
+    /// Decides for a decimal, refusing a negative scale.
+    fn numeric(precision: u8, scale: i8) -> Result<Self> {
+        Ok(Self::Numeric {
+            precision,
+            scale: u8::try_from(scale).map_err(|_err| {
+                TransferredError::in_destination(
+                    "`Decimal128` with negative scale is not supported",
+                )
+            })?,
         })
     }
 
