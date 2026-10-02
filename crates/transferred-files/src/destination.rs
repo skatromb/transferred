@@ -1,12 +1,13 @@
 use std::ffi::OsStr;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use futures::StreamExt as _;
-use tokio::fs::File;
+use futures::{StreamExt as _, stream};
+use tokio::fs::{self, File};
 use tracing::warn;
 use transferred_core::{BatchStream, Destination, Result, RunReport, TransferredError};
 
@@ -27,7 +28,7 @@ impl Destination for FilesDestination {
     async fn write_partitions(self: Box<Self>, partitions: Vec<BatchStream>) -> Result<RunReport> {
         let start = Instant::now();
         let tmp_dir = make_tmp(&self.path);
-        tokio::fs::create_dir_all(&tmp_dir).await?;
+        fs::create_dir_all(&tmp_dir).await?;
 
         let writtens = match self.write_files(&tmp_dir, partitions).await {
             Ok(written) => written,
@@ -44,8 +45,7 @@ impl Destination for FilesDestination {
 
         let mut bytes_written: u64 = 0;
         for written in &writtens {
-            bytes_written =
-                bytes_written.saturating_add(tokio::fs::metadata(&written.path).await?.len());
+            bytes_written = bytes_written.saturating_add(fs::metadata(&written.path).await?.len());
         }
 
         Ok(RunReport {
@@ -94,7 +94,7 @@ impl FilesDestination {
         partitions: Vec<BatchStream>,
     ) -> Result<Vec<Written>> {
         let streams: Vec<BatchStream> = if self.single_file {
-            vec![Box::pin(futures::stream::iter(partitions).flatten())]
+            vec![Box::pin(stream::iter(partitions).flatten())]
         } else {
             partitions
         };
@@ -125,14 +125,14 @@ impl FilesDestination {
 
     /// Atomically overwrites `path` dir with `tmp_dir`, removing any existing output first.
     async fn atomic_replace(&self, tmp_dir: &Path) -> Result<()> {
-        match tokio::fs::metadata(&self.path).await {
-            Ok(meta) if meta.is_dir() => tokio::fs::remove_dir_all(&self.path).await?,
-            Ok(_) => tokio::fs::remove_file(&self.path).await?,
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        match fs::metadata(&self.path).await {
+            Ok(meta) if meta.is_dir() => fs::remove_dir_all(&self.path).await?,
+            Ok(_) => fs::remove_file(&self.path).await?,
+            Err(err) if err.kind() == ErrorKind::NotFound => {}
             Err(err) => return Err(err.into()),
         }
 
-        tokio::fs::rename(tmp_dir, &self.path).await?;
+        fs::rename(tmp_dir, &self.path).await?;
 
         Ok(())
     }
@@ -146,8 +146,8 @@ struct Written {
 
 /// Removes a leftover tmp directory, logging non-`NotFound` failures.
 async fn cleanup(tmp_dir: &Path) {
-    if let Err(err) = tokio::fs::remove_dir_all(tmp_dir).await
-        && err.kind() != std::io::ErrorKind::NotFound
+    if let Err(err) = fs::remove_dir_all(tmp_dir).await
+        && err.kind() != ErrorKind::NotFound
     {
         warn!(target: "files::destination", path = %tmp_dir.display(), error = %err, "failed to remove tmp dir");
     }

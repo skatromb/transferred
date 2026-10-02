@@ -1,5 +1,6 @@
 //! PG → Arrow mapping against a throwaway Postgres container seeded by `pg_seed.sql`. Needs Docker.
 
+use std::str;
 use std::sync::Arc;
 
 use arrow::array::{
@@ -309,7 +310,7 @@ fn hex_bytes(hex: &str) -> Vec<u8> {
     hex.as_bytes()
         .chunks(2)
         .map(|byte| {
-            let byte = std::str::from_utf8(byte).expect("ascii hex");
+            let byte = str::from_utf8(byte).expect("ascii hex");
             u8::from_str_radix(byte, 16).expect("hex byte")
         })
         .collect()

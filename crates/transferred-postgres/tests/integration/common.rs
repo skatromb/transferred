@@ -1,5 +1,7 @@
 //! Throwaway Postgres container, seeded by `pg_seed.sql`, shared by the integration tests.
 
+use std::mem;
+use std::process::Command;
 use std::sync::Mutex;
 
 use arrow::array::RecordBatch;
@@ -18,7 +20,7 @@ static RUNNING: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// Runs after `main` off the `atexit` chain — the teardown libtest lacks, since `static`s never drop.
 #[dtor::dtor]
 unsafe fn reap() {
-    let ids = std::mem::take(&mut *RUNNING.lock().expect("reaper lock"));
+    let ids = mem::take(&mut *RUNNING.lock().expect("reaper lock"));
     if ids.is_empty() {
         return;
     }
@@ -26,7 +28,7 @@ unsafe fn reap() {
     // Shelling out, because Rust destroys the main thread's locals before atexit runs and tokio
     // cannot start without them.
     drop(
-        std::process::Command::new("docker")
+        Command::new("docker")
             .args(["rm", "--force", "--volumes"])
             .args(ids)
             .output(),

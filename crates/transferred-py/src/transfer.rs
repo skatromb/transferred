@@ -1,6 +1,6 @@
 //! `Transfer` Python class. Single-shot: consumes source + destination on `run()`.
 
-use pyo3::exceptions::PyRuntimeError;
+use pyo3::exceptions::{PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use tokio::runtime::Builder;
@@ -86,7 +86,7 @@ fn extract_source(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Source + Send>> {
     if let Ok(inner) = obj.getattr("_native_source") {
         return extract_source(&inner);
     }
-    Err(pyo3::exceptions::PyTypeError::new_err(
+    Err(PyTypeError::new_err(
         "source must be a transferred source object",
     ))
 }
@@ -97,7 +97,7 @@ fn extract_destination(obj: &Bound<'_, PyAny>) -> PyResult<Box<dyn Destination +
     if let Ok(inner) = obj.getattr("_native_destination") {
         return extract_destination(&inner);
     }
-    Err(pyo3::exceptions::PyTypeError::new_err(
+    Err(PyTypeError::new_err(
         "destination must be a transferred destination object",
     ))
 }

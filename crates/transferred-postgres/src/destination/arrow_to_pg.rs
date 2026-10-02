@@ -3,6 +3,8 @@
 //! A schema maps once into `ColumnEncoder`s; every value writes itself through its `Encoding`.
 
 use std::any::type_name;
+use std::error::Error as StdError;
+use std::result;
 
 use arrow::array::{
     Array, BinaryArray, BooleanArray, Date32Array, Decimal128Array, FixedSizeBinaryArray,
@@ -421,7 +423,7 @@ fn write_bound(
     row_num: usize,
     inclusive: bool,
     buf: &mut BytesMut,
-) -> std::result::Result<RangeBound<ProtocolIsNull>, Box<dyn std::error::Error + Sync + Send>> {
+) -> result::Result<RangeBound<ProtocolIsNull>, Box<dyn StdError + Sync + Send>> {
     // The two `IsNull`s belong to different crates; only a bound we did write reaches the protocol's.
     Ok(match element.write(array, row_num, buf)? {
         IsNull::Yes => RangeBound::Unbounded,

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::result;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -74,7 +75,7 @@ fn expand_glob(pattern: &str) -> Result<Vec<PathBuf>> {
         .map_err(|err| {
             TransferredError::in_source(format!("invalid glob pattern '{pattern}': {err}"))
         })?
-        .collect::<std::result::Result<Vec<_>, _>>()
+        .collect::<result::Result<Vec<_>, _>>()
         .map_err(|err| TransferredError::in_source(format!("glob walk error: {err}")))?;
 
     if paths.is_empty() {
@@ -98,6 +99,8 @@ async fn open_file_stream(path: PathBuf, format: Arc<dyn FormatRead>) -> Result<
 
 #[cfg(test)]
 mod tests {
+    use std::error::Error as _;
+
     use crate::Parquet;
     use tempfile::tempdir;
 
@@ -112,7 +115,7 @@ mod tests {
         for paths in [glob_dir, paths_dir] {
             let source = FilesSource::new(paths, Arc::new(Parquet::default()));
             let err = Box::new(source).stream_partitions().await.err().unwrap();
-            let cause = std::error::Error::source(&err).unwrap().to_string();
+            let cause = err.source().unwrap().to_string();
             assert!(cause.contains("is a directory, not a file"));
         }
     }

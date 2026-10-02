@@ -1,9 +1,13 @@
+use std::error::Error as StdError;
+use std::{io, result};
+
+use arrow::error::ArrowError;
 use thiserror::Error;
 
-type AnyError = Box<dyn std::error::Error + Send + Sync>;
+type AnyError = Box<dyn StdError + Send + Sync>;
 
 /// Convenience alias for results returned by `transferred` operations.
-pub type Result<T> = std::result::Result<T, TransferredError>;
+pub type Result<T> = result::Result<T, TransferredError>;
 
 /// Root error type. Every fallible operation in `transferred` returns `Result<T, TransferredError>`.
 /// Maps to Python `transferred.TransferredError` at the FFI boundary.
@@ -23,11 +27,11 @@ pub enum TransferredError {
 
     /// Underlying I/O failure (filesystem, network).
     #[error("io error")]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
 
     /// Arrow compute or schema error surfaced from the data layer.
     #[error("arrow error")]
-    Arrow(#[from] arrow::error::ArrowError),
+    Arrow(#[from] ArrowError),
 }
 
 impl TransferredError {

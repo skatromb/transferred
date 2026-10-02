@@ -5,6 +5,7 @@
 
 use std::any::type_name;
 use std::error::Error as StdError;
+use std::result;
 
 use arrow::array::{
     ArrayBuilder, ArrayRef, BinaryBuilder, BooleanBuilder, Date32Builder, Decimal128Builder,
@@ -101,7 +102,7 @@ impl<'buf> FromSql<'buf> for Raw<'buf> {
     fn from_sql(
         _: &PgType,
         raw: &'buf [u8],
-    ) -> std::result::Result<Self, Box<dyn StdError + Sync + Send>> {
+    ) -> result::Result<Self, Box<dyn StdError + Sync + Send>> {
         Ok(Self(raw))
     }
 

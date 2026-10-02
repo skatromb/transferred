@@ -4,16 +4,17 @@
 #![cfg(test)]
 #![expect(clippy::arithmetic_side_effects, reason = "tests code")]
 
-use std::iter;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::{iter, mem};
 
 use arrow::array::{
     ArrayRef, BinaryArray, BooleanArray, Date32Array, FixedSizeBinaryArray, Float64Array,
     Int32Array, Int64Array, ListArray, StringArray, TimestampMicrosecondArray, UInt16Array,
 };
 use arrow::buffer::OffsetBuffer;
+use arrow::compute;
 use arrow::record_batch::RecordBatch;
 use arrow_schema::extension::{ExtensionType as _, Json, Opaque, Uuid};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
@@ -73,7 +74,7 @@ async fn parquet_dogfood() {
     assert!(write_report.bytes_written > 0);
     assert_eq!(read_report.rows, total_rows);
 
-    let read = std::mem::take(&mut *collected.lock().unwrap());
+    let read = mem::take(&mut *collected.lock().unwrap());
     let read_schema = read[0].schema();
     assert_eq!(read_schema.fields(), schema.fields());
 
@@ -87,8 +88,8 @@ async fn parquet_dogfood() {
         Some(r#"{"type_name":"macaddr","vendor_name":"PostgreSQL"}"#)
     );
 
-    let concat_in = arrow::compute::concat_batches(&schema, &input).unwrap();
-    let concat_read = arrow::compute::concat_batches(&read_schema, read.iter()).unwrap();
+    let concat_in = compute::concat_batches(&schema, &input).unwrap();
+    let concat_read = compute::concat_batches(&read_schema, read.iter()).unwrap();
     assert_eq!(concat_in, concat_read);
 }
 

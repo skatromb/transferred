@@ -1,5 +1,7 @@
 //! `sslmode` end to end against a Postgres started with `ssl=on`.
 
+use std::error::Error as _;
+
 use arrow::array::{AsArray as _, RecordBatch};
 use futures::{StreamExt as _, TryStreamExt as _, stream};
 use testcontainers_modules::postgres::Postgres;
@@ -73,6 +75,6 @@ async fn verify_full_rejects_a_self_signed_certificate() {
         .await
         .expect_err("a self-signed certificate must not verify");
 
-    let cause = std::error::Error::source(&error).map(ToString::to_string);
+    let cause = error.source().map(ToString::to_string);
     assert_eq!(cause.as_deref(), Some("error performing TLS handshake"));
 }

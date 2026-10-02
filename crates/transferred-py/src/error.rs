@@ -1,5 +1,7 @@
 //! Map `TransferredError` to Python exception hierarchy.
 
+use std::error::Error;
+
 use pyo3::create_exception;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
@@ -54,7 +56,7 @@ create_exception!(
 );
 
 /// Joins an error with everything that caused it, a driver's own message often being a bare category.
-fn causes(error: &dyn std::error::Error) -> String {
+fn causes(error: &dyn Error) -> String {
     let mut message = error.to_string();
     let mut cause = error.source();
     while let Some(err) = cause {
