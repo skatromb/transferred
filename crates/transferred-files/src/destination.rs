@@ -142,7 +142,6 @@ async fn report(written: &[Written], start: Instant) -> Result<RunReport> {
             .map(|file| file.path.display().to_string())
             .collect(),
         duration: start.elapsed(),
-        coercions: vec![],
     })
 }
 

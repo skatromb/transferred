@@ -66,7 +66,6 @@ impl Destination for PostgresDestination {
             bytes_written: 0,
             written_objects: vec![loader.qualified.clone()],
             duration: start.elapsed(),
-            coercions: vec![],
         })
     }
 }
