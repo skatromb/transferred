@@ -5,6 +5,6 @@ mod error;
 mod report;
 mod transfer;
 
-pub use error::{Result, TransferredError};
+pub use error::{AnyError, Result, TransferredError};
 pub use report::{Coercion, CoercionLevel, RunReport};
 pub use transfer::{BatchStream, Destination, Source, Transfer};

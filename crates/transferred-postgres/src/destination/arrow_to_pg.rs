@@ -3,7 +3,6 @@
 //! A schema maps once into `ColumnEncoder`s; every value writes itself through its `Encoding`.
 
 use std::any::type_name;
-use std::error::Error as StdError;
 use std::result;
 
 use arrow::array::{
@@ -23,7 +22,7 @@ use postgres_protocol::escape::escape_identifier;
 use postgres_protocol::types::{RangeBound, empty_range_to_sql, range_to_sql};
 use rust_decimal::Decimal;
 use tokio_postgres::types::{IsNull, ToSql, Type as PgType};
-use transferred_core::{Result, TransferredError};
+use transferred_core::{AnyError, Result, TransferredError};
 
 use crate::geoarrow::{self, GEOGRAPHY, GEOMETRY};
 use crate::pg_range::{LOWER, PgRange};
@@ -423,7 +422,7 @@ fn write_bound(
     row_num: usize,
     inclusive: bool,
     buf: &mut BytesMut,
-) -> result::Result<RangeBound<ProtocolIsNull>, Box<dyn StdError + Sync + Send>> {
+) -> result::Result<RangeBound<ProtocolIsNull>, AnyError> {
     // The two `IsNull`s belong to different crates; only a bound we did write reaches the protocol's.
     Ok(match element.write(array, row_num, buf)? {
         IsNull::Yes => RangeBound::Unbounded,

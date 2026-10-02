@@ -4,7 +4,6 @@
 //! `Decoding`, straight into the Arrow builder its column's array comes out of.
 
 use std::any::type_name;
-use std::error::Error as StdError;
 use std::result;
 
 use arrow::array::{
@@ -27,7 +26,7 @@ use tokio_postgres::Column as PgColumn;
 use tokio_postgres::binary_copy::BinaryCopyOutRow;
 use tokio_postgres::types::{FromSql, Kind, Type as PgType};
 use tracing::warn;
-use transferred_core::{Result, TransferredError};
+use transferred_core::{AnyError, Result, TransferredError};
 
 use crate::geoarrow::{self, GEOGRAPHY, GEOMETRY};
 use crate::pg_range::PgRange;
@@ -99,10 +98,7 @@ impl Decoder {
 struct Raw<'buf>(&'buf [u8]);
 
 impl<'buf> FromSql<'buf> for Raw<'buf> {
-    fn from_sql(
-        _: &PgType,
-        raw: &'buf [u8],
-    ) -> result::Result<Self, Box<dyn StdError + Sync + Send>> {
+    fn from_sql(_: &PgType, raw: &'buf [u8]) -> result::Result<Self, AnyError> {
         Ok(Self(raw))
     }
 

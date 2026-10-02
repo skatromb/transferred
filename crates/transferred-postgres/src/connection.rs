@@ -1,13 +1,10 @@
 //! Shared connect path: libpq `sslmode` semantics on top of the platform's TLS.
 
-use std::error::Error;
-
 use native_tls::TlsConnector;
 use postgres_native_tls::MakeTlsConnector;
 use tokio_postgres::{Client, Config};
 use tracing::warn;
-
-type AnyError = Box<dyn Error + Send + Sync>;
+use transferred_core::AnyError;
 
 /// libpq's strictest `sslmode`, spelled the same in URL and key=value DSNs; `Config` rejects it.
 const VERIFY_FULL: &str = "sslmode=verify-full";

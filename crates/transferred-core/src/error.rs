@@ -4,7 +4,8 @@ use std::{io, result};
 use arrow::error::ArrowError;
 use thiserror::Error;
 
-type AnyError = Box<dyn StdError + Send + Sync>;
+/// Any error a connector can raise, boxed.
+pub type AnyError = Box<dyn StdError + Send + Sync>;
 
 /// Convenience alias for results returned by `transferred` operations.
 pub type Result<T> = result::Result<T, TransferredError>;
