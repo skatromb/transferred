@@ -57,6 +57,9 @@ Fix the root cause. Don't sprinkle `#[allow(…)]`, `# noqa`, `# type: ignore`, 
 
 Test code is the documented exception — file-level allows are fine in `tests/`, `#[cfg(test)] mod tests`, `conftest.py`.
 
+Rust runs clippy `pedantic`, `nursery` and `restriction` plus every stable rustc lint worth having, with WPS-like thresholds in `clippy.toml`.
+Suppress with `#[expect(lint, reason = "…")]`, never `#[allow]`: an expect fails once the lint stops firing.
+
 Python is linted twice: ruff owns formatting, imports and the pycodestyle/pyflakes overlap;
 `wemake-python-styleguide` owns the `WPS` rules via `make wps` and `.flake8`.
 The `wps` MCP server in `.mcp.json` explains any `WPS###` offline.

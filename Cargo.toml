@@ -1,3 +1,6 @@
+[profile.release]
+lto = "thin"
+
 [workspace]
 resolver = "3"
 members = [
@@ -28,7 +31,8 @@ tracing = { version = "0.1", features = ["log"] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
-nursery = {level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+redundant_pub_crate = "allow"
 
 # Don't panic
 arithmetic_side_effects = "deny"
@@ -82,8 +86,54 @@ exhaustive_enums = "allow"
 exhaustive_structs = "allow"
 
 [workspace.lints.rust]
-unsafe_code = "deny"
+absolute_paths_not_starting_with_crate = "warn"
+ambiguous_negative_literals = "warn"
+closure_returning_async_block = "warn"
+deprecated_in_future = "warn"
+deprecated_safe_2024 = "warn"
+deref_into_dyn_supertrait = "warn"
+edition_2024_expr_fragment_specifier = "warn"
+elided_lifetimes_in_paths = "warn"
+explicit_outlives_requirements = "warn"
+ffi_unwind_calls = "warn"
+if_let_rescope = "warn"
+impl_trait_overcaptures = "warn"
+impl_trait_redundant_captures = "warn"
+keyword_idents_2018 = "warn"
+keyword_idents_2024 = "warn"
+let_underscore_drop = "warn"
+linker_info = "warn"
+macro_use_extern_crate = "warn"
+meta_variable_misuse = "warn"
+missing_copy_implementations = "warn"
 missing_docs = "deny"
-
-[profile.release]
-lto = "thin"
+missing_unsafe_on_extern = "warn"
+non_ascii_idents = "warn"
+raw_borrows_via_references = "warn"
+redundant_imports = "warn"
+redundant_lifetimes = "warn"
+rust_2021_incompatible_closure_captures = "warn"
+rust_2021_incompatible_or_patterns = "warn"
+rust_2021_prefixes_incompatible_syntax = "warn"
+rust_2021_prelude_collisions = "warn"
+rust_2024_guarded_string_incompatible_syntax = "warn"
+rust_2024_incompatible_pat = "warn"
+rust_2024_prelude_collisions = "warn"
+single_use_lifetimes = "warn"
+tail_expr_drop_order = "warn"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+unit_bindings = "warn"
+unnameable_types = "warn"
+unreachable_pub = "warn"
+unsafe_attr_outside_unsafe = "warn"
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "warn"
+unstable_features = "warn"
+unused_extern_crates = "warn"
+unused_import_braces = "warn"
+unused_lifetimes = "warn"
+unused_macro_rules = "warn"
+unused_qualifications = "warn"
+unused_results = "warn"
+variant_size_differences = "warn"
