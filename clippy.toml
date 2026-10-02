@@ -18,5 +18,5 @@ excessive-nesting-threshold = 4
 max-fn-params-bools = 1
 max-struct-bools = 1
 too-many-arguments-threshold = 5
-too-many-lines-threshold = 50
+too-many-lines-threshold = 25
 type-complexity-threshold = 75

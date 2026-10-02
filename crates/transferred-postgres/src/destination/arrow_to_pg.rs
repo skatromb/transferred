@@ -324,7 +324,7 @@ impl Encoding {
     }
 
     /// Writes one value in Postgres binary form; nulls stop here, before any downcast.
-    #[expect(clippy::too_many_lines, reason = "one arm per Postgres type")]
+    #[expect(clippy::too_many_lines, reason = "handles many types")]
     fn write(&self, array: &dyn Array, row_num: usize, buf: &mut BytesMut) -> Result<IsNull> {
         if array.is_null(row_num) {
             return Ok(IsNull::Yes);

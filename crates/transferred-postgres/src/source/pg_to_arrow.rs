@@ -154,6 +154,7 @@ enum Decoding {
 
 impl Decoding {
     /// Decides what Arrow column a Postgres column becomes.
+    #[expect(clippy::too_many_lines, reason = "handles many types")]
     fn new(column: &PgColumn) -> Result<Self> {
         let (name, typmod, pg_type) = (column.name(), column.type_modifier(), column.type_());
         Ok(match *pg_type {
@@ -296,7 +297,7 @@ impl Decoding {
     }
 
     /// Builds the column's array from its cells, each in Postgres binary form; `None` is a NULL.
-    #[expect(clippy::too_many_lines, reason = "one arm per Postgres type")]
+    #[expect(clippy::too_many_lines, reason = "handles many types")]
     fn array(&self, cells: &[Cell<'_>]) -> Result<ArrayRef> {
         Ok(match self {
             Self::Bool => Arc::new(decoded::<BooleanArray, bool, _>(&PgType::BOOL, cells, Ok)?),
