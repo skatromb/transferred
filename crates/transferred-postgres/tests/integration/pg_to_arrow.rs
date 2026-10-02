@@ -6,9 +6,10 @@ use std::sync::Arc;
 use arrow::array::{
     ArrayRef, BinaryArray, BooleanArray, Date32Array, Decimal128Array, FixedSizeBinaryArray,
     Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, IntervalMonthDayNanoArray,
-    RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
+    RecordBatch, StringArray, StructArray, TimestampMicrosecondArray, new_null_array,
 };
 use arrow::buffer::NullBuffer;
+use arrow::compute::concat;
 use arrow::datatypes::IntervalMonthDayNano;
 use arrow_schema::extension::{Json, Opaque, Uuid};
 use arrow_schema::{DataType, Field, IntervalUnit, Schema, TimeUnit};
@@ -17,9 +18,32 @@ use transferred_postgres::{PgRange, geoarrow};
 
 use crate::common::read_table;
 
-/// Assembles the expected batch from nullable fields and their columns.
-fn expected(fields: Vec<Field>, columns: Vec<ArrayRef>) -> RecordBatch {
-    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("build expected batch")
+/// 2024-01-15, in days since the Unix epoch.
+const JAN_15_2024: i32 = 19_737;
+/// 2024-01-21, in days since the Unix epoch.
+const JAN_21_2024: i32 = 19_743;
+/// 1969-07-20, in days since the Unix epoch. Before it, and before PG's own 2000-01-01 epoch, so
+/// the count is negative on both sides of the shift between them.
+const JUL_20_1969: i32 = -165;
+/// 2024-01-15 12:34:56.789012, in microseconds since the Unix epoch.
+const JAN_15_2024_12_34_56: i64 = 1_705_322_096_789_012;
+/// 2024-01-16 00:00:00, in microseconds since the Unix epoch.
+const JAN_16_2024: i64 = 1_705_363_200_000_000;
+/// 1969-07-20 20:17:40, in microseconds since the Unix epoch; negative for the same reason.
+const JUL_20_1969_20_17_40: i64 = -14_182_940_000_000;
+
+/// The zone every `timestamptz` arrives in.
+const UTC: &str = "UTC";
+/// What a bare `numeric` maps to, and so does `numeric(38,9)`.
+const BARE_NUMERIC: DataType = DataType::Decimal128(38, 9);
+/// `a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11`, the example UUID of the PG docs.
+const PG_DOCS_UUID: u128 = 0xa0ee_bc99_9c0b_4ef8_bb6d_6bb9_bd38_0a11;
+/// Width of a UUID, as Arrow's `FixedSizeBinary` counts it.
+const UUID_BYTES: i32 = 16;
+
+/// Assembles a batch from its fields and their columns.
+fn batch(fields: Vec<Field>, columns: Vec<ArrayRef>) -> RecordBatch {
+    RecordBatch::try_new(Arc::new(Schema::new(fields)), columns).expect("fields match columns")
 }
 
 fn nullable(name: &str, data_type: DataType) -> Field {
@@ -28,7 +52,7 @@ fn nullable(name: &str, data_type: DataType) -> Field {
 
 #[tokio::test]
 async fn primitives() {
-    let expected = expected(
+    let expected = batch(
         vec![
             nullable("b", DataType::Boolean),
             nullable("i2", DataType::Int16),
@@ -60,9 +84,7 @@ async fn primitives() {
 
 #[tokio::test]
 async fn temporal() {
-    // Epoch-relative days and micros, computed independently of the mapping under test.
-    let days = vec![Some(19737), Some(-165), None];
-    let micros = vec![Some(1_705_322_096_789_012), Some(-14_182_940_000_000), None];
+    let micros = vec![Some(JAN_15_2024_12_34_56), Some(JUL_20_1969_20_17_40), None];
 
     // Months, days and micros stay separate — PG carries all three independently.
     let intervals = vec![
@@ -71,20 +93,24 @@ async fn temporal() {
         None,
     ];
 
-    let expected = expected(
+    let expected = batch(
         vec![
             nullable("d", DataType::Date32),
             nullable("ts", DataType::Timestamp(TimeUnit::Microsecond, None)),
             nullable(
                 "tstz",
-                DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
+                DataType::Timestamp(TimeUnit::Microsecond, Some(UTC.into())),
             ),
             nullable("iv", DataType::Interval(IntervalUnit::MonthDayNano)),
         ],
         vec![
-            Arc::new(Date32Array::from(days)),
+            Arc::new(Date32Array::from(vec![
+                Some(JAN_15_2024),
+                Some(JUL_20_1969),
+                None,
+            ])),
             Arc::new(TimestampMicrosecondArray::from(micros.clone())),
-            Arc::new(TimestampMicrosecondArray::from(micros).with_timezone("UTC")),
+            Arc::new(TimestampMicrosecondArray::from(micros).with_timezone(UTC)),
             Arc::new(IntervalMonthDayNanoArray::from(intervals)),
         ],
     );
@@ -95,44 +121,33 @@ async fn temporal() {
 #[tokio::test]
 async fn numeric() {
     // Arrow stores decimals as integer counts of 10^-scale units.
-    let expected = expected(
+    let small = DataType::Decimal128(28, 4);
+    // Row 3 arrives at scale 10, so bare `n` is the one column the mapping rounds itself.
+    let at_scale_9 = Decimal128Array::from(vec![
+        Some(1_500_000_000),
+        Some(-1_234_567_890_123_456_789_123_456_789),
+        Some(123_456_789),
+        None,
+    ])
+    .with_data_type(BARE_NUMERIC);
+    let at_scale_4 = Decimal128Array::from(vec![
+        Some(15_000),
+        Some(-12_345_678_901_234_567_891_235),
+        Some(1_235),
+        None,
+    ])
+    .with_data_type(small.clone());
+
+    let expected = batch(
         vec![
-            nullable("n", DataType::Decimal128(38, 9)),
-            nullable("small", DataType::Decimal128(28, 4)),
-            nullable("wide", DataType::Decimal128(38, 9)),
+            nullable("n", BARE_NUMERIC),
+            nullable("small", small),
+            nullable("wide", BARE_NUMERIC),
         ],
         vec![
-            // Row 3 arrives at scale 10, so bare `n` is the one column the mapping rounds itself.
-            Arc::new(
-                Decimal128Array::from(vec![
-                    Some(1_500_000_000),
-                    Some(-1_234_567_890_123_456_789_123_456_789),
-                    Some(123_456_789),
-                    None,
-                ])
-                .with_precision_and_scale(38, 9)
-                .unwrap(),
-            ),
-            Arc::new(
-                Decimal128Array::from(vec![
-                    Some(15_000),
-                    Some(-12_345_678_901_234_567_891_235),
-                    Some(1_235),
-                    None,
-                ])
-                .with_precision_and_scale(28, 4)
-                .unwrap(),
-            ),
-            Arc::new(
-                Decimal128Array::from(vec![
-                    Some(1_500_000_000),
-                    Some(-1_234_567_890_123_456_789_123_456_789),
-                    Some(123_456_789),
-                    None,
-                ])
-                .with_precision_and_scale(38, 9)
-                .unwrap(),
-            ),
+            Arc::new(at_scale_9.clone()),
+            Arc::new(at_scale_4),
+            Arc::new(at_scale_9),
         ],
     );
 
@@ -141,25 +156,19 @@ async fn numeric() {
 
 #[tokio::test]
 async fn semantic() {
-    const A0EE: [u8; 16] = [
-        0xa0, 0xee, 0xbc, 0x99, 0x9c, 0x0b, 0x4e, 0xf8, 0xbb, 0x6d, 0x6b, 0xb9, 0xbd, 0x38, 0x0a,
-        0x11,
-    ];
+    let uuids = [Some(PG_DOCS_UUID), Some(0), None].map(|uuid| uuid.map(u128::to_be_bytes));
     let docs = vec![Some(r#"{"a": [1]}"#), Some("[]"), None];
 
-    let expected = expected(
+    let expected = batch(
         vec![
-            nullable("u", DataType::FixedSizeBinary(16)).with_extension_type(Uuid),
+            nullable("u", DataType::FixedSizeBinary(UUID_BYTES)).with_extension_type(Uuid),
             nullable("j", DataType::Utf8).with_extension_type(Json::default()),
             nullable("jb", DataType::Utf8).with_extension_type(Json::default()),
         ],
         vec![
             Arc::new(
-                FixedSizeBinaryArray::try_from_sparse_iter_with_size(
-                    [Some(A0EE), Some([0; 16]), None].into_iter(),
-                    16,
-                )
-                .unwrap(),
+                FixedSizeBinaryArray::try_from_sparse_iter_with_size(uuids.into_iter(), UUID_BYTES)
+                    .unwrap(),
             ),
             Arc::new(StringArray::from(docs.clone())),
             Arc::new(StringArray::from(docs)),
@@ -172,7 +181,7 @@ async fn semantic() {
 /// A type PG sends as text arrives as text, whatever OID it was given.
 #[tokio::test]
 async fn text_extensions() {
-    let expected = expected(
+    let expected = batch(
         vec![
             nullable("mood", DataType::Utf8),
             nullable("email", DataType::Utf8),
@@ -190,30 +199,28 @@ async fn text_extensions() {
     assert_eq!(read_table("it_text").await, expected);
 }
 
-/// Builds a nullable `transferred.pg_range` field, as the mapping tags a range column.
-fn pg_range(name: &str, bound_type: DataType) -> Field {
-    nullable(name, DataType::Struct(PgRange::fields(bound_type))).with_extension_type(PgRange)
-}
-
-/// Builds one range column of the fixture: its bounds and their inclusivity, then the two rows
-/// that read the same in every column — row 3 is `empty`, row 4 is the SQL NULL.
-fn ranges(
-    bound_type: DataType,
-    lower: ArrayRef,
-    upper: ArrayRef,
-    lower_inc: [bool; 4],
-    upper_inc: [bool; 4],
-) -> ArrayRef {
+/// Builds one range column of the fixture, tagged `transferred.pg_range` and bounded by `lower`'s
+/// type. The bounds and brackets, as PG prints them, cover the two rows that differ per column;
+/// the two that read the same in every column follow — row 3 is `empty`, row 4 is the SQL NULL.
+fn ranges(name: &str, lower: ArrayRef, upper: ArrayRef, brackets: [&str; 2]) -> (Field, ArrayRef) {
+    let fields = PgRange::fields(lower.data_type().clone());
+    let field = nullable(name, DataType::Struct(fields.clone())).with_extension_type(PgRange);
+    let unbounded = new_null_array(lower.data_type(), 2);
+    let pad = |bounds: ArrayRef| concat(&[bounds.as_ref(), unbounded.as_ref()]).unwrap();
+    let lower_inc = brackets.map(|pair| pair.starts_with('['));
+    let upper_inc = brackets.map(|pair| pair.ends_with(']'));
     let columns: Vec<ArrayRef> = vec![
-        lower,
-        upper,
-        Arc::new(BooleanArray::from(lower_inc.to_vec())),
-        Arc::new(BooleanArray::from(upper_inc.to_vec())),
+        pad(lower),
+        pad(upper),
+        Arc::new(BooleanArray::from([lower_inc, [false; 2]].concat())),
+        Arc::new(BooleanArray::from([upper_inc, [false; 2]].concat())),
         Arc::new(BooleanArray::from(vec![false, false, true, false])),
     ];
     let nulls = NullBuffer::from(vec![true, true, true, false]);
 
-    Arc::new(StructArray::try_new(PgRange::fields(bound_type), columns, Some(nulls)).unwrap())
+    let array = StructArray::try_new(fields, columns, Some(nulls)).unwrap();
+
+    (field, Arc::new(array))
 }
 
 /// Bounds plus a tag is the only Arrow shape that tells an infinite bound, an `empty` range and a
@@ -221,88 +228,54 @@ fn ranges(
 /// wrote; only `numrange`, `tsrange` and `tstzrange` keep the inclusivity of the literal.
 #[tokio::test]
 async fn ranges_carry_their_bounds_and_tag() {
-    // 2024-01-15 and 2024-01-21, the `[)` form of `[2024-01-15,2024-01-20]`.
-    let days = (
-        vec![Some(19737), Some(19737), None, None],
-        vec![Some(19743), None, None, None],
-    );
-    // 2024-01-15 12:34:56.789012 and 2024-01-16 00:00:00, both counted from the epoch.
-    let micros = (
-        vec![Some(1_705_322_096_789_012), None, None, None],
-        vec![
-            Some(1_705_363_200_000_000),
-            Some(1_705_363_200_000_000),
-            None,
-            None,
-        ],
-    );
-    let decimals = |units: Vec<Option<i128>>| -> ArrayRef {
-        Arc::new(
-            Decimal128Array::from(units)
-                .with_precision_and_scale(38, 9)
-                .unwrap(),
-        )
-    };
+    let lower_micros = TimestampMicrosecondArray::from(vec![Some(JAN_15_2024_12_34_56), None]);
+    let upper_micros = TimestampMicrosecondArray::from(vec![JAN_16_2024; 2]);
 
-    let expected = expected(
-        vec![
-            pg_range("i4", DataType::Int32),
-            pg_range("i8", DataType::Int64),
-            pg_range("n", DataType::Decimal128(38, 9)),
-            pg_range("d", DataType::Date32),
-            pg_range("ts", DataType::Timestamp(TimeUnit::Microsecond, None)),
-            pg_range(
-                "tstz",
-                DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
+    let (fields, columns) = [
+        ranges(
+            "i4",
+            Arc::new(Int32Array::from(vec![Some(1), None])),
+            Arc::new(Int32Array::from(vec![6, 7])),
+            ["[)", "()"],
+        ),
+        ranges(
+            "i8",
+            Arc::new(Int64Array::from(vec![1, 7])),
+            Arc::new(Int64Array::from(vec![Some(6), None])),
+            ["[)", "[)"],
+        ),
+        ranges(
+            "n",
+            Arc::new(
+                Decimal128Array::from(vec![Some(1_500_000_000), None]).with_data_type(BARE_NUMERIC),
             ),
-        ],
-        vec![
-            ranges(
-                DataType::Int32,
-                Arc::new(Int32Array::from(vec![Some(1), None, None, None])),
-                Arc::new(Int32Array::from(vec![Some(6), Some(7), None, None])),
-                [true, false, false, false],
-                [false; 4],
-            ),
-            ranges(
-                DataType::Int64,
-                Arc::new(Int64Array::from(vec![Some(1), Some(7), None, None])),
-                Arc::new(Int64Array::from(vec![Some(6), None, None, None])),
-                [true, true, false, false],
-                [false; 4],
-            ),
-            ranges(
-                DataType::Decimal128(38, 9),
-                decimals(vec![Some(1_500_000_000), None, None, None]),
-                decimals(vec![Some(2_500_000_000), Some(2_500_000_000), None, None]),
-                [false; 4],
-                [true, false, false, false],
-            ),
-            ranges(
-                DataType::Date32,
-                Arc::new(Date32Array::from(days.0)),
-                Arc::new(Date32Array::from(days.1)),
-                [true, true, false, false],
-                [false; 4],
-            ),
-            ranges(
-                DataType::Timestamp(TimeUnit::Microsecond, None),
-                Arc::new(TimestampMicrosecondArray::from(micros.0.clone())),
-                Arc::new(TimestampMicrosecondArray::from(micros.1.clone())),
-                [true, false, false, false],
-                [false; 4],
-            ),
-            ranges(
-                DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
-                Arc::new(TimestampMicrosecondArray::from(micros.0).with_timezone("UTC")),
-                Arc::new(TimestampMicrosecondArray::from(micros.1).with_timezone("UTC")),
-                [true, false, false, false],
-                [false; 4],
-            ),
-        ],
-    );
+            Arc::new(Decimal128Array::from(vec![2_500_000_000; 2]).with_data_type(BARE_NUMERIC)),
+            ["(]", "()"],
+        ),
+        // The `[)` form of `[2024-01-15,2024-01-20]`.
+        ranges(
+            "d",
+            Arc::new(Date32Array::from(vec![JAN_15_2024; 2])),
+            Arc::new(Date32Array::from(vec![Some(JAN_21_2024), None])),
+            ["[)", "[)"],
+        ),
+        ranges(
+            "ts",
+            Arc::new(lower_micros.clone()),
+            Arc::new(upper_micros.clone()),
+            ["[)", "()"],
+        ),
+        ranges(
+            "tstz",
+            Arc::new(lower_micros.with_timezone(UTC)),
+            Arc::new(upper_micros.with_timezone(UTC)),
+            ["[)", "()"],
+        ),
+    ]
+    .into_iter()
+    .unzip();
 
-    assert_eq!(read_table("it_range").await, expected);
+    assert_eq!(read_table("it_range").await, batch(fields, columns));
 }
 
 /// Decodes a hex byte string, so expectations read as the hex PG itself prints.
@@ -337,7 +310,7 @@ async fn geometry() {
     let other_point = hex_bytes("010100000000000000000008400000000000001040");
     let point_4269 = hex_bytes("0101000020ad100000000000000000f03f0000000000000040");
 
-    let expected = expected(
+    let expected = batch(
         vec![
             wkb("geom", geoarrow::planar(None)),
             wkb("pt", geoarrow::planar(Some(4326))),
@@ -384,7 +357,7 @@ async fn unmapped_types() {
     let one_two = hex_bytes("00000002000000170000000400000001000000170000000400000002");
     let three_null = hex_bytes("0000000200000017000000040000000300000017ffffffff");
 
-    let expected = expected(
+    let expected = batch(
         vec![
             nullable("mac", DataType::Binary)
                 .with_extension_type(Opaque::new("macaddr", "PostgreSQL")),
