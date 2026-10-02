@@ -68,8 +68,7 @@ pub async fn start_seeded_postgres() -> String {
     let (_container, dsn) = POSTGRES
         .get_or_init(|| {
             start_pg_container(
-                Postgres::default()
-                    .with_init_sql(include_str!("../pg_seed.sql").as_bytes().to_vec()),
+                Postgres::default().with_init_sql(include_bytes!("../pg_seed.sql").to_vec()),
             )
         })
         .await;
