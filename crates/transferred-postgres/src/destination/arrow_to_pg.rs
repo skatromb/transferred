@@ -412,8 +412,8 @@ fn write_range(
     let upper_inc = cast::<BooleanArray>(upper_incs.as_ref())?.value(row_num);
 
     range_to_sql(
-        |buf| write_bound(element, lowers.as_ref(), row_num, lower_inc, buf),
-        |buf| write_bound(element, uppers.as_ref(), row_num, upper_inc, buf),
+        |buf| bound(element.write(lowers.as_ref(), row_num, buf), lower_inc),
+        |buf| bound(element.write(uppers.as_ref(), row_num, buf), upper_inc),
         buf,
     )
     .map_err(TransferredError::in_destination)?;
@@ -421,16 +421,13 @@ fn write_range(
     Ok(IsNull::No)
 }
 
-/// Writes a bound, reporting it infinite when its value is null: Postgres allows no NULL bound.
-fn write_bound(
-    element: &Encoding,
-    array: &dyn Array,
-    row_num: usize,
-    inclusive: bool,
-    buf: &mut BytesMut,
-) -> result::Result<RangeBound<ProtocolIsNull>, AnyError> {
+/// What `range_to_sql` wants back for each bound it has us write.
+type BoundResult = result::Result<RangeBound<ProtocolIsNull>, AnyError>;
+
+/// Bound for a value just written; a null one is infinite, as Postgres allows no NULL bound.
+fn bound(written: Result<IsNull>, inclusive: bool) -> BoundResult {
     // The two `IsNull`s belong to different crates; only a bound we did write reaches the protocol's.
-    Ok(match element.write(array, row_num, buf)? {
+    Ok(match written? {
         IsNull::Yes => RangeBound::Unbounded,
         IsNull::No if inclusive => RangeBound::Inclusive(ProtocolIsNull::No),
         IsNull::No => RangeBound::Exclusive(ProtocolIsNull::No),
