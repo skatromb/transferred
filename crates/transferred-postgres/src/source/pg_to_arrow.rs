@@ -169,7 +169,7 @@ enum Decoding {
     /// `PostGIS` sends EWKB, which `geoarrow.wkb` takes verbatim; only the field names the geo type.
     Geo(WkbType),
     /// A range arrives as a tag byte plus bounds, each bound through the element's own decoding.
-    Range(Box<Decoding>),
+    Range(Box<Self>),
     /// No mapping: the bytes pass through, tagged with the Postgres type they came from.
     Opaque(Opaque),
 }

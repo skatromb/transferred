@@ -49,11 +49,11 @@ impl GlobOrPaths {
     /// Resolves to concrete paths. Glob walks the filesystem; empty results error.
     fn resolve(self) -> Result<Vec<PathBuf>> {
         let paths = match self {
-            GlobOrPaths::Glob(pattern) => expand_glob(&pattern)?,
-            GlobOrPaths::Paths(paths) if paths.is_empty() => {
+            Self::Glob(pattern) => expand_glob(&pattern)?,
+            Self::Paths(paths) if paths.is_empty() => {
                 return Err(TransferredError::in_source("no input paths provided"));
             }
-            GlobOrPaths::Paths(paths) => paths,
+            Self::Paths(paths) => paths,
         };
         if let Some(dir) = paths.iter().find(|path| path.is_dir()) {
             return Err(TransferredError::in_source(format!(

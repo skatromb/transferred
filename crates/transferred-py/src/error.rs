@@ -94,7 +94,7 @@ mod tests {
 
     /// One link of a cause chain, printing its own message only.
     #[derive(Debug)]
-    struct Layer(&'static str, Option<Box<Layer>>);
+    struct Layer(&'static str, Option<Box<Self>>);
 
     impl fmt::Display for Layer {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

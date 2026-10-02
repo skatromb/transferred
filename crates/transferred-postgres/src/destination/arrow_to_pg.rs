@@ -169,7 +169,7 @@ enum Encoding {
     /// A range writes as a tag byte plus bounds, each bound through the element's own encoding.
     Range {
         pg_type: PgType,
-        element: Box<Encoding>,
+        element: Box<Self>,
     },
 }
 
