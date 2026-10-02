@@ -53,7 +53,7 @@ impl PyArrowSource {
 }
 
 /// Rust-side source over a pyarrow `RecordBatchReader` that gives us `Send`.
-pub struct ArrowSource {
+pub(crate) struct ArrowSource {
     reader: ArrowArrayStreamReader,
 }
 

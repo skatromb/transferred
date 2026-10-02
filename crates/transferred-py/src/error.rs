@@ -67,7 +67,7 @@ fn causes(error: &dyn Error) -> String {
     message
 }
 
-pub fn to_pyerr(err: CoreError) -> PyErr {
+pub(crate) fn to_pyerr(err: CoreError) -> PyErr {
     match err {
         CoreError::Source(err) => SourceError::new_err(causes(&*err)),
         CoreError::EmptySource => EmptySourceError::new_err(err.to_string()),
@@ -77,7 +77,7 @@ pub fn to_pyerr(err: CoreError) -> PyErr {
     }
 }
 
-pub fn register(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
+pub(crate) fn register(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("TransferredError", py.get_type::<TransferredError>())?;
     module.add("SourceError", py.get_type::<SourceError>())?;
     module.add("EmptySourceError", py.get_type::<EmptySourceError>())?;

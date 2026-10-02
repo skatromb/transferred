@@ -8,11 +8,11 @@ use arrow_schema::extension::ExtensionType;
 use arrow_schema::{ArrowError, DataType as ArrowType, Field as ArrowField, Fields as ArrowFields};
 
 /// The bounds, then the three things a pair of bounds cannot say on its own.
-pub const LOWER: &str = "lower";
-pub const UPPER: &str = "upper";
-pub const LOWER_INC: &str = "lower_inc";
-pub const UPPER_INC: &str = "upper_inc";
-pub const EMPTY: &str = "empty";
+pub(crate) const LOWER: &str = "lower";
+pub(crate) const UPPER: &str = "upper";
+pub(crate) const LOWER_INC: &str = "lower_inc";
+pub(crate) const UPPER_INC: &str = "upper_inc";
+pub(crate) const EMPTY: &str = "empty";
 
 /// A Postgres range, spread over the struct fields that hold its bounds and its tag.
 #[derive(Debug, Clone, PartialEq, Eq)]

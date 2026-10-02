@@ -56,14 +56,14 @@ const VENDOR: &str = "PostgreSQL";
 const UUID_BYTES: i32 = 16;
 
 /// Arrow schema + per-column decodings, mapped once from PG column metadata.
-pub struct Decoder {
+pub(crate) struct Decoder {
     schema: SchemaRef,
     decodings: Vec<Decoding>,
 }
 
 impl Decoder {
     /// Maps a prepared statement's columns onto Arrow columns. All fields nullable.
-    pub fn derive(columns: &[PgColumn]) -> Result<Self> {
+    pub(crate) fn derive(columns: &[PgColumn]) -> Result<Self> {
         let (fields, decodings): (Vec<_>, Vec<_>) = columns
             .iter()
             .map(|column| {
@@ -79,7 +79,7 @@ impl Decoder {
     }
 
     /// Decodes a batch of rows, each column straight from the bytes Postgres sent for it.
-    pub fn decode(&self, rows: &[BinaryCopyOutRow]) -> Result<RecordBatch> {
+    pub(crate) fn decode(&self, rows: &[BinaryCopyOutRow]) -> Result<RecordBatch> {
         let arrays = self
             .decodings
             .iter()

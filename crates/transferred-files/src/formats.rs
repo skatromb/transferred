@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncSeek, AsyncWrite};
 use transferred_core::{BatchStream, Result};
 
-pub mod parquet;
+pub(crate) mod parquet;
 
 pub use parquet::Parquet;
 

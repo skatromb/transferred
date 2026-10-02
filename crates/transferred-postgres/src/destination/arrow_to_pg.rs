@@ -34,7 +34,7 @@ const NANOS_PER_MICRO: i64 = 1_000;
 const NULL_FIELD: i32 = -1;
 
 /// Postgres column definitions + value encoders, mapped once from an Arrow schema.
-pub struct Encoder {
+pub(crate) struct Encoder {
     schema: SchemaRef,
     columns: Vec<ColumnEncoder>,
     /// Fields in every COPY row, which the wire format counts in an `i16`.
@@ -43,7 +43,7 @@ pub struct Encoder {
 
 impl Encoder {
     /// Maps an Arrow schema onto Postgres columns. All columns nullable.
-    pub fn new(schema: SchemaRef) -> Result<Self> {
+    pub(crate) fn new(schema: SchemaRef) -> Result<Self> {
         let columns = schema
             .fields()
             .iter()
@@ -72,7 +72,7 @@ impl Encoder {
 
     /// Column-type list for `CREATE TABLE`, quoted and comma-separated.
     /// E.g. `"id" int4, "total" numeric(38,9)`.
-    pub fn declarations(&self) -> String {
+    pub(crate) fn declarations(&self) -> String {
         self.columns
             .iter()
             .map(|column| format!("{} {}", column.name, column.encoding.sql_type()))
@@ -81,7 +81,7 @@ impl Encoder {
     }
 
     /// Checks a batch against the mapped schema.
-    pub fn check(&self, batch: &RecordBatch) -> Result<()> {
+    pub(crate) fn check(&self, batch: &RecordBatch) -> Result<()> {
         // The table was created from the first batch, so a later partition may not fit it.
         if batch.schema().fields() != self.schema.fields() {
             return Err(TransferredError::in_destination(format!(
@@ -95,7 +95,7 @@ impl Encoder {
     }
 
     /// Appends one COPY row: the field count, then every field.
-    pub fn write_row(&self, batch: &RecordBatch, row_num: usize, buf: &mut BytesMut) -> Result<()> {
+    pub(crate) fn write_row(&self, batch: &RecordBatch, row_num: usize, buf: &mut BytesMut) -> Result<()> {
         buf.put_i16(self.field_count);
         for (column, array) in self.columns.iter().zip(batch.columns()) {
             column.write_field(array.as_ref(), row_num, buf)?;
