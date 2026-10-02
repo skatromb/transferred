@@ -74,8 +74,8 @@ async fn batches(client: &Client, table: &str) -> Result<BatchStream> {
 
     Ok(BinaryCopyOutStream::new(copy, &types)
         .try_chunks(BATCH_ROWS)
-        .map(move |rows| {
-            let rows = rows.map_err(|failed| TransferredError::in_source(failed.1))?;
+        .map(move |chunk| {
+            let rows = chunk.map_err(|failed| TransferredError::in_source(failed.1))?;
             decoder.decode(&rows)
         })
         .boxed())

@@ -19,7 +19,7 @@ use arrow::record_batch::RecordBatch;
 use arrow_schema::extension::{ExtensionType as _, Json, Opaque, Uuid};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use async_trait::async_trait;
-use futures::{StreamExt as _, stream};
+use futures::{TryStreamExt as _, stream};
 use tempfile::tempdir;
 use transferred_core::{BatchStream, Destination, Result, RunReport, Source, Transfer};
 use transferred_files::{Compression, FilesDestination, FilesSource, GlobOrPaths, Parquet};
@@ -31,8 +31,7 @@ async fn parquet_dogfood() {
     let path = dir.path().join("out");
     let schema = input_schema();
     let input = vec![input_batch(&schema, 5, 0), input_batch(&schema, 3, 100)];
-    let total_rows: usize = input.iter().map(RecordBatch::num_rows).sum();
-    let total_rows = u64::try_from(total_rows).unwrap();
+    let total_rows = u64::try_from(input.iter().map(RecordBatch::num_rows).sum::<usize>()).unwrap();
 
     // Act
     let write_report = write_parquet(input.clone(), &path).await;
@@ -221,8 +220,7 @@ impl Destination for MemoryDestination {
     async fn write_partitions(self: Box<Self>, partitions: Vec<BatchStream>) -> Result<RunReport> {
         let mut rows: u64 = 0;
         for mut partition in partitions {
-            while let Some(batch) = partition.next().await {
-                let batch = batch?;
+            while let Some(batch) = partition.try_next().await? {
                 rows += u64::try_from(batch.num_rows()).expect("row count fits u64");
                 self.0.send(batch).expect("receiver outlives the run");
             }

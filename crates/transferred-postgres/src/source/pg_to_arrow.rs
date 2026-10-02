@@ -104,7 +104,7 @@ fn column(rows: &[BinaryCopyOutRow], index: usize) -> Result<Vec<Cell<'_>>> {
     rows.iter()
         .map(|row| {
             row.try_get::<Option<Raw<'_>>>(index)
-                .map(|raw| raw.map(|raw| raw.0))
+                .map(|cell| cell.map(|raw| raw.0))
         })
         .collect::<result::Result<_, _>>()
         .map_err(TransferredError::in_source)
@@ -227,16 +227,19 @@ impl Decoding {
         // `numeric_typmod_precision`/`numeric_typmod_scale`, minus `VARHDRSZ`; the XOR sign-extends the
         // 11-bit scale, which PG 15+ allows to be negative.
         // https://github.com/postgres/postgres/blob/REL_17_10/src/backend/utils/adt/numeric.c#L925
-        let typmod = typmod.wrapping_sub(VARHDRSZ);
-        let precision = (typmod >> 16) & 0xffff;
-        let scale = ((typmod & 0x7ff) ^ 0x400).wrapping_sub(0x400);
+        let packed = typmod.wrapping_sub(VARHDRSZ);
+        let precision = (packed >> 16) & 0xffff;
+        let scale = ((packed & 0x7ff) ^ 0x400).wrapping_sub(0x400);
 
         // PG holds 1000 digits to Arrow's 38, and PG 15+ lets scale go negative or past precision.
         match (u8::try_from(precision), u8::try_from(scale)) {
-            (Ok(precision), Ok(scale))
-                if precision <= DECIMAL128_MAX_PRECISION && scale <= precision =>
+            (Ok(digits), Ok(decimals))
+                if digits <= DECIMAL128_MAX_PRECISION && decimals <= digits =>
             {
-                Ok(Self::Numeric { precision, scale })
+                Ok(Self::Numeric {
+                    precision: digits,
+                    scale: decimals,
+                })
             }
             _ => Err(TransferredError::in_source(format!(
                 "`numeric({precision},{scale})` is not supported: it needs at most \
@@ -455,9 +458,9 @@ const fn bound<'buf>(bound: &RangeBound<Cell<'buf>>) -> Cell<'buf> {
 
 /// Restates a decimal as an integer count of `10^-scale` units, as Arrow `Decimal128` stores it.
 fn decimal_units(mut decimal: Decimal, scale: u8) -> Result<i128> {
-    let scale = u32::from(scale);
-    decimal.rescale(scale);
-    if decimal.scale() != scale {
+    let places = u32::from(scale);
+    decimal.rescale(places);
+    if decimal.scale() != places {
         return Err(TransferredError::in_source(format!(
             "`numeric` value {decimal} does not fit scale {scale}"
         )));

@@ -11,9 +11,9 @@ const VERIFY_FULL: &str = "sslmode=verify-full";
 
 /// Connects to Postgres, reading `sslmode` out of the DSN the way libpq does.
 pub(crate) async fn connect(dsn: &str) -> Result<Client, AnyError> {
-    let (dsn, verify) = split_verify_full(dsn);
+    let (rewritten, verify) = split_verify_full(dsn);
     // libpq's own "unexpected EOF" names no shape, and the dsn cannot be echoed back: it holds the password.
-    let config: Config = dsn.parse().map_err(|_err| {
+    let config: Config = rewritten.parse().map_err(|_err| {
         "invalid dsn: expected `postgres://user:password@host:port/database` or `key=value` pairs"
     })?;
     let (client, connection) = config.connect(connector(verify)?).await?;

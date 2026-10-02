@@ -38,9 +38,10 @@ impl PyArrowSource {
     ))]
     #[new]
     fn new(reader: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let reader = ArrowArrayStreamReader::from_pyarrow_bound(reader)?;
         Ok(Self {
-            inner: Some(ArrowSource { reader }),
+            inner: Some(ArrowSource {
+                reader: ArrowArrayStreamReader::from_pyarrow_bound(reader)?,
+            }),
         })
     }
 }

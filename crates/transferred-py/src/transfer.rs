@@ -35,11 +35,9 @@ impl PyTransfer {
     ))]
     #[new]
     fn new(source: &Bound<'_, PyAny>, destination: &Bound<'_, PyAny>) -> PyResult<Self> {
-        let source = extract_source(source)?;
-        let destination = extract_destination(destination)?;
         Ok(Self {
-            source: Some(source),
-            destination: Some(destination),
+            source: Some(extract_source(source)?),
+            destination: Some(extract_destination(destination)?),
         })
     }
 

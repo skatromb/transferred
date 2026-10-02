@@ -12,9 +12,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-use transferred_files::{
-    Compression, FilesDestination, FilesSource, FormatRead, FormatWrite, GlobOrPaths, Parquet,
-};
+use transferred_files::{Compression, FilesDestination, FilesSource, GlobOrPaths, Parquet};
 
 /// Internal `PyO3` wrapper around `transferred_files::Parquet`.
 #[gen_stub_pyclass]
@@ -35,9 +33,8 @@ impl PyParquet {
     #[new]
     #[pyo3(signature = (compression))]
     fn new(compression: Option<&str>) -> PyResult<Self> {
-        let compression = parse_compression(compression)?;
         Ok(Self {
-            inner: Parquet::new(compression),
+            inner: Parquet::new(parse_compression(compression)?),
         })
     }
 }
@@ -73,9 +70,8 @@ impl PyFilesSource {
             let single: PathBuf = path.extract()?;
             GlobOrPaths::Glob(single.to_string_lossy().into_owned())
         };
-        let format: Arc<dyn FormatRead> = Arc::new(parquet_arg(format)?);
         Ok(Self {
-            inner: Some(FilesSource::new(source, format)),
+            inner: Some(FilesSource::new(source, Arc::new(parquet_arg(format)?))),
         })
     }
 }
@@ -104,9 +100,12 @@ impl PyFilesDestination {
     #[new]
     #[pyo3(signature = (path, format, single_file = false))]
     fn new(path: PathBuf, format: &Bound<'_, PyAny>, single_file: bool) -> PyResult<Self> {
-        let format: Arc<dyn FormatWrite> = Arc::new(parquet_arg(format)?);
         Ok(Self {
-            inner: Some(FilesDestination::new(path, format, single_file)),
+            inner: Some(FilesDestination::new(
+                path,
+                Arc::new(parquet_arg(format)?),
+                single_file,
+            )),
         })
     }
 }

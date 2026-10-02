@@ -295,9 +295,9 @@ async fn continuous_ranges_keep_their_brackets() {
 fn hex_bytes(hex: &str) -> Vec<u8> {
     hex.as_bytes()
         .chunks(2)
-        .map(|byte| {
-            let byte = str::from_utf8(byte).expect("ascii hex");
-            u8::from_str_radix(byte, 16).expect("hex byte")
+        .map(|pair| {
+            let digits = str::from_utf8(pair).expect("ascii hex");
+            u8::from_str_radix(digits, 16).expect("hex byte")
         })
         .collect()
 }

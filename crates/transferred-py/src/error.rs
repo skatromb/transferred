@@ -69,11 +69,11 @@ fn causes(error: &dyn Error) -> String {
 
 pub(crate) fn to_pyerr(err: CoreError) -> PyErr {
     match err {
-        CoreError::Source(err) => SourceError::new_err(causes(&*err)),
+        CoreError::Source(cause) => SourceError::new_err(causes(&*cause)),
         CoreError::EmptySource => EmptySourceError::new_err(err.to_string()),
-        CoreError::Destination(err) => DestinationError::new_err(causes(&*err)),
-        CoreError::Arrow(err) => ArrowError::new_err(causes(&err)),
-        CoreError::Io(err) => IoError::new_err(causes(&err)),
+        CoreError::Destination(cause) => DestinationError::new_err(causes(&*cause)),
+        CoreError::Arrow(cause) => ArrowError::new_err(causes(&cause)),
+        CoreError::Io(cause) => IoError::new_err(causes(&cause)),
     }
 }
 

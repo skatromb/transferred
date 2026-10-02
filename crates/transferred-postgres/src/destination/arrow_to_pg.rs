@@ -425,8 +425,8 @@ fn write_range(
     let upper_inc = cast::<BooleanArray>(upper_incs.as_ref())?.value(row_num);
 
     range_to_sql(
-        |buf| bound(element.write(lowers.as_ref(), row_num, buf), lower_inc),
-        |buf| bound(element.write(uppers.as_ref(), row_num, buf), upper_inc),
+        |out| bound(element.write(lowers.as_ref(), row_num, out), lower_inc),
+        |out| bound(element.write(uppers.as_ref(), row_num, out), upper_inc),
         buf,
     )
     .map_err(TransferredError::in_destination)?;

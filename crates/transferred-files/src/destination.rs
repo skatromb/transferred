@@ -84,15 +84,15 @@ impl FilesDestination {
 
         let mut written = Vec::new();
         for stream in streams {
-            let mut stream = stream.peekable();
-            if Pin::new(&mut stream).peek().await.is_none() {
+            let mut batches = stream.peekable();
+            if Pin::new(&mut batches).peek().await.is_none() {
                 continue; // skip empty partitions — no stray part file
             }
 
             let name = self.output_filename(written.len().saturating_add(1));
             let file = File::create(tmp_dir.join(&name)).await?;
 
-            let rows = self.format.write(Box::new(file), Box::pin(stream)).await?;
+            let rows = self.format.write(Box::new(file), Box::pin(batches)).await?;
             written.push(Written {
                 path: self.path.join(&name),
                 rows,
