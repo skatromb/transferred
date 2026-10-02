@@ -177,13 +177,17 @@ impl Decoding {
             PgType::TSTZ_RANGE => Self::Range(Box::new(Self::Timestamptz)),
             // A range constrains no precision on its bounds, so they can only be bare.
             PgType::NUM_RANGE => Self::Range(Box::new(Self::numeric(BARE_NUMERIC_TYPMOD, name)?)),
-            // Extension-type OIDs differ per database, so `citext` and `PostGIS` match on a name.
-            _ if matches!(pg_type.kind(), Kind::Enum(_)) || pg_type.name() == CITEXT => Self::Text,
+            _ => Self::extension(pg_type, typmod, name),
+        })
+    }
+
+    /// Decides for types whose OID differs per database, so they match on kind or name instead.
+    fn extension(pg_type: &PgType, typmod: i32, name: &str) -> Self {
+        match (pg_type.kind(), pg_type.name()) {
+            (Kind::Enum(_), _) | (_, CITEXT) => Self::Text,
             // `geoarrow.wkb` holds EWKB, so the bytes pass through untouched, SRID per value and all.
-            _ if pg_type.name() == GEOMETRY => Self::Geo(geoarrow::planar(geoarrow::srid(typmod))),
-            _ if pg_type.name() == GEOGRAPHY => {
-                Self::Geo(geoarrow::spherical(geoarrow::srid(typmod)))
-            }
+            (_, GEOMETRY) => Self::Geo(geoarrow::planar(geoarrow::srid(typmod))),
+            (_, GEOGRAPHY) => Self::Geo(geoarrow::spherical(geoarrow::srid(typmod))),
             _ => {
                 warn!(
                     target: "postgres::source",
@@ -195,7 +199,7 @@ impl Decoding {
                 );
                 Self::Opaque(Opaque::new(pg_type.name(), VENDOR))
             }
-        })
+        }
     }
 
     /// Decodes a `numeric` typmod into the `Decimal128` its values are restated at.
