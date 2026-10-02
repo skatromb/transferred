@@ -548,10 +548,11 @@ mod tests {
     fn maps_every_source_type_back_to_a_pg_declaration() {
         assert_eq!(
             Encoder::new(source_schema().into()).unwrap().declarations(),
-            r#""b" bool, "i2" int2, "i4" int4, "i8" int8, "f4" float4, "f8" float8, "t" text, "#
-                .to_owned()
-                + r#""bin" bytea, "d" date, "ts" timestamp, "tstz" timestamptz, "iv" interval, "#
-                + r#""n" numeric(38,9), "u" uuid, "j" json"#
+            concat!(
+                r#""b" bool, "i2" int2, "i4" int4, "i8" int8, "f4" float4, "f8" float8, "t" text, "#,
+                r#""bin" bytea, "d" date, "ts" timestamp, "tstz" timestamptz, "iv" interval, "#,
+                r#""n" numeric(38,9), "u" uuid, "j" json"#,
+            )
         );
     }
 
@@ -598,8 +599,10 @@ mod tests {
 
         assert_eq!(
             Encoder::new(schema.into()).unwrap().declarations(),
-            r#""i4" int4range, "i8" int8range, "n" numrange, "d" daterange, "#.to_owned()
-                + r#""ts" tsrange, "tstz" tstzrange"#
+            concat!(
+                r#""i4" int4range, "i8" int8range, "n" numrange, "d" daterange, "#,
+                r#""ts" tsrange, "tstz" tstzrange"#,
+            )
         );
     }
 

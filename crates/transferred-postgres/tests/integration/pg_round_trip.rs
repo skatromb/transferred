@@ -168,7 +168,7 @@ async fn leaves_no_staging_table_behind() {
 /// would destroy the data it is supposed to replace.
 #[tokio::test]
 async fn refuses_a_target_whose_staging_name_would_not_fit() {
-    let into = "it_".to_owned() + &"x".repeat(60);
+    let into = format!("it_{}", "x".repeat(60));
     assert_eq!(into.len(), 63);
     seed_marker_table(&into).await;
 
