@@ -72,7 +72,7 @@ async fn parquet_dogfood() {
     assert!(write_report.bytes_written > 0);
     assert_eq!(read_report.rows, total_rows);
 
-    let read = collected.lock().unwrap();
+    let read = std::mem::take(&mut *collected.lock().unwrap());
     let read_schema = read[0].schema();
     assert_eq!(read_schema.fields(), schema.fields());
 
