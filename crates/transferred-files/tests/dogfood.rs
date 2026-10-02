@@ -4,6 +4,7 @@
 #![cfg(test)]
 #![expect(clippy::arithmetic_side_effects, reason = "tests code")]
 
+use std::iter;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -172,7 +173,7 @@ fn input_batch(schema: &Arc<Schema>, rows: u8, offset: u8) -> RecordBatch {
     );
 
     let list_values = Int32Array::from((0..i32::from(rows) * 2).collect::<Vec<_>>());
-    let list_offsets = OffsetBuffer::from_lengths((0..rows).map(|_| 2_usize));
+    let list_offsets = OffsetBuffer::from_lengths(iter::repeat_n(2, rows.into()));
     let list_field = Arc::new(Field::new("item", DataType::Int32, true));
     let list_arr: ArrayRef = Arc::new(ListArray::new(
         list_field,
