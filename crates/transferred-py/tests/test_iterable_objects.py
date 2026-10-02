@@ -22,7 +22,7 @@ class _OrderModel(BaseModel):
     total: float
 
 
-def test_transfer_auto_coerces_dataclass(out: Path) -> None:
+def test_transfer_auto_coerces_dataclass(out: Path):
     rows = [_OrderDataclass(id=row_id, total=_TOTAL) for row_id in range(5)]
 
     assert run_transfer(rows, out) == 5
@@ -31,7 +31,7 @@ def test_transfer_auto_coerces_dataclass(out: Path) -> None:
     assert set(read_back.column_names) == {"id", "total"}
 
 
-def test_transfer_auto_coerces_pydantic(out: Path) -> None:
+def test_transfer_auto_coerces_pydantic(out: Path):
     rows = [_OrderModel(id=row_id, total=_TOTAL) for row_id in range(4)]
 
     assert run_transfer(rows, out) == 4

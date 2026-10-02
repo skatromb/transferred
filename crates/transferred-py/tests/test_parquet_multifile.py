@@ -20,7 +20,7 @@ def _write_seed(path: Path, ids: list[int]) -> None:
     pq.write_table(table, path)
 
 
-def test_glob_matches_multiple_files(tmp_path: Path, out_dir: Path) -> None:
+def test_glob_matches_multiple_files(tmp_path: Path, out_dir: Path):
     _write_seed(tmp_path / "a.parquet", [1, 2, 3])
     _write_seed(tmp_path / "b.parquet", [4, 5])
 
@@ -34,7 +34,7 @@ def test_glob_matches_multiple_files(tmp_path: Path, out_dir: Path) -> None:
     assert pq.read_table(out_dir).num_rows == 5
 
 
-def test_glob_no_match_raises(tmp_path: Path, out_dir: Path) -> None:
+def test_glob_no_match_raises(tmp_path: Path, out_dir: Path):
     with pytest.raises(SourceError, match="matched no files"):
         Transfer(
             source=FilesSource(str(tmp_path / "missing-*.parquet")),
@@ -42,7 +42,7 @@ def test_glob_no_match_raises(tmp_path: Path, out_dir: Path) -> None:
         ).run()
 
 
-def test_explicit_list_of_paths(tmp_path: Path, out_dir: Path) -> None:
+def test_explicit_list_of_paths(tmp_path: Path, out_dir: Path):
     first = tmp_path / "a.parquet"
     second = tmp_path / "b.parquet"
     _write_seed(first, [10, 20])
@@ -56,7 +56,7 @@ def test_explicit_list_of_paths(tmp_path: Path, out_dir: Path) -> None:
     assert report.rows == 5
 
 
-def test_literal_string_without_wildcards(tmp_path: Path, out_dir: Path) -> None:
+def test_literal_string_without_wildcards(tmp_path: Path, out_dir: Path):
     seed = tmp_path / "seed.parquet"
     _write_seed(seed, [1, 2, 3])
 
@@ -68,7 +68,7 @@ def test_literal_string_without_wildcards(tmp_path: Path, out_dir: Path) -> None
     assert report.rows == 3
 
 
-def test_missing_literal_path_raises(tmp_path: Path, out_dir: Path) -> None:
+def test_missing_literal_path_raises(tmp_path: Path, out_dir: Path):
     with pytest.raises(TransferredError):
         Transfer(
             source=FilesSource(str(tmp_path / "does-not-exist.parquet")),
@@ -76,7 +76,7 @@ def test_missing_literal_path_raises(tmp_path: Path, out_dir: Path) -> None:
         ).run()
 
 
-def test_directory_among_paths_raises_clearly(tmp_path: Path, out_dir: Path) -> None:
+def test_directory_among_paths_raises_clearly(tmp_path: Path, out_dir: Path):
     seed = tmp_path / "seed.parquet"
     _write_seed(seed, [1, 2, 3])
     subdir = tmp_path / "subdir"

@@ -20,10 +20,10 @@ def _run(out: Path) -> RunReport:
     return Transfer(source=source, destination=FilesDestination(out)).run()
 
 
-def test_duration_is_measured(out: Path) -> None:
+def test_duration_is_measured(out: Path):
     assert _run(out).duration_seconds > 0
 
 
-def test_repr_renders_one_line_of_fields(out: Path) -> None:
+def test_repr_renders_one_line_of_fields(out: Path):
     """`repr` is what a debugger and a failed assert show; `str` is the run summary."""
     assert re.fullmatch(_REPR, repr(_run(out)))

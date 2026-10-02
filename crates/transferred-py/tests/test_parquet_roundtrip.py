@@ -21,7 +21,7 @@ def _build_input_table() -> pa.Table:
     )
 
 
-def test_parquet_write_then_read(tmp_path: Path) -> None:
+def test_parquet_write_then_read(tmp_path: Path):
     # Arrange — write a seed Parquet via pyarrow so a FilesSource has something to read.
     expected = _build_input_table()
     seed = tmp_path / "seed.parquet"
