@@ -13,7 +13,9 @@ _EXAMPLES = Path(__file__).resolve().parent.parent.parent / "examples"
 
 
 @pytest.fixture(autouse=True)
-def _doctest_workdir(request, tmp_path, monkeypatch):
+def _doctest_workdir(
+    request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     if isinstance(request.node, pytest.DoctestItem):
         shutil.copy(_EXAMPLES / "small.parquet", tmp_path / "small.parquet")
         monkeypatch.chdir(tmp_path)

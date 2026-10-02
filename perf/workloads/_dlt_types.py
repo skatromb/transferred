@@ -8,15 +8,18 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import pyarrow as pa
 
 from perf.data import CAST_TO_TEXT
 
+if TYPE_CHECKING:
+    from sqlalchemy import Select, Table
 
-def cast_unmappable_to_text(query: Any, table: Any) -> Any:
+
+def cast_unmappable_to_text(query: Select[Any], table: Table) -> Select[Any]:
     """Rewrite `query` so Postgres casts to text what dlt cannot read natively.
 
     Passed as `query_adapter_callback`. connectorx panics in Rust on range and
@@ -34,7 +37,7 @@ def cast_unmappable_to_text(query: Any, table: Any) -> Any:
     return query.with_only_columns(*columns)
 
 
-def to_loadable_arrow(batch: Any) -> Any:
+def to_loadable_arrow(batch: pa.RecordBatch) -> pa.RecordBatch:
     """Rewrite `batch` into the Arrow types dlt's Postgres destination accepts."""
     for index, field in enumerate(batch.schema):
         column = _loadable_column(batch.column(index), field)
@@ -44,7 +47,7 @@ def to_loadable_arrow(batch: Any) -> Any:
     return batch
 
 
-def _loadable_column(column: Any, field: Any) -> Any:
+def _loadable_column(column: pa.Array, field: pa.Field) -> pa.Array:
     r"""One column in a type dlt's Postgres destination accepts.
 
     Three separate gaps:
@@ -69,6 +72,6 @@ def _loadable_column(column: Any, field: Any) -> Any:
     return column
 
 
-def _as_text(column: Any, spell: Callable[[Any], str]) -> Any:
+def _as_text(column: pa.Array, spell: Callable[[Any], str]) -> pa.Array:
     """`column` as strings, `spell` applied cell by cell."""
     return pa.array([spell(cell) for cell in column.to_pylist()])

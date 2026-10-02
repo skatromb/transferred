@@ -64,7 +64,7 @@ def _to_dicts(iterable: Iterable[Row]) -> Iterator[dict[str, Any]]:
     return map(convert, chain([first_row], iterator))
 
 
-def _converter_for(row: Any) -> Callable[[Any], dict[str, Any]]:
+def _converter_for(row: Row) -> Callable[[Any], dict[str, Any]]:
     """Return a `row` → `dict[str, Any]` converter for `row`'s type.
 
     Supported row types: `dict`, `@dataclass` instance, `pydantic.BaseModel`.

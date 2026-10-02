@@ -64,4 +64,7 @@ doctest_optionflags = "ELLIPSIS"
 extend-exclude = ["python/transferred/_native/__init__.pyi"]
 
 [tool.ruff.lint]
-extend-select = ["FBT"]
+extend-select = ["ANN", "FBT"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN201"]
