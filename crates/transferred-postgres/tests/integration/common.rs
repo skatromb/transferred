@@ -11,7 +11,7 @@ use testcontainers_modules::postgres::Postgres;
 use testcontainers_modules::testcontainers::runners::AsyncRunner as _;
 use testcontainers_modules::testcontainers::{ContainerAsync, ContainerRequest, ImageExt as _};
 use tokio::sync::OnceCell;
-use transferred_core::Source;
+use transferred_core::BoxedSource;
 use transferred_postgres::PostgresSource;
 
 /// Ids of the containers this run started, for [`reap`] to remove.
@@ -118,7 +118,7 @@ pub(crate) async fn read_table(table: &str) -> RecordBatch {
 }
 
 /// Drains every partition of `source` into one `RecordBatch`.
-pub(crate) async fn collect(source: Box<dyn Source + Send>) -> RecordBatch {
+pub(crate) async fn collect(source: BoxedSource) -> RecordBatch {
     let partitions = source.stream_partitions().await.expect("stream partitions");
 
     // `flatten` keeps partitions sequential, so row order stays deterministic.

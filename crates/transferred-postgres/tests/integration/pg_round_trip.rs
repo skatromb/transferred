@@ -9,13 +9,15 @@ use arrow::array::{Int64Array, RecordBatch};
 use arrow_schema::{DataType, Field, Schema};
 use async_trait::async_trait;
 use futures::{StreamExt as _, stream};
-use transferred_core::{BatchStream, Result, RunReport, Source, Transfer, TransferredError};
+use transferred_core::{
+    BatchStream, BoxedSource, Result, RunReport, Source, Transfer, TransferredError,
+};
 use transferred_postgres::{PostgresDestination, PostgresSource, STAGING_SUFFIX};
 
 use crate::common::{client, exec, read_table, start_seeded_postgres, table_exists};
 
 /// Runs a transfer from `source` into `into`, handing back the result so failures stay assertable.
-async fn try_transfer(source: Box<dyn Source + Send>, into: &str) -> Result<RunReport> {
+async fn try_transfer(source: BoxedSource, into: &str) -> Result<RunReport> {
     Transfer::new(
         source,
         Box::new(PostgresDestination::new(
@@ -28,7 +30,7 @@ async fn try_transfer(source: Box<dyn Source + Send>, into: &str) -> Result<RunR
 }
 
 /// Source reading a whole fixture table.
-async fn pg_source(table: &str) -> Box<dyn Source + Send> {
+async fn pg_source(table: &str) -> BoxedSource {
     Box::new(PostgresSource::new(
         start_seeded_postgres().await,
         table.to_owned(),

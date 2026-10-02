@@ -23,16 +23,22 @@ pub trait Destination: Send {
     async fn write_partitions(self: Box<Self>, partitions: Vec<BatchStream>) -> Result<RunReport>;
 }
 
+/// Any `Source`, boxed so a `Transfer` can take it without knowing its type.
+pub type BoxedSource = Box<dyn Source>;
+
+/// Any `Destination`, boxed so a `Transfer` can take it without knowing its type.
+pub type BoxedDestination = Box<dyn Destination>;
+
 /// Orchestrates a single end-to-end run from a `Source` to a `Destination`.
 pub struct Transfer {
-    source: Box<dyn Source>,
-    destination: Box<dyn Destination>,
+    source: BoxedSource,
+    destination: BoxedDestination,
 }
 
 impl Transfer {
     /// Builds a transfer.
     #[must_use]
-    pub fn new(source: Box<dyn Source>, destination: Box<dyn Destination>) -> Self {
+    pub fn new(source: BoxedSource, destination: BoxedDestination) -> Self {
         Self {
             source,
             destination,
