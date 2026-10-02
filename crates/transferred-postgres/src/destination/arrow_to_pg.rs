@@ -26,9 +26,7 @@ use transferred_core::{AnyError, Result, TransferredError};
 
 use crate::geoarrow::{self, GEOGRAPHY, GEOMETRY};
 use crate::pg_range::PgRange;
-
-/// PG counts sub-second time in microseconds; Arrow intervals count nanoseconds.
-const NANOS_PER_MICRO: i64 = 1_000;
+use crate::{NANOS_PER_MICRO, UUID_BYTES};
 
 /// Field length that means NULL.
 const NULL_FIELD: i32 = -1;
@@ -191,7 +189,7 @@ impl Encoding {
                     .try_extension_type()
                     .map_err(TransferredError::in_destination)?,
             ),
-            (ArrowType::FixedSizeBinary(16), Some(Uuid::NAME)) => Self::Uuid,
+            (ArrowType::FixedSizeBinary(UUID_BYTES), Some(Uuid::NAME)) => Self::Uuid,
             (ArrowType::Struct(_), Some(PgRange::NAME)) => Self::range(field.data_type())?,
             // Untagged types, and `arrow.opaque`, whose type name the destination deliberately drops.
             (data_type, _) => Self::plain(data_type)?,
