@@ -212,7 +212,7 @@ struct FailsAfterFirstBatch(RecordBatch);
 #[async_trait]
 impl Source for FailsAfterFirstBatch {
     async fn stream_partitions(self: Box<Self>) -> Result<Vec<BatchStream>> {
-        let batches = vec![Ok(self.0), Err(TransferredError::source("source died"))];
+        let batches = vec![Ok(self.0), Err(TransferredError::in_source("source died"))];
         Ok(vec![stream::iter(batches).boxed()])
     }
 }

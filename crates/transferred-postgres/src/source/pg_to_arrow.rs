@@ -79,7 +79,7 @@ impl Decoder {
     /// Appends one row, each field still exactly as Postgres sent it.
     pub fn append_row(&mut self, row: &BinaryCopyOutRow) -> Result<()> {
         for (index, column) in self.columns.iter_mut().enumerate() {
-            let raw: Option<Raw> = row.try_get(index).map_err(TransferredError::source)?;
+            let raw: Option<Raw> = row.try_get(index).map_err(TransferredError::in_source)?;
             column.append(raw.map(|raw| raw.0))?;
         }
 
@@ -136,7 +136,7 @@ impl ColumnDecoder {
         self.decoding
             .append(&mut *self.builder, bytes)
             .map_err(|error| {
-                TransferredError::source(format!("column {}: {error}", self.field.name()))
+                TransferredError::in_source(format!("column {}: {error}", self.field.name()))
             })
     }
 
@@ -358,10 +358,10 @@ fn append_range(bounds: &Decoding, range: &mut StructBuilder, bytes: Option<&[u8
     let parsed = bytes
         .map(range_from_sql)
         .transpose()
-        .map_err(TransferredError::source)?;
+        .map_err(TransferredError::in_source)?;
 
     let [lower, upper, lower_inc, upper_inc, empty] = range.field_builders_mut() else {
-        return Err(TransferredError::source(
+        return Err(TransferredError::in_source(
             "a `transferred.pg_range` column does not build the five fields it declares",
         ));
     };
@@ -406,14 +406,14 @@ fn decode<'buf, T: FromSql<'buf>>(
     bytes
         .map(|bytes| T::from_sql(pg_type, bytes))
         .transpose()
-        .map_err(TransferredError::source)
+        .map_err(TransferredError::in_source)
 }
 
 /// Strips the format version byte `jsonb` leads with, leaving the document text.
 fn jsonb(bytes: &[u8]) -> Result<&[u8]> {
     match bytes.split_first() {
         Some((1, text)) => Ok(text),
-        _ => Err(TransferredError::source(
+        _ => Err(TransferredError::in_source(
             "`jsonb` arrived in an encoding version other than 1",
         )),
     }
@@ -424,7 +424,7 @@ fn text(bytes: Option<&[u8]>) -> Result<Option<&str>> {
     bytes
         .map(str::from_utf8)
         .transpose()
-        .map_err(TransferredError::source)
+        .map_err(TransferredError::in_source)
 }
 
 /// A bound's bytes; `None` is an infinite bound, the only kind Postgres sends no value for.
@@ -455,7 +455,7 @@ fn numeric_precision_scale(typmod: i32) -> Result<(u8, u8)> {
         {
             Ok((precision, scale))
         }
-        _ => Err(TransferredError::source(format!(
+        _ => Err(TransferredError::in_source(format!(
             "`numeric({precision},{scale})` is not supported: it needs at most \
              {DECIMAL128_MAX_PRECISION} digits and a scale from 0 to its precision"
         ))),
@@ -467,7 +467,7 @@ fn decimal_units(mut decimal: Decimal, scale: u8) -> Result<i128> {
     let scale = u32::from(scale);
     decimal.rescale(scale);
     if decimal.scale() != scale {
-        return Err(TransferredError::source(format!(
+        return Err(TransferredError::in_source(format!(
             "`numeric` value {decimal} does not fit scale {scale}"
         )));
     }
@@ -481,7 +481,7 @@ fn month_day_nano(interval: PgInterval) -> Result<IntervalMonthDayNano> {
         .microseconds
         .checked_mul(NANOS_PER_MICRO)
         .ok_or_else(|| {
-            TransferredError::source(
+            TransferredError::in_source(
                 "`interval` exceeds the nanosecond range of Arrow `Interval(MonthDayNano)`",
             )
         })?;
@@ -498,7 +498,7 @@ fn cast<B: ArrayBuilder>(builder: &mut dyn ArrayBuilder) -> Result<&mut B> {
     builder
         .as_any_mut()
         .downcast_mut::<B>()
-        .ok_or_else(|| TransferredError::source(format!("column is not a {}", type_name::<B>())))
+        .ok_or_else(|| TransferredError::in_source(format!("column is not a {}", type_name::<B>())))
 }
 
 #[cfg(test)]

@@ -31,7 +31,7 @@ impl CopyIn {
         let sink = client
             .copy_in(&format!("copy {table} from stdin (format binary)"))
             .await
-            .map_err(TransferredError::destination)?;
+            .map_err(TransferredError::in_destination)?;
 
         // `bytes` restores this capacity after every `split`, so a chunk is one allocation.
         let mut buf = BytesMut::with_capacity(CHUNK_BYTES);
@@ -69,7 +69,7 @@ impl CopyIn {
             .as_mut()
             .finish()
             .await
-            .map_err(TransferredError::destination)
+            .map_err(TransferredError::in_destination)
     }
 
     /// Sends the buffered bytes and empties the buffer.
@@ -77,6 +77,6 @@ impl CopyIn {
         self.sink
             .send(self.buf.split().freeze())
             .await
-            .map_err(TransferredError::destination)
+            .map_err(TransferredError::in_destination)
     }
 }

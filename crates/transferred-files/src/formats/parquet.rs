@@ -53,11 +53,11 @@ impl FormatRead for Parquet {
     async fn read(&self, reader: Box<dyn FileReader>) -> Result<BatchStream> {
         let stream = ParquetRecordBatchStreamBuilder::new(reader)
             .await
-            .map_err(|err| TransferredError::source(format!("parquet reader init: {err}")))?
+            .map_err(|err| TransferredError::in_source(format!("parquet reader init: {err}")))?
             .build()
-            .map_err(|err| TransferredError::source(format!("parquet reader build: {err}")))?
+            .map_err(|err| TransferredError::in_source(format!("parquet reader build: {err}")))?
             .map(|result| {
-                result.map_err(|err| TransferredError::source(format!("parquet read: {err}")))
+                result.map_err(|err| TransferredError::in_source(format!("parquet read: {err}")))
             });
         Ok(Box::pin(stream))
     }
@@ -80,24 +80,24 @@ impl FormatWrite for Parquet {
             .build();
 
         let mut arrow_writer = AsyncArrowWriter::try_new(writer, first.schema(), Some(properties))
-            .map_err(TransferredError::destination)?;
+            .map_err(TransferredError::in_destination)?;
 
         arrow_writer
             .write(&first)
             .await
-            .map_err(TransferredError::destination)?;
+            .map_err(TransferredError::in_destination)?;
 
         while let Some(batch) = batches.try_next().await? {
             arrow_writer
                 .write(&batch)
                 .await
-                .map_err(TransferredError::destination)?;
+                .map_err(TransferredError::in_destination)?;
         }
 
         let metadata = arrow_writer
             .close()
             .await
-            .map_err(TransferredError::destination)?;
-        u64::try_from(metadata.file_metadata().num_rows()).map_err(TransferredError::destination)
+            .map_err(TransferredError::in_destination)?;
+        u64::try_from(metadata.file_metadata().num_rows()).map_err(TransferredError::in_destination)
     }
 }
