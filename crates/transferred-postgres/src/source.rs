@@ -4,6 +4,7 @@ mod pg_to_arrow;
 
 use async_trait::async_trait;
 use futures::{StreamExt as _, TryStreamExt as _};
+use tokio_postgres::Client;
 use tokio_postgres::binary_copy::BinaryCopyOutStream;
 use transferred_core::{BatchStream, Result, Source, TransferredError};
 
@@ -35,39 +36,47 @@ impl Source for PostgresSource {
         let client = connect(&self.dsn)
             .await
             .map_err(TransferredError::in_source)?;
+        let table = verified_table(&client, &self.table).await?;
 
-        let verified_table: String = client
-            .query_one("SELECT $1::text::regclass::text", &[&self.table])
-            .await
-            .map_err(TransferredError::in_source)?
-            .get(0);
-
-        let query = client
-            .prepare(&format!("select * from {verified_table}"))
-            .await
-            .map_err(TransferredError::in_source)?;
-
-        let types: Vec<_> = query
-            .columns()
-            .iter()
-            .map(|column| column.type_().clone())
-            .collect();
-        let decoder = Decoder::derive(query.columns())?;
-
-        let copy = client
-            .copy_out(&format!(
-                "copy (select * from {verified_table}) to stdout (format binary)"
-            ))
-            .await
-            .map_err(TransferredError::in_source)?;
-
-        let batches = BinaryCopyOutStream::new(copy, &types)
-            .try_chunks(BATCH_ROWS)
-            .map(move |rows| {
-                let rows = rows.map_err(|failed| TransferredError::in_source(failed.1))?;
-                decoder.decode(&rows)
-            });
-
-        Ok(vec![batches.boxed()])
+        Ok(vec![batches(&client, &table).await?])
     }
+}
+
+/// The table's name as Postgres resolves and quotes it, so anything but a table fails here.
+async fn verified_table(client: &Client, table: &str) -> Result<String> {
+    Ok(client
+        .query_one("SELECT $1::text::regclass::text", &[&table])
+        .await
+        .map_err(TransferredError::in_source)?
+        .get(0))
+}
+
+/// Streams `table` out over binary COPY, decoded into Arrow a batch at a time.
+async fn batches(client: &Client, table: &str) -> Result<BatchStream> {
+    let query = client
+        .prepare(&format!("select * from {table}"))
+        .await
+        .map_err(TransferredError::in_source)?;
+
+    let types: Vec<_> = query
+        .columns()
+        .iter()
+        .map(|column| column.type_().clone())
+        .collect();
+    let decoder = Decoder::derive(query.columns())?;
+
+    let copy = client
+        .copy_out(&format!(
+            "copy (select * from {table}) to stdout (format binary)"
+        ))
+        .await
+        .map_err(TransferredError::in_source)?;
+
+    Ok(BinaryCopyOutStream::new(copy, &types)
+        .try_chunks(BATCH_ROWS)
+        .map(move |rows| {
+            let rows = rows.map_err(|failed| TransferredError::in_source(failed.1))?;
+            decoder.decode(&rows)
+        })
+        .boxed())
 }
