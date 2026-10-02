@@ -40,7 +40,7 @@ pub struct PyRunReport {
 }
 
 impl PyRunReport {
-    pub fn new(inner: RunReport) -> Self {
+    pub const fn new(inner: RunReport) -> Self {
         Self { inner }
     }
 }
@@ -50,13 +50,13 @@ impl PyRunReport {
 impl PyRunReport {
     /// Total rows written.
     #[getter]
-    fn rows(&self) -> u64 {
+    const fn rows(&self) -> u64 {
         self.inner.rows
     }
 
     /// Total bytes written to the destination.
     #[getter]
-    fn bytes_written(&self) -> u64 {
+    const fn bytes_written(&self) -> u64 {
         self.inner.bytes_written
     }
 
@@ -68,7 +68,7 @@ impl PyRunReport {
 
     /// Wall-clock duration of the transfer, in seconds.
     #[getter]
-    fn duration_seconds(&self) -> f64 {
+    const fn duration_seconds(&self) -> f64 {
         self.inner.duration.as_secs_f64()
     }
 

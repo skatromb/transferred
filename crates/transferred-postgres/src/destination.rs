@@ -35,7 +35,7 @@ pub struct PostgresDestination {
 impl PostgresDestination {
     /// Constructs a `PostgresDestination`. No I/O performed.
     #[must_use]
-    pub fn new(dsn: String, table: String) -> Self {
+    pub const fn new(dsn: String, table: String) -> Self {
         Self { dsn, table }
     }
 }

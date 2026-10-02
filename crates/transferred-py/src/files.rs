@@ -76,7 +76,7 @@ impl PyFilesSource {
 
 impl PyFilesSource {
     /// Takes the wrapped source, leaving `None` behind.
-    pub(crate) fn take(&mut self) -> Option<FilesSource> {
+    pub(crate) const fn take(&mut self) -> Option<FilesSource> {
         self.inner.take()
     }
 }
@@ -107,7 +107,7 @@ impl PyFilesDestination {
 
 impl PyFilesDestination {
     /// Takes the wrapped destination, leaving `None` behind.
-    pub(crate) fn take(&mut self) -> Option<FilesDestination> {
+    pub(crate) const fn take(&mut self) -> Option<FilesDestination> {
         self.inner.take()
     }
 }

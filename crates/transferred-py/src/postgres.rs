@@ -25,7 +25,7 @@ impl PyPostgresSource {
     ))]
     #[new]
     #[pyo3(signature = (dsn, table))]
-    fn new(dsn: String, table: String) -> Self {
+    const fn new(dsn: String, table: String) -> Self {
         Self {
             inner: Some(PostgresSource::new(dsn, table)),
         }
@@ -34,7 +34,7 @@ impl PyPostgresSource {
 
 impl PyPostgresSource {
     /// Takes the wrapped source, leaving `None` behind.
-    pub(crate) fn take(&mut self) -> Option<PostgresSource> {
+    pub(crate) const fn take(&mut self) -> Option<PostgresSource> {
         self.inner.take()
     }
 }
@@ -59,7 +59,7 @@ impl PyPostgresDestination {
     ))]
     #[new]
     #[pyo3(signature = (dsn, table))]
-    fn new(dsn: String, table: String) -> Self {
+    const fn new(dsn: String, table: String) -> Self {
         Self {
             inner: Some(PostgresDestination::new(dsn, table)),
         }
@@ -68,7 +68,7 @@ impl PyPostgresDestination {
 
 impl PyPostgresDestination {
     /// Takes the wrapped destination, leaving `None` behind.
-    pub(crate) fn take(&mut self) -> Option<PostgresDestination> {
+    pub(crate) const fn take(&mut self) -> Option<PostgresDestination> {
         self.inner.take()
     }
 }

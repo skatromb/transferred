@@ -47,7 +47,7 @@ impl PyArrowSource {
 
 impl PyArrowSource {
     /// Takes the wrapped source, leaving `None` behind.
-    pub(crate) fn take(&mut self) -> Option<ArrowSource> {
+    pub(crate) const fn take(&mut self) -> Option<ArrowSource> {
         self.inner.take()
     }
 }
