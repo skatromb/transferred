@@ -12,7 +12,7 @@ use transferred_postgres::{PostgresDestination, PostgresSource};
 /// Internal `PyO3` wrapper around `transferred_postgres::PostgresSource`.
 #[gen_stub_pyclass]
 #[pyclass(name = "_PostgresSource", module = "transferred._native", unsendable)]
-pub struct PyPostgresSource {
+pub(crate) struct PyPostgresSource {
     inner: Option<PostgresSource>,
 }
 
@@ -46,7 +46,7 @@ impl PyPostgresSource {
     module = "transferred._native",
     unsendable
 )]
-pub struct PyPostgresDestination {
+pub(crate) struct PyPostgresDestination {
     inner: Option<PostgresDestination>,
 }
 

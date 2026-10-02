@@ -18,9 +18,14 @@ use transferred_files::{
 
 /// Internal `PyO3` wrapper around `transferred_files::Parquet`.
 #[gen_stub_pyclass]
-#[pyclass(name = "_Parquet", module = "transferred._native", unsendable)]
-#[expect(missing_copy_implementations, reason = "No need in it")]
-pub struct PyParquet {
+#[pyclass(
+    name = "_Parquet",
+    module = "transferred._native",
+    unsendable,
+    skip_from_py_object
+)]
+#[derive(Clone)]
+pub(crate) struct PyParquet {
     inner: Parquet,
 }
 
@@ -40,7 +45,7 @@ impl PyParquet {
 /// Internal `PyO3` wrapper around `transferred_files::FilesSource`.
 #[gen_stub_pyclass]
 #[pyclass(name = "_FilesSource", module = "transferred._native", unsendable)]
-pub struct PyFilesSource {
+pub(crate) struct PyFilesSource {
     inner: Option<FilesSource>,
 }
 
@@ -85,7 +90,7 @@ impl PyFilesSource {
 /// Internal `PyO3` wrapper around `transferred_files::FilesDestination`.
 #[gen_stub_pyclass]
 #[pyclass(name = "_FilesDestination", module = "transferred._native", unsendable)]
-pub struct PyFilesDestination {
+pub(crate) struct PyFilesDestination {
     inner: Option<FilesDestination>,
 }
 

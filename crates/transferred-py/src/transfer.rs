@@ -21,7 +21,7 @@ use crate::report::PyRunReport;
     unsendable,
     subclass
 )]
-pub struct PyTransfer {
+pub(crate) struct PyTransfer {
     source: Option<Box<dyn Source + Send>>,
     destination: Option<Box<dyn Destination + Send>>,
 }

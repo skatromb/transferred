@@ -25,7 +25,7 @@ use transferred_core::{BatchStream, Result, Source, TransferredError};
 /// the user-facing Python `ArrowSource`; not intended to be used directly.
 #[gen_stub_pyclass]
 #[pyclass(name = "_ArrowSource", module = "transferred._native", unsendable)]
-pub struct PyArrowSource {
+pub(crate) struct PyArrowSource {
     inner: Option<ArrowSource>,
 }
 
