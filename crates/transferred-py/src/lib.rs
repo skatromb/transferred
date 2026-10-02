@@ -1,5 +1,6 @@
 //! Python bindings for `transferred`. Exposes `_native` extension module.
 #![doc(html_logo_url = "https://raw.githubusercontent.com/skatromb/transferred/main/logo.png")]
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 mod arrow;
 mod error;

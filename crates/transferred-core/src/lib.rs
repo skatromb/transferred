@@ -1,5 +1,6 @@
 //! `transferred-core` — connector-agnostic types: traits, error type, run report.
 #![doc(html_logo_url = "https://raw.githubusercontent.com/skatromb/transferred/main/logo.png")]
+#![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 mod error;
 mod report;
