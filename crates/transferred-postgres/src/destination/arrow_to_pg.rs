@@ -95,7 +95,12 @@ impl Encoder {
     }
 
     /// Appends one COPY row: the field count, then every field.
-    pub(crate) fn write_row(&self, batch: &RecordBatch, row_num: usize, buf: &mut BytesMut) -> Result<()> {
+    pub(crate) fn write_row(
+        &self,
+        batch: &RecordBatch,
+        row_num: usize,
+        buf: &mut BytesMut,
+    ) -> Result<()> {
         buf.put_i16(self.field_count);
         for (column, array) in self.columns.iter().zip(batch.columns()) {
             column.write_field(array.as_ref(), row_num, buf)?;

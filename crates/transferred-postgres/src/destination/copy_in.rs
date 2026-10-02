@@ -46,7 +46,11 @@ impl CopyIn {
     }
 
     /// Writes one COPY row per Arrow row, sending whenever the buffer fills.
-    pub(crate) async fn write_batch(&mut self, encoder: &Encoder, batch: &RecordBatch) -> Result<()> {
+    pub(crate) async fn write_batch(
+        &mut self,
+        encoder: &Encoder,
+        batch: &RecordBatch,
+    ) -> Result<()> {
         encoder.check(batch)?;
 
         for row_num in 0..batch.num_rows() {
