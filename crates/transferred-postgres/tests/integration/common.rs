@@ -25,10 +25,12 @@ unsafe fn reap() {
 
     // Shelling out, because Rust destroys the main thread's locals before atexit runs and tokio
     // cannot start without them.
-    let _ = std::process::Command::new("docker")
-        .args(["rm", "--force", "--volumes"])
-        .args(ids)
-        .output();
+    drop(
+        std::process::Command::new("docker")
+            .args(["rm", "--force", "--volumes"])
+            .args(ids)
+            .output(),
+    );
 }
 
 /// Image every fixture runs: Postgres with `PostGIS`, published for arm64 as well as amd64.

@@ -17,7 +17,7 @@ fn install_logging(py: Python<'_>) -> PyResult<()> {
     // Not the default `LoggersAndLevels`: caching levels would freeze `setLevel` calls made later.
     let logger = Logger::new(py, Caching::Loggers)?.set_prefix("transferred");
     // Already installed means an earlier import wired this up.
-    let _ = logger.install();
+    drop(logger.install());
     Ok(())
 }
 
