@@ -39,40 +39,40 @@ unsafe fn reap() {
 const IMAGE: &str = "imresamu/postgis";
 const IMAGE_TAG: &str = "18-3.6";
 
-/// A running container and the DSN that reaches it.
-pub(crate) type RunningPostgres = (ContainerAsync<Postgres>, String);
-
-/// Boots `request` on this suite's image, registers it for reaping, and returns it with its DSN.
+/// Boots `request` on this suite's image and registers it for reaping.
 pub(crate) async fn start_pg_container(
     request: impl Into<ContainerRequest<Postgres>>,
-) -> RunningPostgres {
+) -> ContainerAsync<Postgres> {
     let container = request
         .with_name(IMAGE)
         .with_tag(IMAGE_TAG)
         .start()
         .await
         .expect("start postgres");
-    let port = container
-        .get_host_port_ipv4(5432)
-        .await
-        .expect("map postgres port");
     RUNNING
         .lock()
         .expect("reaper lock")
         .push(container.id().to_owned());
 
-    (
-        container,
-        format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres"),
-    )
+    container
+}
+
+/// DSN that reaches `container` from the host.
+pub(crate) async fn dsn(container: &ContainerAsync<Postgres>) -> String {
+    let port = container
+        .get_host_port_ipv4(5432)
+        .await
+        .expect("map postgres port");
+
+    format!("postgres://postgres:postgres@127.0.0.1:{port}/postgres")
 }
 
 /// Postgres container, started once per test binary and seeded on first boot.
-static POSTGRES: OnceCell<RunningPostgres> = OnceCell::const_new();
+static POSTGRES: OnceCell<ContainerAsync<Postgres>> = OnceCell::const_new();
 
 /// Starts this binary's seeded Postgres, once, and hands back its connection string.
 pub(crate) async fn start_seeded_postgres() -> String {
-    let (_container, dsn) = POSTGRES
+    let container = POSTGRES
         .get_or_init(|| {
             start_pg_container(
                 Postgres::default().with_init_sql(include_bytes!("../pg_seed.sql").to_vec()),
@@ -80,7 +80,7 @@ pub(crate) async fn start_seeded_postgres() -> String {
         })
         .await;
 
-    dsn.clone()
+    dsn(container).await
 }
 
 /// Connects to this binary's Postgres container, driving the connection in the background.

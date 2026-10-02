@@ -2,39 +2,35 @@
 //! source derives is checked against what a Parquet file can actually carry. Needs Docker.
 
 use std::error::Error as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use tempfile::{TempDir, tempdir};
+use tempfile::tempdir;
 use transferred_core::{Result, RunReport, Transfer, TransferredError};
 use transferred_files::{Compression, FilesDestination, FilesSource, GlobOrPaths, Parquet};
 use transferred_postgres::PostgresSource;
 
 use crate::common::{collect, read_table, start_seeded_postgres};
 
-/// Writes `table` to one Parquet file, handing back the result so failures stay assertable.
-/// The `TempDir` comes along because dropping it takes the file with it.
-async fn try_parquet(table: &str) -> (Result<RunReport>, TempDir) {
-    let dir = tempdir().expect("temp dir");
+/// Writes `table` to one Parquet file in `dir`, handing back the result so failures stay assertable.
+async fn try_parquet(table: &str, dir: &Path) -> Result<RunReport> {
     let source = PostgresSource::new(start_seeded_postgres().await, table.to_owned());
-    let report = Transfer::new(
+    Transfer::new(
         Box::new(source),
         Box::new(FilesDestination::new(
-            dir.path().join(table),
+            dir.join(table),
             Arc::new(Parquet::new(Compression::Zstd)),
             true,
         )),
     )
     .run()
-    .await;
-
-    (report, dir)
+    .await
 }
 
 /// Every fixture table must reach Parquet and come back with the same schema and values.
 async fn assert_survives_parquet(table: &str) {
-    let (run, _dir) = try_parquet(table).await;
-    let report = run.expect("write parquet");
+    let dir = tempdir().expect("temp dir");
+    let report = try_parquet(table, dir.path()).await.expect("write parquet");
 
     let parts = report.written_objects.iter().map(PathBuf::from).collect();
     let back = collect(Box::new(FilesSource::new(
@@ -59,9 +55,11 @@ async fn primitives_reach_parquet() {
 /// three columns down with it, there being no way yet to leave a column behind.
 #[tokio::test]
 async fn interval_stops_at_parquet() {
-    let (report, _dir) = try_parquet("it_temporal").await;
+    let dir = tempdir().expect("temp dir");
 
-    let error = report.expect_err("interval cannot be written");
+    let error = try_parquet("it_temporal", dir.path())
+        .await
+        .expect_err("interval cannot be written");
     assert!(
         matches!(error, TransferredError::Destination(_)),
         "{error:?}"
