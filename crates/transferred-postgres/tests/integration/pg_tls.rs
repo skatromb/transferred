@@ -1,16 +1,13 @@
 //! `sslmode` end to end against a Postgres started with `ssl=on`.
 
-use std::error::Error as _;
-
-use arrow::array::{AsArray as _, RecordBatch};
-use futures::{StreamExt as _, TryStreamExt as _, stream};
+use arrow::array::AsArray as _;
 use testcontainers_modules::postgres::Postgres;
 use testcontainers_modules::testcontainers::{ContainerAsync, ImageExt as _};
 use tokio::sync::OnceCell;
-use transferred_core::{Result, Source as _};
+use transferred_core::Result;
 use transferred_postgres::PostgresSource;
 
-use crate::common::{dsn, start_pg_container};
+use crate::common::{detail, dsn, start_pg_container, try_collect};
 
 /// Entrypoint that gives the container a certificate and starts Postgres with TLS on.
 const ENABLE_SSL: &str = include_str!("../pg_enable_ssl.sh");
@@ -43,12 +40,8 @@ async fn start_tls_postgres(sslmode: &str) -> String {
 
 /// Whether a source reading `dsn` ends up on an encrypted socket.
 async fn ssl_in_use(dsn: String) -> Result<bool> {
-    let partitions = Box::new(PostgresSource::new(dsn, SESSION_SSL_VIEW.to_owned()))
-        .stream_partitions()
-        .await?;
-
-    let batches: Vec<RecordBatch> = stream::iter(partitions).flatten().try_collect().await?;
-    let batch = batches.first().expect("one batch");
+    let source = PostgresSource::new(dsn, SESSION_SSL_VIEW.to_owned());
+    let batch = try_collect(Box::new(source)).await?;
 
     Ok(batch.column(0).as_boolean().value(0))
 }
@@ -75,6 +68,5 @@ async fn verify_full_rejects_a_self_signed_certificate() {
         .await
         .expect_err("a self-signed certificate must not verify");
 
-    let cause = error.source().map(ToString::to_string);
-    assert_eq!(cause.as_deref(), Some("error performing TLS handshake"));
+    assert_eq!(detail(&error), "error performing TLS handshake");
 }

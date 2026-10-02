@@ -107,7 +107,7 @@ async fn primitives() {
         column("t", StringArray::from(vec![Some("one"), Some(""), None])),
         column(
             "bin",
-            BinaryArray::from(vec![Some(&[1_u8, 2][..]), Some(&[][..]), None]),
+            BinaryArray::from_iter([Some(vec![1, 2]), Some(vec![]), None]),
         ),
     ]);
 
@@ -363,9 +363,9 @@ async fn unmapped_types() {
         tagged(
             "mac",
             Opaque::new("macaddr", "PostgreSQL"),
-            BinaryArray::from(vec![
-                Some(&[0x08, 0x00, 0x2b, 0x01, 0x02, 0x03][..]),
-                Some(&[0xff; 6][..]),
+            BinaryArray::from_iter([
+                Some(vec![0x08, 0x00, 0x2b, 0x01, 0x02, 0x03]),
+                Some(vec![0xff; 6]),
                 None,
             ]),
         ),
@@ -374,11 +374,7 @@ async fn unmapped_types() {
         tagged(
             "point",
             Opaque::new("it_point", "PostgreSQL"),
-            BinaryArray::from(vec![
-                Some(one_two.as_slice()),
-                Some(three_null.as_slice()),
-                None,
-            ]),
+            BinaryArray::from_iter([Some(one_two), Some(three_null), None]),
         ),
     ]);
 

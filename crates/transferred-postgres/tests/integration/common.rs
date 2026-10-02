@@ -1,5 +1,6 @@
 //! Throwaway Postgres container, seeded by `pg_seed.sql`, shared by the integration tests.
 
+use std::error::Error as _;
 use std::mem;
 use std::process::Command;
 use std::sync::Mutex;
@@ -11,7 +12,7 @@ use testcontainers_modules::postgres::Postgres;
 use testcontainers_modules::testcontainers::runners::AsyncRunner as _;
 use testcontainers_modules::testcontainers::{ContainerAsync, ContainerRequest, ImageExt as _};
 use tokio::sync::OnceCell;
-use transferred_core::BoxedSource;
+use transferred_core::{BoxedSource, Result, TransferredError};
 use transferred_postgres::PostgresSource;
 
 /// Ids of the containers this run started, for [`reap`] to remove.
@@ -119,15 +120,27 @@ pub(crate) async fn read_table(table: &str) -> RecordBatch {
 
 /// Drains every partition of `source` into one `RecordBatch`.
 pub(crate) async fn collect(source: BoxedSource) -> RecordBatch {
-    let partitions = source.stream_partitions().await.expect("stream partitions");
+    try_collect(source).await.expect("collect batches")
+}
+
+/// Drains every partition of `source` into one `RecordBatch`, handing back failures.
+pub(crate) async fn try_collect(source: BoxedSource) -> Result<RecordBatch> {
+    let partitions = source.stream_partitions().await?;
 
     // `flatten` keeps partitions sequential, so row order stays deterministic.
-    let batches: Vec<RecordBatch> = stream::iter(partitions)
-        .flatten()
-        .try_collect()
-        .await
-        .expect("collect batches");
+    let batches: Vec<RecordBatch> = stream::iter(partitions).flatten().try_collect().await?;
 
     let schema = batches.first().expect("at least one batch").schema();
-    concat_batches(&schema, &batches).expect("concat batches")
+    Ok(concat_batches(&schema, &batches)?)
+}
+
+/// Asserts `copy` holds `original` unchanged, and the run counted every row of it.
+pub(crate) fn assert_copied(original: &RecordBatch, rows: u64, copy: &RecordBatch) {
+    assert_eq!(usize::try_from(rows), Ok(original.num_rows()));
+    assert_eq!(copy, original);
+}
+
+/// Text of the connector error underneath a `TransferredError`.
+pub(crate) fn detail(error: &TransferredError) -> String {
+    error.source().map(ToString::to_string).unwrap_or_default()
 }
