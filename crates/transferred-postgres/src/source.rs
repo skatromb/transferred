@@ -52,7 +52,7 @@ impl Source for PostgresSource {
             .iter()
             .map(|column| column.type_().clone())
             .collect();
-        let mut decoder = Decoder::derive(query.columns())?;
+        let decoder = Decoder::derive(query.columns())?;
 
         let copy = client
             .copy_out(&format!(
@@ -64,11 +64,8 @@ impl Source for PostgresSource {
         let batches = BinaryCopyOutStream::new(copy, &types)
             .try_chunks(BATCH_ROWS)
             .map(move |rows| {
-                for row in rows.map_err(|failed| TransferredError::in_source(failed.1))? {
-                    decoder.append_row(&row)?;
-                }
-
-                decoder.finish()
+                let rows = rows.map_err(|failed| TransferredError::in_source(failed.1))?;
+                decoder.decode(&rows)
             });
 
         Ok(vec![batches.boxed()])

@@ -3,15 +3,15 @@
 //! A statement's columns map once into `ColumnDecoder`s; every value decodes itself through its
 //! `Decoding`, straight into the Arrow builder its column's array comes out of.
 
-use std::any::type_name;
 use std::result;
+use std::sync::Arc;
 
 use arrow::array::{
-    ArrayBuilder, ArrayRef, BinaryBuilder, BooleanBuilder, Date32Builder, Decimal128Builder,
-    FixedSizeBinaryBuilder, Float32Builder, Float64Builder, Int16Builder, Int32Builder,
-    Int64Builder, IntervalMonthDayNanoBuilder, RecordBatch, StringBuilder, StructBuilder,
-    TimestampMicrosecondBuilder, make_builder,
+    ArrayRef, BinaryArray, BooleanArray, Date32Array, Decimal128Array, FixedSizeBinaryArray,
+    Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, IntervalMonthDayNanoArray,
+    RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
 };
+use arrow::buffer::NullBuffer;
 use arrow::datatypes::{DECIMAL128_MAX_PRECISION, Date32Type, IntervalMonthDayNano};
 use arrow_schema::extension::{Json, Opaque, Uuid};
 use arrow_schema::{
@@ -55,43 +55,56 @@ const VENDOR: &str = "PostgreSQL";
 /// Bytes an Arrow `uuid` holds, which is also what PG sends.
 const UUID_BYTES: i32 = 16;
 
-/// Arrow schema + per-column decoders, mapped once from PG column metadata.
+/// Arrow schema + per-column decodings, mapped once from PG column metadata.
 pub struct Decoder {
     schema: SchemaRef,
-    columns: Vec<ColumnDecoder>,
+    decodings: Vec<Decoding>,
 }
 
 impl Decoder {
     /// Maps a prepared statement's columns onto Arrow columns. All fields nullable.
     pub fn derive(columns: &[PgColumn]) -> Result<Self> {
-        let columns = columns
+        let (fields, decodings): (Vec<_>, Vec<_>) = columns
             .iter()
-            .map(ColumnDecoder::new)
-            .collect::<Result<Vec<_>>>()?;
-        let fields: Vec<_> = columns.iter().map(|column| column.field.clone()).collect();
+            .map(|column| {
+                let decoding = Decoding::new(column)?;
+                Ok((decoding.field(column.name())?, decoding))
+            })
+            .collect::<Result<_>>()?;
 
         Ok(Self {
             schema: Schema::new(fields).into(),
-            columns,
+            decodings,
         })
     }
 
-    /// Appends one row, each field still exactly as Postgres sent it.
-    pub fn append_row(&mut self, row: &BinaryCopyOutRow) -> Result<()> {
-        for (index, column) in self.columns.iter_mut().enumerate() {
-            let raw: Option<Raw> = row.try_get(index).map_err(TransferredError::in_source)?;
-            column.append(raw.map(|raw| raw.0))?;
-        }
-
-        Ok(())
-    }
-
-    /// Takes the rows appended so far as a `RecordBatch`, leaving the builders empty again.
-    pub fn finish(&mut self) -> Result<RecordBatch> {
-        let arrays = self.columns.iter_mut().map(ColumnDecoder::finish).collect();
+    /// Decodes a batch of rows, each column straight from the bytes Postgres sent for it.
+    pub fn decode(&self, rows: &[BinaryCopyOutRow]) -> Result<RecordBatch> {
+        let arrays = self
+            .decodings
+            .iter()
+            .zip(self.schema.fields().iter())
+            .enumerate()
+            .map(|(index, (decoding, field))| {
+                decoding.array(&column(rows, index)?).map_err(|error| {
+                    TransferredError::in_source(format!("column {}: {error}", field.name()))
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(RecordBatch::try_new(self.schema.clone(), arrays)?)
     }
+}
+
+/// One column's cells, each exactly as Postgres sent it; `None` where it sent a NULL.
+fn column(rows: &[BinaryCopyOutRow], index: usize) -> Result<Vec<Option<&[u8]>>> {
+    rows.iter()
+        .map(|row| {
+            row.try_get::<Option<Raw<'_>>>(index)
+                .map(|raw| raw.map(|raw| raw.0))
+        })
+        .collect::<result::Result<_, _>>()
+        .map_err(TransferredError::in_source)
 }
 
 /// A field's bytes untouched, for any type — `&[u8]`'s own `FromSql` accepts `bytea` alone.
@@ -104,41 +117,6 @@ impl<'buf> FromSql<'buf> for Raw<'buf> {
 
     fn accepts(_: &PgType) -> bool {
         true
-    }
-}
-
-/// One column of the source: the Arrow field it becomes, how its values are read, where they land.
-struct ColumnDecoder {
-    field: ArrowField,
-    decoding: Decoding,
-    builder: Box<dyn ArrayBuilder>,
-}
-
-impl ColumnDecoder {
-    fn new(column: &PgColumn) -> Result<Self> {
-        let decoding = Decoding::new(column)?;
-        let field = decoding.field(column.name())?;
-        // The builder comes off the field the batch is checked against, so the two cannot disagree.
-        let builder = make_builder(field.data_type(), 0);
-
-        Ok(Self {
-            field,
-            decoding,
-            builder,
-        })
-    }
-
-    /// Appends one value of this column, or a null where Postgres sent no bytes.
-    fn append(&mut self, bytes: Option<&[u8]>) -> Result<()> {
-        self.decoding
-            .append(&mut *self.builder, bytes)
-            .map_err(|error| {
-                TransferredError::in_source(format!("column {}: {error}", self.field.name()))
-            })
-    }
-
-    fn finish(&mut self) -> ArrayRef {
-        self.builder.finish()
     }
 }
 
@@ -286,124 +264,145 @@ impl Decoding {
         Ok(field)
     }
 
-    /// Appends one value in Postgres binary form into `builder`, or a null where PG sent no bytes.
-    fn append(&self, builder: &mut dyn ArrayBuilder, bytes: Option<&[u8]>) -> Result<()> {
-        match self {
-            Self::Bool => {
-                cast::<BooleanBuilder>(builder)?.append_option(decode(&PgType::BOOL, bytes)?);
+    /// Builds the column's array from its cells, each in Postgres binary form; `None` is a NULL.
+    #[expect(clippy::too_many_lines, reason = "one arm per Postgres type")]
+    fn array(&self, cells: &[Option<&[u8]>]) -> Result<ArrayRef> {
+        Ok(match self {
+            Self::Bool => Arc::new(decoded::<BooleanArray, bool, _>(&PgType::BOOL, cells, Ok)?),
+            Self::Int2 => Arc::new(decoded::<Int16Array, i16, _>(&PgType::INT2, cells, Ok)?),
+            Self::Int4 => Arc::new(decoded::<Int32Array, i32, _>(&PgType::INT4, cells, Ok)?),
+            Self::Int8 => Arc::new(decoded::<Int64Array, i64, _>(&PgType::INT8, cells, Ok)?),
+            Self::Float4 => Arc::new(decoded::<Float32Array, f32, _>(&PgType::FLOAT4, cells, Ok)?),
+            Self::Float8 => Arc::new(decoded::<Float64Array, f64, _>(&PgType::FLOAT8, cells, Ok)?),
+            // `json` is its text, and every Postgres text type sends its own UTF-8.
+            Self::Text | Self::Json => {
+                Arc::new(decoded::<StringArray, &str, _>(&PgType::TEXT, cells, Ok)?)
             }
-            Self::Int2 => {
-                cast::<Int16Builder>(builder)?.append_option(decode(&PgType::INT2, bytes)?);
-            }
-            Self::Int4 => {
-                cast::<Int32Builder>(builder)?.append_option(decode(&PgType::INT4, bytes)?);
-            }
-            Self::Int8 => {
-                cast::<Int64Builder>(builder)?.append_option(decode(&PgType::INT8, bytes)?);
-            }
-            Self::Float4 => {
-                cast::<Float32Builder>(builder)?.append_option(decode(&PgType::FLOAT4, bytes)?);
-            }
-            Self::Float8 => {
-                cast::<Float64Builder>(builder)?.append_option(decode(&PgType::FLOAT8, bytes)?);
-            }
-            Self::Text | Self::Json => cast::<StringBuilder>(builder)?.append_option(text(bytes)?),
-            Self::Jsonb => {
-                let json = bytes.map(jsonb).transpose()?;
-                cast::<StringBuilder>(builder)?.append_option(text(json)?);
-            }
+            Self::Jsonb => Arc::new(decoded::<StringArray, &[u8], _>(
+                &PgType::JSONB,
+                cells,
+                |document| str::from_utf8(jsonb(document)?).map_err(TransferredError::in_source),
+            )?),
             Self::Bytea | Self::Geo(_) | Self::Opaque(_) => {
-                cast::<BinaryBuilder>(builder)?.append_option(bytes);
+                Arc::new(cells.iter().copied().collect::<BinaryArray>())
             }
             Self::Uuid => {
-                let builder = cast::<FixedSizeBinaryBuilder>(builder)?;
-                match decode::<uuid::Uuid>(&PgType::UUID, bytes)? {
-                    Some(uuid) => builder.append_value(uuid.into_bytes())?,
-                    None => builder.append_null(),
-                }
+                let uuids = decoded::<Vec<_>, uuid::Uuid, _>(&PgType::UUID, cells, |uuid| {
+                    Ok(uuid.into_bytes())
+                })?;
+                Arc::new(FixedSizeBinaryArray::try_from_sparse_iter_with_size(
+                    uuids.into_iter(),
+                    UUID_BYTES,
+                )?)
             }
-            Self::Date => cast::<Date32Builder>(builder)?.append_option(
-                decode::<NaiveDate>(&PgType::DATE, bytes)?.map(Date32Type::from_naive_date),
+            Self::Date => Arc::new(decoded::<Date32Array, NaiveDate, _>(
+                &PgType::DATE,
+                cells,
+                |date| Ok(Date32Type::from_naive_date(date)),
+            )?),
+            Self::Timestamp => Arc::new(decoded::<TimestampMicrosecondArray, NaiveDateTime, _>(
+                &PgType::TIMESTAMP,
+                cells,
+                |timestamp| Ok(timestamp.and_utc().timestamp_micros()),
+            )?),
+            Self::Timestamptz => Arc::new(
+                decoded::<TimestampMicrosecondArray, DateTime<Utc>, _>(
+                    &PgType::TIMESTAMPTZ,
+                    cells,
+                    |timestamp| Ok(timestamp.timestamp_micros()),
+                )?
+                .with_timezone(UTC),
             ),
-            Self::Timestamp => cast::<TimestampMicrosecondBuilder>(builder)?.append_option(
-                decode::<NaiveDateTime>(&PgType::TIMESTAMP, bytes)?
-                    .map(|timestamp| timestamp.and_utc().timestamp_micros()),
+            Self::Interval => Arc::new(decoded::<IntervalMonthDayNanoArray, PgInterval, _>(
+                &PgType::INTERVAL,
+                cells,
+                month_day_nano,
+            )?),
+            &Self::Numeric { precision, scale } => Arc::new(
+                decoded::<Decimal128Array, Decimal, _>(&PgType::NUMERIC, cells, |decimal| {
+                    decimal_units(decimal, scale)
+                })?
+                .with_precision_and_scale(precision, scale.cast_signed())?,
             ),
-            Self::Timestamptz => cast::<TimestampMicrosecondBuilder>(builder)?.append_option(
-                decode::<DateTime<Utc>>(&PgType::TIMESTAMPTZ, bytes)?
-                    .map(|timestamp| timestamp.timestamp_micros()),
-            ),
-            Self::Interval => cast::<IntervalMonthDayNanoBuilder>(builder)?.append_option(
-                decode::<PgInterval>(&PgType::INTERVAL, bytes)?
-                    .map(month_day_nano)
-                    .transpose()?,
-            ),
-            Self::Numeric { scale, .. } => cast::<Decimal128Builder>(builder)?.append_option(
-                decode::<Decimal>(&PgType::NUMERIC, bytes)?
-                    .map(|decimal| decimal_units(decimal, *scale))
-                    .transpose()?,
-            ),
-            Self::Range(bounds) => append_range(bounds, cast(builder)?, bytes)?,
-        }
-
-        Ok(())
+            Self::Range(bounds) => range_array(bounds, cells)?,
+        })
     }
 }
 
-/// Appends one range: the tag byte, then whichever bounds it says are there.
-fn append_range(bounds: &Decoding, range: &mut StructBuilder, bytes: Option<&[u8]>) -> Result<()> {
-    let parsed = bytes
-        .map(range_from_sql)
-        .transpose()
+/// Builds a range column: both bounds through the element's own decoding, then the three tag bits.
+fn range_array(bounds: &Decoding, cells: &[Option<&[u8]>]) -> Result<ArrayRef> {
+    let ranges = cells
+        .iter()
+        .map(|cell| cell.map(range_from_sql).transpose())
+        .collect::<result::Result<Vec<_>, _>>()
         .map_err(TransferredError::in_source)?;
 
-    let [lower, upper, lower_inc, upper_inc, empty] = range.field_builders_mut() else {
-        return Err(TransferredError::in_source(
-            "a `transferred.pg_range` column does not build the five fields it declares",
-        ));
-    };
+    let (lower, upper): (Vec<_>, Vec<_>) = ranges
+        .iter()
+        .map(|range| bound_bytes(range.as_ref()))
+        .unzip();
+    let (lower_inc, upper_inc): (Vec<_>, Vec<_>) =
+        ranges.iter().map(|range| inclusive(range.as_ref())).unzip();
+    // An empty range and a SQL NULL both leave every bound null. `empty` separates them, and
+    // the struct's own validity is the only thing that says a whole range was NULL.
+    let empty = ranges
+        .iter()
+        .map(|range| matches!(range, Some(Range::Empty)));
+    let nulls = NullBuffer::from_iter(ranges.iter().map(Option::is_some));
 
-    match parsed {
-        Some(Range::Nonempty(low, high)) => {
-            bounds.append(&mut **lower, bound(&low))?;
-            bounds.append(&mut **upper, bound(&high))?;
-            tag(lower_inc, matches!(low, RangeBound::Inclusive(_)))?;
-            tag(upper_inc, matches!(high, RangeBound::Inclusive(_)))?;
-            tag(empty, false)?;
-        }
-        // An empty range and a SQL NULL both leave every bound null. `empty` separates them, and
-        // it is `Some` for exactly the range that carried a tag saying so.
-        boundless => {
-            bounds.append(&mut **lower, None)?;
-            bounds.append(&mut **upper, None)?;
-            tag(lower_inc, false)?;
-            tag(upper_inc, false)?;
-            tag(empty, boundless.is_some())?;
-        }
+    let arrays: Vec<ArrayRef> = vec![
+        bounds.array(&lower)?,
+        bounds.array(&upper)?,
+        Arc::new(BooleanArray::from(lower_inc)),
+        Arc::new(BooleanArray::from(upper_inc)),
+        Arc::new(empty.collect::<BooleanArray>()),
+    ];
+    let fields = PgRange::fields(bounds.arrow_type());
+
+    Ok(Arc::new(StructArray::try_new(fields, arrays, Some(nulls))?))
+}
+
+/// Both bounds' bytes; an infinite bound sends none, and an empty range or a SQL NULL has no bounds.
+const fn bound_bytes<'buf>(
+    range: Option<&Range<'buf>>,
+) -> (Option<&'buf [u8]>, Option<&'buf [u8]>) {
+    match range {
+        Some(Range::Nonempty(low, high)) => (bound(low), bound(high)),
+        _ => (None, None),
     }
-
-    // The struct's own validity is the only thing that says a whole range was NULL.
-    range.append(bytes.is_some());
-
-    Ok(())
 }
 
-/// Appends one of a range's three tag bits, none of which is ever null.
-fn tag(builder: &mut Box<dyn ArrayBuilder>, set: bool) -> Result<()> {
-    cast::<BooleanBuilder>(&mut **builder)?.append_value(set);
-
-    Ok(())
+/// Which bounds are inclusive; an infinite one never is, and an empty range or a SQL NULL has none.
+const fn inclusive(range: Option<&Range<'_>>) -> (bool, bool) {
+    match range {
+        Some(Range::Nonempty(low, high)) => (
+            matches!(low, RangeBound::Inclusive(_)),
+            matches!(high, RangeBound::Inclusive(_)),
+        ),
+        _ => (false, false),
+    }
 }
 
-/// Decodes one value from its Postgres binary form; `None` is a NULL, which PG sends no bytes for.
-fn decode<'buf, T: FromSql<'buf>>(
+/// Decodes every cell from Postgres binary form and restates it with `convert`; `None` is a NULL.
+fn decoded<'buf, Column, Postgres, Native>(
     pg_type: &PgType,
-    bytes: Option<&'buf [u8]>,
-) -> Result<Option<T>> {
-    bytes
-        .map(|bytes| T::from_sql(pg_type, bytes))
-        .transpose()
-        .map_err(TransferredError::in_source)
+    cells: &[Option<&'buf [u8]>],
+    convert: impl Fn(Postgres) -> Result<Native>,
+) -> Result<Column>
+where
+    Column: FromIterator<Option<Native>>,
+    Postgres: FromSql<'buf>,
+{
+    cells
+        .iter()
+        .map(|cell| {
+            let parsed = cell
+                .map(|bytes| Postgres::from_sql(pg_type, bytes))
+                .transpose()
+                .map_err(TransferredError::in_source)?;
+            parsed.map(&convert).transpose()
+        })
+        .collect()
 }
 
 /// Strips the format version byte `jsonb` leads with, leaving the document text.
@@ -414,14 +413,6 @@ fn jsonb(bytes: &[u8]) -> Result<&[u8]> {
             "`jsonb` arrived in an encoding version other than 1",
         )),
     }
-}
-
-/// Reads a text value's bytes, which every Postgres text type sends as its own UTF-8.
-fn text(bytes: Option<&[u8]>) -> Result<Option<&str>> {
-    bytes
-        .map(str::from_utf8)
-        .transpose()
-        .map_err(TransferredError::in_source)
 }
 
 /// A bound's bytes; `None` is an infinite bound, the only kind Postgres sends no value for.
@@ -490,17 +481,9 @@ fn month_day_nano(interval: PgInterval) -> Result<IntervalMonthDayNano> {
     ))
 }
 
-/// Downcasts an Arrow builder; a mismatch is unreachable, as `make_builder` took the same decoding.
-fn cast<B: ArrayBuilder>(builder: &mut dyn ArrayBuilder) -> Result<&mut B> {
-    builder
-        .as_any_mut()
-        .downcast_mut::<B>()
-        .ok_or_else(|| TransferredError::in_source(format!("column is not a {}", type_name::<B>())))
-}
-
 #[cfg(test)]
 mod tests {
-    use arrow::array::{Array as _, BooleanArray, Int32Array, StructArray};
+    use arrow::array::{Array as _, AsArray as _};
     use arrow_schema::extension::ExtensionType as _;
 
     use super::*;
@@ -519,16 +502,7 @@ mod tests {
 
     /// Decodes one `int4range` value into the one-row struct its column lands in.
     fn decode_range(bytes: Option<&[u8]>) -> Result<StructArray> {
-        let decoding = int4_range();
-        let mut builder = make_builder(&decoding.arrow_type(), 0);
-        decoding.append(&mut *builder, bytes)?;
-
-        Ok(builder
-            .finish()
-            .as_any()
-            .downcast_ref::<StructArray>()
-            .unwrap()
-            .clone())
+        Ok(int4_range().array(&[bytes])?.as_struct().clone())
     }
 
     /// The five fields of a one-row range struct: both bounds, then the three tag bits.
