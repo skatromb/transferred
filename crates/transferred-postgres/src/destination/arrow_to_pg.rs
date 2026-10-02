@@ -394,9 +394,9 @@ impl Encoding {
 }
 
 /// Downcasts an Arrow column; a mismatch is unreachable, as the encoding came from the same field.
-fn cast<A: 'static>(array: &dyn Array) -> Result<&A> {
-    array.as_any().downcast_ref::<A>().ok_or_else(|| {
-        TransferredError::in_destination(format!("column is not a {}", type_name::<A>()))
+fn cast<Column: 'static>(array: &dyn Array) -> Result<&Column> {
+    array.as_any().downcast_ref::<Column>().ok_or_else(|| {
+        TransferredError::in_destination(format!("column is not a {}", type_name::<Column>()))
     })
 }
 

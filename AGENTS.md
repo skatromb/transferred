@@ -59,6 +59,7 @@ Test code is the documented exception — file-level allows are fine in `tests/`
 
 Rust runs clippy `pedantic`, `nursery` and `restriction` plus every stable rustc lint worth having, with WPS-like thresholds in `clippy.toml`.
 Suppress with `#[expect(lint, reason = "…")]`, never `#[allow]`: an expect fails once the lint stops firing.
+Name generic parameters for what they stand for, e.g. `Column`, not `T`: `min_ident_chars` skips them, so no lint will.
 
 Python is linted twice: ruff owns formatting, imports and the pycodestyle/pyflakes overlap;
 `wemake-python-styleguide` owns the `WPS` rules via `make wps` and `.flake8`.

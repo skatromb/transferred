@@ -8,7 +8,7 @@ use thiserror::Error;
 pub type AnyError = Box<dyn StdError + Send + Sync>;
 
 /// Convenience alias for results returned by `transferred` operations.
-pub type Result<T> = result::Result<T, TransferredError>;
+pub type Result<Success> = result::Result<Success, TransferredError>;
 
 /// Root error type. Every fallible operation in `transferred` returns `Result<T, TransferredError>`.
 /// Maps to Python `transferred.TransferredError` at the FFI boundary.
