@@ -3,7 +3,7 @@
 mod pg_to_arrow;
 
 use async_trait::async_trait;
-use futures::{StreamExt, TryStreamExt};
+use futures::{StreamExt as _, TryStreamExt as _};
 use tokio_postgres::binary_copy::BinaryCopyOutStream;
 use transferred_core::{BatchStream, Result, Source, TransferredError};
 

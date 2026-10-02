@@ -15,10 +15,10 @@ use arrow::array::{
 };
 use arrow::buffer::OffsetBuffer;
 use arrow::record_batch::RecordBatch;
-use arrow_schema::extension::{ExtensionType, Json, Opaque, Uuid};
+use arrow_schema::extension::{ExtensionType as _, Json, Opaque, Uuid};
 use arrow_schema::{DataType, Field, Schema, TimeUnit};
 use async_trait::async_trait;
-use futures::{StreamExt, stream};
+use futures::{StreamExt as _, stream};
 use tempfile::tempdir;
 use transferred_core::{BatchStream, Destination, Result, RunReport, Source, Transfer};
 use transferred_files::{Compression, FilesDestination, FilesSource, GlobOrPaths, Parquet};

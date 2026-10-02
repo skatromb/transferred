@@ -503,8 +503,8 @@ fn cast<B: ArrayBuilder>(builder: &mut dyn ArrayBuilder) -> Result<&mut B> {
 
 #[cfg(test)]
 mod tests {
-    use arrow::array::{Array, BooleanArray, Int32Array, StructArray};
-    use arrow_schema::extension::ExtensionType;
+    use arrow::array::{Array as _, BooleanArray, Int32Array, StructArray};
+    use arrow_schema::extension::ExtensionType as _;
 
     use super::*;
 

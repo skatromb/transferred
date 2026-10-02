@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use futures::{TryStreamExt, stream};
+use futures::{TryStreamExt as _, stream};
 use tokio::fs::File;
 use transferred_core::{BatchStream, Result, Source, TransferredError};
 

@@ -10,9 +10,9 @@ use arrow::array::{
     RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
 };
 use arrow::datatypes::{Date32Type, IntervalMonthDayNano};
-use arrow_schema::extension::{ExtensionType, Json, Uuid};
+use arrow_schema::extension::{ExtensionType as _, Json, Uuid};
 use arrow_schema::{DataType as ArrowType, Field as ArrowField, IntervalUnit, SchemaRef, TimeUnit};
-use bytes::{BufMut, BytesMut};
+use bytes::{BufMut as _, BytesMut};
 use chrono::{DateTime, NaiveDate, Utc};
 use geoarrow_schema::WkbType;
 use pg_interval::Interval as PgInterval;

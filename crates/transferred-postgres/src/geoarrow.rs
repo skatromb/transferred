@@ -69,7 +69,7 @@ pub(crate) fn srid(typmod: i32) -> Option<i32> {
 
 #[cfg(test)]
 mod tests {
-    use arrow_schema::extension::ExtensionType;
+    use arrow_schema::extension::ExtensionType as _;
 
     use super::*;
 

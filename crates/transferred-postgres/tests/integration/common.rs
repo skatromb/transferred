@@ -4,10 +4,10 @@ use std::sync::Mutex;
 
 use arrow::array::RecordBatch;
 use arrow::compute::concat_batches;
-use futures::{StreamExt, TryStreamExt, stream};
+use futures::{StreamExt as _, TryStreamExt as _, stream};
 use testcontainers_modules::postgres::Postgres;
-use testcontainers_modules::testcontainers::runners::AsyncRunner;
-use testcontainers_modules::testcontainers::{ContainerAsync, ContainerRequest, ImageExt};
+use testcontainers_modules::testcontainers::runners::AsyncRunner as _;
+use testcontainers_modules::testcontainers::{ContainerAsync, ContainerRequest, ImageExt as _};
 use tokio::sync::OnceCell;
 use transferred_core::Source;
 use transferred_postgres::PostgresSource;

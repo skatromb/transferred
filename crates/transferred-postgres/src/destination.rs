@@ -6,7 +6,7 @@ mod copy_in;
 use std::time::Instant;
 
 use async_trait::async_trait;
-use futures::{StreamExt, TryStreamExt, stream};
+use futures::{StreamExt as _, TryStreamExt as _, stream};
 use tokio_postgres::Client;
 use tracing::warn;
 use transferred_core::{BatchStream, Destination, Result, RunReport, TransferredError};

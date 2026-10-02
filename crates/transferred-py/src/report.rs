@@ -8,9 +8,9 @@
 use humansize::{BINARY, format_size};
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-use std::fmt::Write;
+use std::fmt::Write as _;
 use std::time::Duration;
-use thousands::Separable;
+use thousands::Separable as _;
 use transferred_core::RunReport;
 
 /// Post-run statistics returned by `Transfer.run()`.

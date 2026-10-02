@@ -13,7 +13,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use arrow::ffi_stream::ArrowArrayStreamReader;
-use arrow::pyarrow::FromPyArrow;
+use arrow::pyarrow::FromPyArrow as _;
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use futures::Stream;

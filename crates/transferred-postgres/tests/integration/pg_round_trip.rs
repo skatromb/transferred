@@ -8,7 +8,7 @@ use std::sync::Arc;
 use arrow::array::{Int64Array, RecordBatch};
 use arrow_schema::{DataType, Field, Schema};
 use async_trait::async_trait;
-use futures::{StreamExt, stream};
+use futures::{StreamExt as _, stream};
 use transferred_core::{BatchStream, Result, RunReport, Source, Transfer, TransferredError};
 use transferred_postgres::{PostgresDestination, PostgresSource, STAGING_SUFFIX};
 

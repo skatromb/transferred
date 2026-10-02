@@ -1,11 +1,11 @@
 //! `sslmode` end to end against a Postgres started with `ssl=on`.
 
-use arrow::array::{AsArray, RecordBatch};
-use futures::{StreamExt, TryStreamExt, stream};
+use arrow::array::{AsArray as _, RecordBatch};
+use futures::{StreamExt as _, TryStreamExt as _, stream};
 use testcontainers_modules::postgres::Postgres;
-use testcontainers_modules::testcontainers::{ContainerAsync, ImageExt};
+use testcontainers_modules::testcontainers::{ContainerAsync, ImageExt as _};
 use tokio::sync::OnceCell;
-use transferred_core::{Result, Source};
+use transferred_core::{Result, Source as _};
 use transferred_postgres::PostgresSource;
 
 use crate::common::start_pg_container;

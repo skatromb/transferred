@@ -1,7 +1,7 @@
 //! Parquet codec — `FormatRead` + `FormatWrite` over the arrow-rs `parquet` crate.
 
 use async_trait::async_trait;
-use futures::{StreamExt, TryStreamExt};
+use futures::{StreamExt as _, TryStreamExt as _};
 use transferred_core::{BatchStream, Result, TransferredError};
 // Leading `::` selects the extern `parquet` crate, not this `formats::parquet` module.
 use ::parquet::arrow::AsyncArrowWriter;

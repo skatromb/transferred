@@ -3,8 +3,8 @@
 use std::pin::Pin;
 
 use arrow::array::RecordBatch;
-use bytes::{BufMut, Bytes, BytesMut};
-use futures::SinkExt;
+use bytes::{BufMut as _, Bytes, BytesMut};
+use futures::SinkExt as _;
 use tokio_postgres::{Client, CopyInSink};
 use transferred_core::{Result, TransferredError};
 
