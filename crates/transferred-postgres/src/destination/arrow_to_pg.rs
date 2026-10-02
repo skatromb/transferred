@@ -541,12 +541,12 @@ mod tests {
     /// Writes the first row of a one-column batch, as the COPY stream would.
     fn write_first(field: ArrowField, array: ArrayRef) -> Result<BytesMut> {
         let schema = Schema::new(vec![field]);
-        let batch = RecordBatch::try_new(Arc::new(schema.clone()), vec![array]).unwrap();
+        let batch = RecordBatch::try_new(Arc::new(schema.clone()), vec![array])?;
         let mut buf = BytesMut::new();
 
         let encoder = Encoder::new(schema.into())?;
         encoder.check(&batch)?;
-        let column = encoder.columns.first().unwrap();
+        let column = &encoder.columns[0];
         column.write(batch.column(0).as_ref(), 0, &mut buf)?;
         Ok(buf)
     }
