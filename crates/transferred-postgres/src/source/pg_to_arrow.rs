@@ -96,8 +96,11 @@ impl Decoder {
     }
 }
 
+/// A value's bytes exactly as Postgres sent them; `None` where it sent none.
+type Cell<'buf> = Option<&'buf [u8]>;
+
 /// One column's cells, each exactly as Postgres sent it; `None` where it sent a NULL.
-fn column(rows: &[BinaryCopyOutRow], index: usize) -> Result<Vec<Option<&[u8]>>> {
+fn column(rows: &[BinaryCopyOutRow], index: usize) -> Result<Vec<Cell<'_>>> {
     rows.iter()
         .map(|row| {
             row.try_get::<Option<Raw<'_>>>(index)
@@ -270,7 +273,7 @@ impl Decoding {
 
     /// Builds the column's array from its cells, each in Postgres binary form; `None` is a NULL.
     #[expect(clippy::too_many_lines, reason = "one arm per Postgres type")]
-    fn array(&self, cells: &[Option<&[u8]>]) -> Result<ArrayRef> {
+    fn array(&self, cells: &[Cell<'_>]) -> Result<ArrayRef> {
         Ok(match self {
             Self::Bool => Arc::new(decoded::<BooleanArray, bool, _>(&PgType::BOOL, cells, Ok)?),
             Self::Int2 => Arc::new(decoded::<Int16Array, i16, _>(&PgType::INT2, cells, Ok)?),
@@ -334,7 +337,7 @@ impl Decoding {
 }
 
 /// Builds a range column: both bounds through the element's own decoding, then the three tag bits.
-fn range_array(bounds: &Decoding, cells: &[Option<&[u8]>]) -> Result<ArrayRef> {
+fn range_array(bounds: &Decoding, cells: &[Cell<'_>]) -> Result<ArrayRef> {
     let ranges = cells
         .iter()
         .map(|cell| cell.map(range_from_sql).transpose())
@@ -367,9 +370,7 @@ fn range_array(bounds: &Decoding, cells: &[Option<&[u8]>]) -> Result<ArrayRef> {
 }
 
 /// Both bounds' bytes; an infinite bound sends none, and an empty range or a SQL NULL has no bounds.
-const fn bound_bytes<'buf>(
-    range: Option<&Range<'buf>>,
-) -> (Option<&'buf [u8]>, Option<&'buf [u8]>) {
+const fn bound_bytes<'buf>(range: Option<&Range<'buf>>) -> (Cell<'buf>, Cell<'buf>) {
     match range {
         Some(Range::Nonempty(low, high)) => (bound(low), bound(high)),
         _ => (None, None),
@@ -390,7 +391,7 @@ const fn inclusive(range: Option<&Range<'_>>) -> (bool, bool) {
 /// Decodes every cell from Postgres binary form and restates it with `convert`; `None` is a NULL.
 fn decoded<'buf, Column, Postgres, Native>(
     pg_type: &PgType,
-    cells: &[Option<&'buf [u8]>],
+    cells: &[Cell<'buf>],
     convert: impl Fn(Postgres) -> Result<Native>,
 ) -> Result<Column>
 where
@@ -420,7 +421,7 @@ fn jsonb(bytes: &[u8]) -> Result<&[u8]> {
 }
 
 /// A bound's bytes; `None` is an infinite bound, the only kind Postgres sends no value for.
-const fn bound<'buf>(bound: &RangeBound<Option<&'buf [u8]>>) -> Option<&'buf [u8]> {
+const fn bound<'buf>(bound: &RangeBound<Cell<'buf>>) -> Cell<'buf> {
     match bound {
         RangeBound::Inclusive(bytes) | RangeBound::Exclusive(bytes) => *bytes,
         RangeBound::Unbounded => None,
@@ -505,7 +506,7 @@ mod tests {
     }
 
     /// Decodes one `int4range` value into the one-row struct its column lands in.
-    fn decode_range(bytes: Option<&[u8]>) -> Result<StructArray> {
+    fn decode_range(bytes: Cell<'_>) -> Result<StructArray> {
         Ok(int4_range().array(&[bytes])?.as_struct().clone())
     }
 
