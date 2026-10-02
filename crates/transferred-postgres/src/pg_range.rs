@@ -7,11 +7,15 @@
 use arrow_schema::extension::ExtensionType;
 use arrow_schema::{ArrowError, DataType as ArrowType, Field as ArrowField, Fields as ArrowFields};
 
-/// The bounds, then the three things a pair of bounds cannot say on its own.
+/// Field holding the lower bound.
 pub(crate) const LOWER: &str = "lower";
+/// Field holding the upper bound.
 pub(crate) const UPPER: &str = "upper";
+/// Field saying whether the lower bound is inclusive, which the bound alone cannot say.
 pub(crate) const LOWER_INC: &str = "lower_inc";
+/// Field saying whether the upper bound is inclusive.
 pub(crate) const UPPER_INC: &str = "upper_inc";
+/// Field saying whether the range holds nothing at all, which no pair of bounds can say.
 pub(crate) const EMPTY: &str = "empty";
 
 /// A Postgres range, spread over the struct fields that hold its bounds and its tag.

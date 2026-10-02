@@ -38,6 +38,7 @@ unsafe fn reap() {
 
 /// Image every fixture runs: Postgres with `PostGIS`, published for arm64 as well as amd64.
 const IMAGE: &str = "imresamu/postgis";
+/// Postgres 18 with `PostGIS` 3.6.
 const IMAGE_TAG: &str = "18-3.6";
 
 /// Boots `request` on this suite's image and registers it for reaping.
