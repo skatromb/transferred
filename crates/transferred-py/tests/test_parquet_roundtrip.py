@@ -21,26 +21,24 @@ def _build_input_table() -> pa.Table:
     )
 
 
-def test_parquet_write_then_read(tmp_path: Path):
+def test_parquet_write_then_read(tmp_path: Path, out_dir: Path):
     # Arrange — write a seed Parquet via pyarrow so a FilesSource has something to read.
     expected = _build_input_table()
     seed = tmp_path / "seed.parquet"
     pq.write_table(expected, seed)
 
-    out = tmp_path / "out"
-
     # Act — drive the round-trip through the Rust engine.
     report = Transfer(
         source=FilesSource(seed),
-        destination=FilesDestination(out, format=Parquet(compression="zstd")),
+        destination=FilesDestination(out_dir, format=Parquet(compression="zstd")),
     ).run()
 
     # Assert.
     assert isinstance(report, RunReport)
     assert (report.rows, report.written_objects) == (
         expected.num_rows,
-        [str(out / "part-00001.parquet")],
+        [str(out_dir / "part-00001.parquet")],
     )
     assert report.bytes_written > 0
-    assert out.is_dir()
+    assert out_dir.is_dir()
     assert pq.read_table(report.written_objects[0]).equals(expected)

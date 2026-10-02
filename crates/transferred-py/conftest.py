@@ -22,12 +22,6 @@ def _doctest_workdir(
 
 
 @pytest.fixture
-def out(tmp_path: Path) -> Path:
-    """Parquet file a single-file transfer writes to."""
-    return tmp_path / "out.parquet"
-
-
-@pytest.fixture
 def out_dir(tmp_path: Path) -> Path:
     """Output directory a transfer writes its parts to."""
     return tmp_path / "out"

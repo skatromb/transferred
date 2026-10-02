@@ -15,9 +15,9 @@ class _UnwiredDestination(Destination):
     """Passes `isinstance(destination, Destination)` with no native destination."""
 
 
-def test_source_subclass_without_native(out: Path):
+def test_source_subclass_without_native(out_dir: Path):
     with pytest.raises(TypeError, match="source must be a transferred source object"):
-        Transfer(source=_UnwiredSource(), destination=FilesDestination(out))
+        Transfer(source=_UnwiredSource(), destination=FilesDestination(out_dir))
 
 
 def test_destination_subclass_without_native():
@@ -27,10 +27,10 @@ def test_destination_subclass_without_native():
         Transfer(source=[{"id": 1}], destination=_UnwiredDestination())
 
 
-def test_source_reused_by_another_transfer(out: Path):
+def test_source_reused_by_another_transfer(out_dir: Path):
     """The first `Transfer` takes the native source out of the wrapper."""
     source = _iterable_to_arrow([{"id": 1}])
-    Transfer(source=source, destination=FilesDestination(out))
+    Transfer(source=source, destination=FilesDestination(out_dir))
 
     with pytest.raises(RuntimeError, match="already consumed by another Transfer"):
-        Transfer(source=source, destination=FilesDestination(out))
+        Transfer(source=source, destination=FilesDestination(out_dir))
