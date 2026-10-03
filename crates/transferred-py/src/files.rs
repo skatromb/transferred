@@ -12,6 +12,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
+use transferred_core::{BoxedDestination, BoxedSource};
 use transferred_files::{Compression, FilesDestination, FilesSource, GlobOrPaths, Parquet};
 
 /// Internal `PyO3` wrapper around `transferred_files::Parquet`.
@@ -78,8 +79,8 @@ impl PyFilesSource {
 
 impl PyFilesSource {
     /// Takes the wrapped source, leaving `None` behind.
-    pub(crate) const fn take(&mut self) -> Option<FilesSource> {
-        self.inner.take()
+    pub(crate) fn take(&mut self) -> Option<BoxedSource> {
+        Some(Box::new(self.inner.take()?))
     }
 }
 
@@ -112,8 +113,8 @@ impl PyFilesDestination {
 
 impl PyFilesDestination {
     /// Takes the wrapped destination, leaving `None` behind.
-    pub(crate) const fn take(&mut self) -> Option<FilesDestination> {
-        self.inner.take()
+    pub(crate) fn take(&mut self) -> Option<BoxedDestination> {
+        Some(Box::new(self.inner.take()?))
     }
 }
 

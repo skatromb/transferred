@@ -7,6 +7,7 @@
 
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
+use transferred_core::{BoxedDestination, BoxedSource};
 use transferred_postgres::{PostgresDestination, PostgresSource};
 
 /// Internal `PyO3` wrapper around `transferred_postgres::PostgresSource`.
@@ -34,8 +35,8 @@ impl PyPostgresSource {
 
 impl PyPostgresSource {
     /// Takes the wrapped source, leaving `None` behind.
-    pub(crate) const fn take(&mut self) -> Option<PostgresSource> {
-        self.inner.take()
+    pub(crate) fn take(&mut self) -> Option<BoxedSource> {
+        Some(Box::new(self.inner.take()?))
     }
 }
 
@@ -68,7 +69,7 @@ impl PyPostgresDestination {
 
 impl PyPostgresDestination {
     /// Takes the wrapped destination, leaving `None` behind.
-    pub(crate) const fn take(&mut self) -> Option<PostgresDestination> {
-        self.inner.take()
+    pub(crate) fn take(&mut self) -> Option<BoxedDestination> {
+        Some(Box::new(self.inner.take()?))
     }
 }

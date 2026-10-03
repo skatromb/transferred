@@ -65,39 +65,55 @@ impl PyTransfer {
     }
 }
 
-/// Downcasts `$obj` to each pyclass in turn; on match, takes its inner value and returns it boxed.
-macro_rules! try_take_inner {
-    ($obj:expr, $($py_class:ty),+) => {
-        $(if let Ok(cell) = $obj.cast::<$py_class>() {
-            let inner = cell
-                .try_borrow_mut()?
-                .take()
-                .ok_or_else(already_consumed)?;
-            return Ok(Box::new(inner));
-        })+
-    };
+/// Any object `Transfer` accepts as its source.
+#[derive(FromPyObject)]
+enum AnySource<'py> {
+    Files(Bound<'py, PyFilesSource>),
+    Arrow(Bound<'py, PyArrowSource>),
+    Postgres(Bound<'py, PyPostgresSource>),
+    // PyO3 convention: Python wrappers expose a `_native_source` attr holding a native source.
+    Native {
+        #[pyo3(attribute("_native_source"))]
+        native: Bound<'py, PyAny>,
+    },
+}
+
+/// Any object `Transfer` accepts as its destination.
+#[derive(FromPyObject)]
+enum AnyDestination<'py> {
+    Files(Bound<'py, PyFilesDestination>),
+    Postgres(Bound<'py, PyPostgresDestination>),
+    // PyO3 convention: Python wrappers expose a `_native_destination` attr holding a native destination.
+    Native {
+        #[pyo3(attribute("_native_destination"))]
+        native: Bound<'py, PyAny>,
+    },
 }
 
 fn extract_source(source: &Bound<'_, PyAny>) -> PyResult<BoxedSource> {
-    try_take_inner!(source, PyFilesSource, PyArrowSource, PyPostgresSource);
-    // PyO3 convention: Python wrappers expose a `_native_source` attr holding a native source.
-    if let Ok(inner) = source.getattr("_native_source") {
-        return extract_source(&inner);
-    }
-    Err(PyTypeError::new_err(
-        "source must be a transferred source object",
-    ))
+    let any_source = source
+        .extract()
+        .ok()
+        .ok_or_else(|| PyTypeError::new_err("source must be a transferred source object"))?;
+    let taken = match any_source {
+        AnySource::Files(files) => files.try_borrow_mut()?.take(),
+        AnySource::Arrow(arrow) => arrow.try_borrow_mut()?.take(),
+        AnySource::Postgres(postgres) => postgres.try_borrow_mut()?.take(),
+        AnySource::Native { native } => return extract_source(&native),
+    };
+    taken.ok_or_else(already_consumed)
 }
 
 fn extract_destination(destination: &Bound<'_, PyAny>) -> PyResult<BoxedDestination> {
-    try_take_inner!(destination, PyFilesDestination, PyPostgresDestination);
-    // PyO3 convention: Python wrappers expose a `_native_destination` attr holding a native destination.
-    if let Ok(inner) = destination.getattr("_native_destination") {
-        return extract_destination(&inner);
-    }
-    Err(PyTypeError::new_err(
-        "destination must be a transferred destination object",
-    ))
+    let any_destination = destination.extract().ok().ok_or_else(|| {
+        PyTypeError::new_err("destination must be a transferred destination object")
+    })?;
+    let taken = match any_destination {
+        AnyDestination::Files(files) => files.try_borrow_mut()?.take(),
+        AnyDestination::Postgres(postgres) => postgres.try_borrow_mut()?.take(),
+        AnyDestination::Native { native } => return extract_destination(&native),
+    };
+    taken.ok_or_else(already_consumed)
 }
 
 fn already_consumed() -> PyErr {
