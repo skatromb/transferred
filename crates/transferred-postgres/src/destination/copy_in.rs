@@ -9,12 +9,7 @@ use tokio_postgres::{Client, CopyInSink};
 use transferred_core::{Result, TransferredError};
 
 use super::arrow_to_pg::Encoder;
-
-/// Bytes every binary COPY stream starts with, before the flags and header extension.
-const COPY_SIGNATURE: &[u8] = b"PGCOPY\n\xff\r\n\0";
-
-/// Field count that ends the rows.
-const COPY_TRAILER: i16 = -1;
+use crate::{COPY_HEADER, COPY_TRAILER};
 
 /// Bytes buffered before a chunk goes out; 4 KB costs a third more client CPU, 64 KB is the plateau.
 const CHUNK_BYTES: usize = 64 << 10;
@@ -38,9 +33,7 @@ impl CopyIn {
 
         // `bytes` restores this capacity after every `split`, so a chunk is one allocation.
         let mut buf = BytesMut::with_capacity(CHUNK_BYTES);
-        buf.put_slice(COPY_SIGNATURE);
-        buf.put_i32(0); // no flags
-        buf.put_i32(0); // no header extension
+        buf.put_slice(COPY_HEADER);
 
         Ok(Self {
             sink: Box::pin(sink),
