@@ -63,7 +63,7 @@ async fn batches(client: &Client, table: &str) -> Result<BatchStream> {
         .iter()
         .map(|column| column.type_().clone())
         .collect();
-    let decoder = Decoder::derive(query.columns())?;
+    let mut decoder = Decoder::derive(query.columns())?;
 
     let copy = client
         .copy_out(&format!(
