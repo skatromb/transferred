@@ -1,11 +1,11 @@
 //! Postgres source. Binary COPY OUT → Arrow `RecordBatch`.
 
+mod copy_out;
 mod pg_to_arrow;
 
 use async_trait::async_trait;
 use futures::{StreamExt as _, TryStreamExt as _};
 use tokio_postgres::Client;
-use tokio_postgres::binary_copy::BinaryCopyOutStream;
 use transferred_core::{BatchStream, Result, Source, TransferredError};
 
 use self::pg_to_arrow::Decoder;
@@ -42,28 +42,12 @@ impl Source for PostgresSource {
     }
 }
 
-/// The table's name as Postgres resolves and quotes it, so anything but a table fails here.
-async fn verified_table(client: &Client, table: &str) -> Result<String> {
-    Ok(client
-        .query_one("SELECT $1::text::regclass::text", &[&table])
-        .await
-        .map_err(TransferredError::in_source)?
-        .get(0))
-}
-
 /// Streams `table` out over binary COPY, decoded into Arrow a batch at a time.
 async fn batches(client: &Client, table: &str) -> Result<BatchStream> {
     let query = client
         .prepare(&format!("select * from {table}"))
         .await
         .map_err(TransferredError::in_source)?;
-
-    let types: Vec<_> = query
-        .columns()
-        .iter()
-        .map(|column| column.type_().clone())
-        .collect();
-    let decoder = Decoder::derive(query.columns())?;
 
     let copy = client
         .copy_out(&format!(
@@ -72,11 +56,22 @@ async fn batches(client: &Client, table: &str) -> Result<BatchStream> {
         .await
         .map_err(TransferredError::in_source)?;
 
-    Ok(BinaryCopyOutStream::new(copy, &types)
+    let mut decoder = Decoder::derive(query.columns())?;
+
+    Ok(copy_out::rows(copy)
         .try_chunks(BATCH_ROWS)
         .map(move |chunk| {
-            let rows = chunk.map_err(|failed| TransferredError::in_source(failed.1))?;
+            let rows = chunk.map_err(|failed| failed.1)?;
             decoder.decode(&rows)
         })
         .boxed())
+}
+
+/// The table's name as Postgres resolves and quotes it, so anything but a table fails here.
+async fn verified_table(client: &Client, table: &str) -> Result<String> {
+    Ok(client
+        .query_one("SELECT $1::text::regclass::text", &[&table])
+        .await
+        .map_err(TransferredError::in_source)?
+        .get(0))
 }

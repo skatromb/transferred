@@ -26,10 +26,7 @@ use transferred_core::{AnyError, Result, TransferredError};
 
 use crate::geoarrow::{self, GEOGRAPHY, GEOMETRY};
 use crate::pg_range::PgRange;
-use crate::{NANOS_PER_MICRO, UUID_BYTES};
-
-/// Field length that means NULL.
-const NULL_FIELD: i32 = -1;
+use crate::{NANOS_PER_MICRO, NULL_FIELD, UUID_BYTES};
 
 /// Postgres column definitions + value encoders, mapped once from an Arrow schema.
 pub(crate) struct Encoder {
