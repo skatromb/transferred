@@ -22,8 +22,7 @@ use crate::report::PyRunReport;
     subclass
 )]
 pub(crate) struct PyTransfer {
-    source: Option<BoxedSource>,
-    destination: Option<BoxedDestination>,
+    inner: Option<Transfer>,
 }
 
 #[gen_stub_pymethods]
@@ -36,18 +35,16 @@ impl PyTransfer {
     #[new]
     fn new(source: &Bound<'_, PyAny>, destination: &Bound<'_, PyAny>) -> PyResult<Self> {
         Ok(Self {
-            source: Some(extract_source(source)?),
-            destination: Some(extract_destination(destination)?),
+            inner: Some(Transfer::new(
+                extract_source(source)?,
+                extract_destination(destination)?,
+            )),
         })
     }
 
     fn run(&mut self, py: Python<'_>) -> PyResult<PyRunReport> {
-        let source = self
-            .source
-            .take()
-            .ok_or_else(|| PyRuntimeError::new_err("Transfer already consumed"))?;
-        let destination = self
-            .destination
+        let transfer = self
+            .inner
             .take()
             .ok_or_else(|| PyRuntimeError::new_err("Transfer already consumed"))?;
 
@@ -56,9 +53,7 @@ impl PyTransfer {
                 .enable_all()
                 .build()
                 .map_err(|err| PyRuntimeError::new_err(format!("tokio runtime: {err}")))?;
-            runtime
-                .block_on(Transfer::new(source, destination).run())
-                .map_err(to_pyerr)
+            runtime.block_on(transfer.run()).map_err(to_pyerr)
         })?;
 
         Ok(PyRunReport::new(report))
