@@ -2,7 +2,7 @@
 
 Research notes for redesigning `transferred`'s incremental trait surface. The
 first prototype (capability traits + destination-ID diffing for deletes) was
-shelved because both phases re-scanned the whole destination. This doc records
+[shelved](INCREMENTAL_FULL_SYNC_PROBE.md) because both phases re-scanned the whole destination. This doc records
 how the two reference tools avoid that, and the redesign it implies.
 
 All factual claims below were cross-checked against primary sources (dlt docs,
