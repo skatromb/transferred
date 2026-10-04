@@ -6,8 +6,38 @@ import os
 import pathlib
 import typing
 __all__ = [
+    "ArrowError",
+    "DestinationError",
+    "EmptySourceError",
+    "IoError",
     "RunReport",
+    "SourceError",
+    "TransferredError",
 ]
+
+class ArrowError(TransferredError):
+    r"""
+    Arrow schema or array conversion failed.
+    """
+    ...
+
+class DestinationError(TransferredError):
+    r"""
+    Destination write failed (permission denied, disk full, schema mismatch).
+    """
+    ...
+
+class EmptySourceError(SourceError):
+    r"""
+    Source produced no batches — nothing to transfer.
+    """
+    ...
+
+class IoError(TransferredError):
+    r"""
+    Filesystem I/O error not attributable to source or destination logic.
+    """
+    ...
 
 @typing.final
 class RunReport:
@@ -55,6 +85,29 @@ class RunReport:
         """
     def __repr__(self) -> builtins.str: ...
     def __str__(self) -> builtins.str: ...
+
+class SourceError(TransferredError):
+    r"""
+    Source read failed (file missing, malformed Parquet, etc.).
+    """
+    ...
+
+class TransferredError(builtins.Exception):
+    r"""
+    Base exception for all `transferred` failures.
+    
+    Subclasses: `SourceError` (and `EmptySourceError`), `DestinationError`, `ArrowError`, `IoError`.
+    
+    Example:
+        ```py
+        >>> from transferred import Transfer, TransferredError
+        >>> try:
+        ...     Transfer(source=..., destination=...).run()
+        ... except TransferredError as e:
+        ...     print(f"transfer failed: {e}")
+        ```
+    """
+    ...
 
 @typing.final
 class _ArrowSource:
@@ -107,33 +160,3 @@ class _Transfer:
     def __new__(cls, source: typing.Any, destination: typing.Any) -> typing.Self: ...
     def run(self) -> RunReport: ...
 
-
-class TransferredError(Exception):
-    """Base exception for all `transferred` failures.
-
-    Subclasses: `SourceError` (and `EmptySourceError`), `DestinationError`, `ArrowError`, `IoError`.
-
-    Example:
-        ```py
-        >>> from transferred import Transfer, TransferredError
-        >>> try:
-        ...     Transfer(source=..., destination=...).run()
-        ... except TransferredError as e:
-        ...     print(f"transfer failed: {e}")
-        ```
-    """
-
-class SourceError(TransferredError):
-    """Source read failed (file missing, malformed Parquet, etc.)."""
-
-class EmptySourceError(SourceError):
-    """Source produced no batches — nothing to transfer."""
-
-class DestinationError(TransferredError):
-    """Destination write failed (permission denied, disk full, schema mismatch)."""
-
-class ArrowError(TransferredError):
-    """Arrow schema or array conversion failed."""
-
-class IoError(TransferredError):
-    """Filesystem I/O error not attributable to source or destination logic."""
