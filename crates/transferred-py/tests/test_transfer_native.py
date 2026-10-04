@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
+import pyarrow as pa
 import pytest
-from transferred import Destination, FilesDestination, Source, Transfer
-from transferred.iterable import _iterable_to_arrow
+from transferred import ArrowSource, Destination, FilesDestination, Source, Transfer
 
 
 class _UnwiredSource(Source):
@@ -29,7 +29,7 @@ def test_destination_subclass_without_native():
 
 def test_source_reused_by_another_transfer(out_dir: Path):
     """The first `Transfer` takes the native source out of the wrapper."""
-    source = _iterable_to_arrow([{"id": 1}])
+    source = ArrowSource(pa.table({"id": [1]}))
     Transfer(source=source, destination=FilesDestination(out_dir))
 
     with pytest.raises(RuntimeError, match="already consumed by another Transfer"):

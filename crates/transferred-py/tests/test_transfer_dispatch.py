@@ -5,8 +5,7 @@ from pathlib import Path
 import pyarrow as pa
 import pytest
 from test_utils import run_transfer
-from transferred import FilesDestination, Transfer
-from transferred.iterable import _iterable_to_arrow
+from transferred import ArrowSource, FilesDestination, Transfer
 
 _ID = "id"
 
@@ -24,9 +23,9 @@ def test_rejects_dict_as_source(out_dir: Path):
 
 
 def test_keeps_explicit_arrow_source(out_dir: Path):
-    rows = [{_ID: row_id} for row_id in range(4)]
+    source = ArrowSource(pa.table({_ID: range(4)}))
 
-    assert run_transfer(_iterable_to_arrow(rows), out_dir) == 4
+    assert run_transfer(source, out_dir) == 4
 
 
 def test_wraps_bare_arrow_data(out_dir: Path):
