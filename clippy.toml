@@ -3,16 +3,16 @@ allow-expect-in-tests = true
 allow-indexing-slicing-in-tests = true
 allow-panic-in-tests = true
 allow-unwrap-in-tests = true
-allowed-idents-below-min-chars = ["i", "n", "Io", "py", "to"]
+allowed-idents-below-min-chars = ["Io", "py", "to"]
 min-ident-chars-threshold = 2
 
 # Thresholds from wemake-python-styleguide
 cognitive-complexity-threshold = 12
 disallowed-names = [
     "arr", "bar", "baz", "content", "contents", "data", "do", "false", "foo", "ham",
-    "handle", "handler", "info", "item", "items", "no", "obj", "objects", "objs", "param",
+    "handle", "handler", "info", "item", "items", "no", "obj", "object", "objects", "objs", "param",
     "params", "parameters", "result", "results", "some", "spam", "temp", "tmp", "true", "val",
-    "vals", "value", "values", "var", "variable", "vars",
+    "vals", "value", "values", "var", "variable", "vars", "wrapper",
 ]
 excessive-nesting-threshold = 4
 max-fn-params-bools = 1

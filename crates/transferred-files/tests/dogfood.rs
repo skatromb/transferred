@@ -134,7 +134,7 @@ fn input_batch(schema: &Arc<Schema>, rows: u8, offset: u8) -> RecordBatch {
 /// Columns of the schema's built-in Arrow types, nulls sprinkled at different strides.
 fn plain_columns(rows: u8, offset: u8) -> Vec<ArrayRef> {
     let timestamps = TimestampMicrosecondArray::from_iter_values(
-        (0..rows).map(|i| 1_700_000_000_000_000 + i64::from(i) * 1_000_000),
+        (0..rows).map(|row| 1_700_000_000_000_000 + i64::from(row) * 1_000_000),
     )
     .with_timezone("UTC");
     let lists = ListArray::new(
@@ -146,15 +146,15 @@ fn plain_columns(rows: u8, offset: u8) -> Vec<ArrayRef> {
 
     vec![
         Arc::new(Int32Array::from_iter_values(
-            (0..rows).map(|i| i32::from(i + offset)),
+            (0..rows).map(|row| i32::from(row + offset)),
         )),
-        sparse::<Int64Array, _>(rows, 3, |i| i64::from(i + offset)),
+        sparse::<Int64Array, _>(rows, 3, |row| i64::from(row + offset)),
         Arc::new(UInt16Array::from_iter_values((0..rows).map(u16::from))),
-        sparse::<Float64Array, _>(rows, 2, |i| f64::from(i) * 1.25),
-        sparse::<BooleanArray, _>(rows, 3, |i| i % 2 == 0),
-        sparse::<StringArray, _>(rows, 4, |i| format!("s{}", i + offset)),
-        sparse::<BinaryArray, _>(rows, 2, |i| [i, i + 1, i + 2]),
-        sparse::<Date32Array, _>(rows, 5, |i| 19_000 + i32::from(i)),
+        sparse::<Float64Array, _>(rows, 2, |row| f64::from(row) * 1.25),
+        sparse::<BooleanArray, _>(rows, 3, |row| row % 2 == 0),
+        sparse::<StringArray, _>(rows, 4, |row| format!("s{}", row + offset)),
+        sparse::<BinaryArray, _>(rows, 2, |row| [row, row + 1, row + 2]),
+        sparse::<Date32Array, _>(rows, 5, |row| 19_000 + i32::from(row)),
         Arc::new(timestamps),
         Arc::new(lists),
     ]
@@ -163,14 +163,14 @@ fn plain_columns(rows: u8, offset: u8) -> Vec<ArrayRef> {
 /// Columns whose type lives in field metadata, which the Parquet round-trip must carry through.
 fn extension_columns(rows: u8, offset: u8) -> Vec<ArrayRef> {
     let uuids = FixedSizeBinaryArray::try_from_sparse_iter_with_size(
-        (0..rows).map(|i| (i % 3 != 0).then_some([i; 16])),
+        (0..rows).map(|row| (row % 3 != 0).then_some([row; 16])),
         16,
     )
     .unwrap();
 
     vec![
         Arc::new(uuids),
-        sparse::<StringArray, _>(rows, 2, |i| format!(r#"{{"i": {}}}"#, i + offset)),
+        sparse::<StringArray, _>(rows, 2, |row| format!(r#"{{"i": {}}}"#, row + offset)),
         // Six macaddr bytes, as an unmapped Postgres type reaches Arrow.
         sparse::<BinaryArray, _>(rows, 2, |_| b"\x08\x00\x2b\x01\x02\x03"),
     ]
@@ -183,7 +183,7 @@ where
 {
     Arc::new(
         (0..rows)
-            .map(|i| (i % stride != 0).then(|| value(i)))
+            .map(|row| (row % stride != 0).then(|| value(row)))
             .collect::<Column>(),
     )
 }

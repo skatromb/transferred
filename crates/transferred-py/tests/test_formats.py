@@ -1,3 +1,5 @@
+"""`Parquet` — which compressions it accepts and refuses, and that it is immutable."""
+
 from typing import Literal, get_args, get_origin, get_type_hints
 
 import pytest

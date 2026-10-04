@@ -19,7 +19,7 @@ use async_trait::async_trait;
 use futures::Stream;
 use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-use transferred_core::{BatchStream, Result, Source, TransferredError};
+use transferred_core::{BatchStream, BoxedSource, Result, Source, TransferredError};
 
 /// Internal `PyO3` wrapper around a pyarrow `RecordBatchReader`. Constructed by
 /// the user-facing Python `ArrowSource`; not intended to be used directly.
@@ -48,8 +48,8 @@ impl PyArrowSource {
 
 impl PyArrowSource {
     /// Takes the wrapped source, leaving `None` behind.
-    pub(crate) const fn take(&mut self) -> Option<ArrowSource> {
-        self.inner.take()
+    pub(crate) fn take(&mut self) -> Option<BoxedSource> {
+        Some(Box::new(self.inner.take()?))
     }
 }
 

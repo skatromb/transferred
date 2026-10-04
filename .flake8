@@ -10,5 +10,7 @@ extend-exclude =
     target
 
 per-file-ignores =
-    # Printing is what a runnable example does, not a debug leftover
+    # Don't forbid `print`s in examples code
     examples/*.py: WPS421
+    # Don't forbid for duplicate literals in tests
+    crates/transferred-py/tests/*.py: WPS226

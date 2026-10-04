@@ -25,7 +25,7 @@ fn install_logging(py: Python<'_>) -> PyResult<()> {
 #[pymodule]
 fn _native(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     install_logging(py)?;
-    error::register(py, module)?;
+    error::register(module)?;
     module.add_class::<report::PyRunReport>()?;
     module.add_class::<files::PyParquet>()?;
     module.add_class::<files::PyFilesSource>()?;
