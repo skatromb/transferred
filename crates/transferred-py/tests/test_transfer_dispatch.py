@@ -7,37 +7,32 @@ import pytest
 from test_utils import run_transfer
 from transferred import ArrowSource, FilesDestination, Transfer
 
-_ID = "id"
-
-_NOT_A_SOURCE = 42
-"""An int is neither a `Source`, Arrow data, nor iterable."""
-
 
 def test_rejects_dict_as_source(out_dir: Path):
     """A dict iterates its keys (strings) — `_converter_for` rejects str rows."""
     with pytest.raises(TypeError, match="unsupported row type"):
         Transfer(
-            source={_ID: 1, "name": "x"},  # ty: ignore[invalid-argument-type]
+            source={"id": 1, "name": "x"},  # ty: ignore[invalid-argument-type]
             destination=FilesDestination(out_dir),
         )
 
 
 def test_keeps_explicit_arrow_source(out_dir: Path):
-    source = ArrowSource(pa.table({_ID: range(4)}))
+    source = ArrowSource(pa.table({"id": range(4)}))
 
     assert run_transfer(source, out_dir) == 4
 
 
 def test_wraps_bare_arrow_data(out_dir: Path):
     """A DataFrame goes straight in — `pa.Table` stands in for polars and pandas here."""
-    table = pa.table({_ID: [1, 2, 3]})
+    table = pa.table({"id": [1, 2, 3]})
 
     assert run_transfer(table, out_dir) == 3
 
 
 def test_prefers_arrow_over_iteration(out_dir: Path):
     """A reader is iterable, over batches — iterating it would reach the row converter."""
-    reader = pa.table({_ID: [1, 2, 3]}).to_reader()
+    reader = pa.table({"id": [1, 2, 3]}).to_reader()
 
     assert run_transfer(reader, out_dir) == 3
 
@@ -45,7 +40,7 @@ def test_prefers_arrow_over_iteration(out_dir: Path):
 def test_rejects_non_source_non_iterable(out_dir: Path):
     with pytest.raises(TypeError, match="source must be a transferred source"):
         Transfer(
-            source=_NOT_A_SOURCE,  # ty: ignore[invalid-argument-type]
+            source=10,  # ty: ignore[invalid-argument-type]
             destination=FilesDestination(out_dir),
         )
 
@@ -55,6 +50,6 @@ def test_rejects_non_destination():
         TypeError, match="destination must be a transferred destination"
     ):
         Transfer(
-            source=[{_ID: 1}],
+            source=[{"id": 1}],
             destination="not a destination",  # ty: ignore[invalid-argument-type]
         )

@@ -7,8 +7,6 @@ import pytest
 from test_utils import run_transfer
 from transferred import ArrowSource
 
-_ID = "id"
-
 
 def test_rejects_non_arrow_data():
     with pytest.raises(TypeError, match="`PyCapsule` interface"):
@@ -16,7 +14,7 @@ def test_rejects_non_arrow_data():
 
 
 def test_accepts_record_batch_reader(out_dir: Path):
-    rows = [{_ID: 1}, {_ID: 2}, {_ID: 3}]
+    rows = [{"id": 1}, {"id": 2}, {"id": 3}]
     batch = pa.RecordBatch.from_pylist(rows)
     reader = pa.RecordBatchReader.from_batches(batch.schema, [batch])
 
@@ -25,6 +23,6 @@ def test_accepts_record_batch_reader(out_dir: Path):
 
 def test_accepts_table(out_dir: Path):
     """A table exposes the same capsule interface a reader does, materialised."""
-    table = pa.table({_ID: [1, 2, 3]})
+    table = pa.table({"id": [1, 2, 3]})
 
     assert run_transfer(ArrowSource(table), out_dir) == 3

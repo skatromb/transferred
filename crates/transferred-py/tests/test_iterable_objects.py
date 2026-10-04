@@ -7,9 +7,6 @@ from pyarrow import parquet as pq
 from pydantic import BaseModel
 from test_utils import run_transfer
 
-_TOTAL = 1.5
-"""A non-integer value, so the column lands as float64."""
-
 
 @dataclass
 class _OrderDataclass:
@@ -23,7 +20,7 @@ class _OrderModel(BaseModel):
 
 
 def test_transfer_auto_coerces_dataclass(out_dir: Path):
-    rows = [_OrderDataclass(id=row_id, total=_TOTAL) for row_id in range(5)]
+    rows = [_OrderDataclass(id=row_id, total=0.1) for row_id in range(5)]
 
     assert run_transfer(rows, out_dir) == 5
     read_back = pq.read_table(out_dir)
@@ -32,7 +29,7 @@ def test_transfer_auto_coerces_dataclass(out_dir: Path):
 
 
 def test_transfer_auto_coerces_pydantic(out_dir: Path):
-    rows = [_OrderModel(id=row_id, total=_TOTAL) for row_id in range(4)]
+    rows = [_OrderModel(id=row_id, total=0.1) for row_id in range(4)]
 
     assert run_transfer(rows, out_dir) == 4
     assert pq.read_table(out_dir).num_rows == 4
