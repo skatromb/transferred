@@ -3,7 +3,7 @@ allow-expect-in-tests = true
 allow-indexing-slicing-in-tests = true
 allow-panic-in-tests = true
 allow-unwrap-in-tests = true
-allowed-idents-below-min-chars = ["i", "n", "Io", "py", "to"]
+allowed-idents-below-min-chars = ["Io", "py", "to"]
 min-ident-chars-threshold = 2
 
 # Thresholds from wemake-python-styleguide
