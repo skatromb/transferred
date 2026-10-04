@@ -52,21 +52,73 @@ insert into it_text values
     ('sad', ''),
     (null, null);
 
--- All six built-in ranges. PG canonicalises a discrete range to `[)`, so `[1,5]` arrives as `[1,6)`
--- and the inclusivity flags never vary; only the continuous types keep the bounds as written.
+-- All six built-in ranges, each written with every pair of brackets: `[]`, `[)`, `(]`, `()`. PG
+-- canonicalises a discrete range to `[)`, so `[1,5]` arrives as `[1,6)` and the inclusivity flags
+-- never vary; only the continuous types keep the brackets as written.
 create table it_range (
     i4 int4range, i8 int8range, n numrange,
     d daterange, ts tsrange, tstz tstzrange
 );
 
--- Row 2 leaves one side infinite, which is a null bound rather than a NULL range. Row 3 is `empty`,
--- the one state no pair of bounds can stand in for.
 insert into it_range values
-    ('[1,5]', '[1,5]', '(1.5,2.5]', '[2024-01-15,2024-01-20]',
-     '[2024-01-15 12:34:56.789012,2024-01-16 00:00:00)',
-     '[2024-01-15 12:34:56.789012+00,2024-01-16 00:00:00+00)'),
-    ('(,7)', '[7,)', '(,2.5)', '[2024-01-15,)',
-     '(,2024-01-16 00:00:00)', '(,2024-01-16 00:00:00+00)'),
+    (
+        '[1,5]',
+        '[1,5]',
+        '[1.5,2.5]',
+        '[2024-01-15,2024-01-20]',
+        '[2024-01-15 12:34:56.789012,2024-01-16 00:00:00]',
+        '[2024-01-15 12:34:56.789012+00,2024-01-16 00:00:00+00]'
+    ),
+    (
+        '[1,5)',
+        '[1,5)',
+        '[1.5,2.5)',
+        '[2024-01-15,2024-01-20)',
+        '[2024-01-15 12:34:56.789012,2024-01-16 00:00:00)',
+        '[2024-01-15 12:34:56.789012+00,2024-01-16 00:00:00+00)'
+    ),
+    (
+        '(1,5]',
+        '(1,5]',
+        '(1.5,2.5]',
+        '(2024-01-15,2024-01-20]',
+        '(2024-01-15 12:34:56.789012,2024-01-16 00:00:00]',
+        '(2024-01-15 12:34:56.789012+00,2024-01-16 00:00:00+00]'
+    ),
+    (
+        '(1,5)',
+        '(1,5)',
+        '(1.5,2.5)',
+        '(2024-01-15,2024-01-20)',
+        '(2024-01-15 12:34:56.789012,2024-01-16 00:00:00)',
+        '(2024-01-15 12:34:56.789012+00,2024-01-16 00:00:00+00)'
+    );
+
+-- The same six ranges in the states no pair of finite bounds stands for. Rows 1 and 2 leave one
+-- side infinite, which is a null bound rather than a NULL range. Row 3 is `empty`, row 4 the SQL
+-- NULL.
+create table it_range_edge_cases (
+    i4 int4range, i8 int8range, n numrange,
+    d daterange, ts tsrange, tstz tstzrange
+);
+
+insert into it_range_edge_cases values
+    (
+        '(,7)',
+        '(,7)',
+        '(,2.5)',
+        '(,2024-01-15)',
+        '(,2024-01-16 00:00:00)',
+        '(,2024-01-16 00:00:00+00)'
+    ),
+    (
+        '[7,)',
+        '[7,)',
+        '[2.5,)',
+        '[2024-01-15,)',
+        '[2024-01-16 00:00:00,)',
+        '[2024-01-16 00:00:00+00,)'
+    ),
     ('empty', 'empty', 'empty', 'empty', 'empty', 'empty'),
     (null, null, null, null, null, null);
 

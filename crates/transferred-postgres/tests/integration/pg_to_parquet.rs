@@ -85,6 +85,7 @@ async fn text_extensions_reach_parquet() {
 #[tokio::test]
 async fn ranges_reach_parquet() {
     assert_survives_parquet("it_range").await;
+    assert_survives_parquet("it_range_edge_cases").await;
 }
 
 /// `geoarrow.wkb` is nobody's canonical type, so this pins that the writer carries the CRS metadata.

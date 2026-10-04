@@ -20,6 +20,10 @@ use crate::common::read_table;
 
 /// 2024-01-15, in days since the Unix epoch.
 const JAN_15_2024: i32 = 19_737;
+/// 2024-01-16, in days since the Unix epoch.
+const JAN_16_2024: i32 = 19_738;
+/// 2024-01-20, in days since the Unix epoch.
+const JAN_20_2024: i32 = 19_742;
 /// 2024-01-21, in days since the Unix epoch.
 const JAN_21_2024: i32 = 19_743;
 /// 1969-07-20, in days since the Unix epoch. Before it, and before PG's own 2000-01-01 epoch, so
@@ -28,7 +32,7 @@ const JUL_20_1969: i32 = -165;
 /// 2024-01-15 12:34:56.789012, in microseconds since the Unix epoch.
 const JAN_15_2024_12_34_56: i64 = 1_705_322_096_789_012;
 /// 2024-01-16 00:00:00, in microseconds since the Unix epoch.
-const JAN_16_2024: i64 = 1_705_363_200_000_000;
+const JAN_16_2024_00_00_00: i64 = 1_705_363_200_000_000;
 /// 1969-07-20 20:17:40, in microseconds since the Unix epoch; negative for the same reason.
 const JUL_20_1969_20_17_40: i64 = -14_182_940_000_000;
 
@@ -205,90 +209,134 @@ async fn text_extensions() {
     assert_eq!(read_table("it_text").await, expected);
 }
 
-/// Builds one range column of the fixture, tagged `transferred.pg_range` and bounded by `lower`'s
-/// type. The bounds and brackets, as PG prints them, cover the two rows that differ per column;
-/// the two that read the same in every column follow — row 3 is `empty`, row 4 is the SQL NULL.
+/// `[lower_inc, upper_inc]` of a discrete range: PG rewrites every one to `[)`.
+const CANONICAL: [bool; 2] = [true, false];
+/// `[lower_inc, upper_inc]` of each `it_range` row in a continuous column: the brackets as written,
+/// `[]`, `[)`, `(]` and `()`.
+const INCLUSIVITY_COMBINATIONS: [[bool; 2]; 4] =
+    [[true, true], [true, false], [false, true], [false, false]];
+
+/// Builds one column of `it_range`, tagged `transferred.pg_range`: four bounded ranges whose
+/// lower and upper inclusivity is `inclusive`.
 fn ranges(
     name: &str,
-    lower: impl Array,
-    upper: impl Array,
-    brackets: [&str; 2],
+    lower: impl Array + 'static,
+    upper: impl Array + 'static,
+    inclusive: [[bool; 2]; 4],
 ) -> (Field, ArrayRef) {
     let fields = PgRange::fields(lower.data_type().clone());
-    let unbounded = new_null_array(lower.data_type(), 2);
-    let pad = |bounds: &dyn Array| concat(&[bounds, unbounded.as_ref()]).unwrap();
-    let lower_inc = brackets.map(|pair| pair.starts_with('['));
-    let upper_inc = brackets.map(|pair| pair.ends_with(']'));
-    let columns: Vec<ArrayRef> = vec![
-        pad(&lower),
-        pad(&upper),
-        Arc::new(BooleanArray::from([lower_inc, [false; 2]].concat())),
-        Arc::new(BooleanArray::from([upper_inc, [false; 2]].concat())),
-        Arc::new(BooleanArray::from(vec![false, false, true, false])),
-    ];
-    let nulls = NullBuffer::from(vec![true, true, true, false]);
+    let lower_inc = BooleanArray::from(inclusive.map(|[lower_inc, _]| lower_inc).to_vec());
+    let upper_inc = BooleanArray::from(inclusive.map(|[_, upper_inc]| upper_inc).to_vec());
+    let empty = BooleanArray::from(vec![false; 4]);
 
-    let array = StructArray::try_new(fields, columns, Some(nulls)).unwrap();
+    let columns: Vec<ArrayRef> = vec![
+        Arc::new(lower),
+        Arc::new(upper),
+        Arc::new(lower_inc),
+        Arc::new(upper_inc),
+        Arc::new(empty),
+    ];
+    let array = StructArray::try_new(fields, columns, None).unwrap();
     tagged(name, PgRange, array)
 }
 
-/// Bounds plus a tag tell an infinite bound, an `empty` range and a SQL NULL apart. A discrete
-/// range reaches us canonicalised, so its flags say `[)` whatever the literal wrote.
+/// Builds one column of `it_range_edge_cases`, tagged `transferred.pg_range`:
+/// `(,bound)`, `[bound,)`, `empty` and the SQL NULL.
+fn range_edge_cases(name: &str, bound: impl Array) -> (Field, ArrayRef) {
+    let fields = PgRange::fields(bound.data_type().clone());
+    let infinite: &dyn Array = &new_null_array(bound.data_type(), 1);
+    let lower = concat(&[infinite, &bound, infinite, infinite]).unwrap();
+    let upper = concat(&[&bound, infinite, infinite, infinite]).unwrap();
+    let lower_inc = BooleanArray::from(vec![false, true, false, false]);
+    let upper_inc = BooleanArray::from(vec![false, false, false, false]);
+    let empty = BooleanArray::from(vec![false, false, true, false]);
+    let not_null = NullBuffer::from(vec![true, true, true, false]);
+
+    let columns: Vec<ArrayRef> = vec![
+        lower,
+        upper,
+        Arc::new(lower_inc),
+        Arc::new(upper_inc),
+        Arc::new(empty),
+    ];
+    let array = StructArray::try_new(fields, columns, Some(not_null)).unwrap();
+    tagged(name, PgRange, array)
+}
+
+/// A discrete range reaches us canonicalised: its flags say `[)` whatever the literal wrote, and a
+/// `(` or `]` moves its bound one step.
 #[tokio::test]
 async fn discrete_ranges_arrive_canonicalised() {
+    let lower_days = Date32Array::from(vec![JAN_15_2024, JAN_15_2024, JAN_16_2024, JAN_16_2024]);
+    let upper_days = Date32Array::from(vec![JAN_21_2024, JAN_20_2024, JAN_21_2024, JAN_20_2024]);
+
     let expected = batch([
         ranges(
             "i4",
-            Int32Array::from(vec![Some(1), None]),
-            Int32Array::from(vec![6, 7]),
-            ["[)", "()"],
+            Int32Array::from(vec![1, 1, 2, 2]),
+            Int32Array::from(vec![6, 5, 6, 5]),
+            [CANONICAL; 4],
         ),
         ranges(
             "i8",
-            Int64Array::from(vec![1, 7]),
-            Int64Array::from(vec![Some(6), None]),
-            ["[)", "[)"],
+            Int64Array::from(vec![1, 1, 2, 2]),
+            Int64Array::from(vec![6, 5, 6, 5]),
+            [CANONICAL; 4],
         ),
-        // The `[)` form of `[2024-01-15,2024-01-20]`.
-        ranges(
-            "d",
-            Date32Array::from(vec![JAN_15_2024; 2]),
-            Date32Array::from(vec![Some(JAN_21_2024), None]),
-            ["[)", "[)"],
-        ),
+        ranges("d", lower_days, upper_days, [CANONICAL; 4]),
     ]);
 
     assert_eq!(read_columns("it_range", &expected).await, expected);
 }
 
-/// `numrange`, `tsrange` and `tstzrange` keep the inclusivity of the literal.
+/// `numrange`, `tsrange` and `tstzrange` keep the brackets of the literal.
 #[tokio::test]
 async fn continuous_ranges_keep_their_brackets() {
-    let lower_micros = TimestampMicrosecondArray::from(vec![Some(JAN_15_2024_12_34_56), None]);
-    let upper_micros = TimestampMicrosecondArray::from(vec![JAN_16_2024; 2]);
+    let lower_micros = TimestampMicrosecondArray::from(vec![JAN_15_2024_12_34_56; 4]);
+    let upper_micros = TimestampMicrosecondArray::from(vec![JAN_16_2024_00_00_00; 4]);
 
     let expected = batch([
         ranges(
             "n",
-            Decimal128Array::from(vec![Some(1_500_000_000), None]).with_data_type(BARE_NUMERIC),
-            Decimal128Array::from(vec![2_500_000_000; 2]).with_data_type(BARE_NUMERIC),
-            ["(]", "()"],
+            Decimal128Array::from(vec![1_500_000_000; 4]).with_data_type(BARE_NUMERIC),
+            Decimal128Array::from(vec![2_500_000_000; 4]).with_data_type(BARE_NUMERIC),
+            INCLUSIVITY_COMBINATIONS,
         ),
         ranges(
             "ts",
             lower_micros.clone(),
             upper_micros.clone(),
-            ["[)", "()"],
+            INCLUSIVITY_COMBINATIONS,
         ),
         ranges(
             "tstz",
             lower_micros.with_timezone(UTC),
             upper_micros.with_timezone(UTC),
-            ["[)", "()"],
+            INCLUSIVITY_COMBINATIONS,
         ),
     ]);
 
     assert_eq!(read_columns("it_range", &expected).await, expected);
+}
+
+/// Bounds plus a tag tell an infinite bound, an `empty` range and a SQL NULL apart.
+#[tokio::test]
+async fn range_edge_cases_stay_apart() {
+    let micros = TimestampMicrosecondArray::from(vec![JAN_16_2024_00_00_00]);
+
+    let expected = batch([
+        range_edge_cases("i4", Int32Array::from(vec![7])),
+        range_edge_cases("i8", Int64Array::from(vec![7])),
+        range_edge_cases(
+            "n",
+            Decimal128Array::from(vec![2_500_000_000]).with_data_type(BARE_NUMERIC),
+        ),
+        range_edge_cases("d", Date32Array::from(vec![JAN_15_2024])),
+        range_edge_cases("ts", micros.clone()),
+        range_edge_cases("tstz", micros.with_timezone(UTC)),
+    ]);
+
+    assert_eq!(read_table("it_range_edge_cases").await, expected);
 }
 
 /// Decodes a hex byte string, so expectations read as the hex PG itself prints.

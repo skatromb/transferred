@@ -112,6 +112,7 @@ async fn text_extensions_round_trip() {
 #[tokio::test]
 async fn ranges_round_trip() {
     assert_round_trips("it_range").await;
+    assert_round_trips("it_range_edge_cases").await;
 }
 
 /// The destination rebuilds a `PostGIS` column from the tag alone: `geography` where the edges are
