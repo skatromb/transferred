@@ -89,8 +89,8 @@ impl PyRunReport {
             self.inner
                 .written_objects
                 .iter()
-                .fold(String::new(), |mut string, object| {
-                    let _ = write!(string, "\n    {object}");
+                .fold(String::new(), |mut string, written| {
+                    let _ = write!(string, "\n    {written}");
                     string
                 });
 

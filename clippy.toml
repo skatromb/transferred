@@ -10,9 +10,9 @@ min-ident-chars-threshold = 2
 cognitive-complexity-threshold = 12
 disallowed-names = [
     "arr", "bar", "baz", "content", "contents", "data", "do", "false", "foo", "ham",
-    "handle", "handler", "info", "item", "items", "no", "obj", "objects", "objs", "param",
+    "handle", "handler", "info", "item", "items", "no", "obj", "object", "objects", "objs", "param",
     "params", "parameters", "result", "results", "some", "spam", "temp", "tmp", "true", "val",
-    "vals", "value", "values", "var", "variable", "vars",
+    "vals", "value", "values", "var", "variable", "vars", "wrapper",
 ]
 excessive-nesting-threshold = 4
 max-fn-params-bools = 1
