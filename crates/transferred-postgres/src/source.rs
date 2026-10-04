@@ -4,6 +4,7 @@ mod copy_out;
 mod pg_to_arrow;
 
 use async_trait::async_trait;
+use futures::stream::TryChunksError;
 use futures::{StreamExt as _, TryStreamExt as _};
 use tokio_postgres::Client;
 use transferred_core::{BatchStream, Result, Source, TransferredError};
@@ -61,7 +62,7 @@ async fn batches(client: &Client, table: &str) -> Result<BatchStream> {
     Ok(copy_out::rows(copy)
         .try_chunks(BATCH_ROWS)
         .map(move |chunk| {
-            let rows = chunk.map_err(|failed| failed.1)?;
+            let rows = chunk.map_err(|TryChunksError(_, error)| error)?;
             decoder.decode(&rows)
         })
         .boxed())
