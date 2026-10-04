@@ -15,10 +15,18 @@ create table it_temporal (d date, ts timestamp, tstz timestamptz, iv interval);
 -- tstz literals carry +00 so they don't depend on session TimeZone.
 -- iv keeps months/days/micros mutually irreducible, as PG never normalises across them.
 insert into it_temporal values
-    ('2024-01-15', '2024-01-15 12:34:56.789012', '2024-01-15 12:34:56.789012+00',
-     '1 year 2 mons 3 days 04:05:06.789'),
-    ('1969-07-20', '1969-07-20 20:17:40', '1969-07-20 20:17:40+00',
-     '-1 mons -2 days -03:00:00'),
+    (
+        '2024-01-15',
+        '2024-01-15 12:34:56.789012',
+        '2024-01-15 12:34:56.789012+00',
+        '1 year 2 mons 3 days 04:05:06.789'
+    ),
+    (
+        '1969-07-20',
+        '1969-07-20 20:17:40',
+        '1969-07-20 20:17:40+00',
+        '-1 mons -2 days -03:00:00'
+    ),
     (null, null, null, null);
 
 -- `n` is bare on purpose: it exercises the Decimal128(38, 9) default for typmod -1.
@@ -30,7 +38,11 @@ create table it_numeric (n numeric, small numeric(28,4), wide numeric(38,9));
 -- all 10 decimals, so only there does the mapping itself round — half away from zero.
 insert into it_numeric values
     (1.5, 1.5, 1.5),
-    (-1234567890123456789.123456789, -1234567890123456789.123456789, -1234567890123456789.123456789),
+    (
+        -1234567890123456789.123456789,
+        -1234567890123456789.123456789,
+        -1234567890123456789.123456789
+    ),
     (0.1234567885, 0.1234567885, 0.1234567885),
     (null, null, null);
 
@@ -138,13 +150,20 @@ create table it_geo (
 );
 
 insert into it_geo values
-    ('SRID=4326;POINT(1 2)', 'SRID=4326;POINT(1 2)', 'POINT(1 2)', 'SRID=4326;POINT(1 2)',
-     'SRID=4269;POINT(1 2)'),
-    ('SRID=3006;LINESTRING(0 0, 1 1)',
-     'SRID=4326;POINT(-73.985 40.748)',
-     'POINT(3 4)',
-     'SRID=4326;POINT(-73.985 40.748)',
-     'SRID=4326;POINT(1 2)'),
+    (
+        'SRID=4326;POINT(1 2)',
+        'SRID=4326;POINT(1 2)',
+        'POINT(1 2)',
+        'SRID=4326;POINT(1 2)',
+        'SRID=4269;POINT(1 2)'
+    ),
+    (
+        'SRID=3006;LINESTRING(0 0, 1 1)',
+        'SRID=4326;POINT(-73.985 40.748)',
+        'POINT(3 4)',
+        'SRID=4326;POINT(-73.985 40.748)',
+        'SRID=4326;POINT(1 2)'
+    ),
     (null, null, null, null, null);
 
 -- Two types the mapping has no rule for: one built in, one user-defined, so the type name in the
