@@ -7,91 +7,63 @@ description: |
 
 # release — cut a `transferred` version
 
-Ships Rust crates (`transferred-core`, `transferred-files`, `transferred-postgres`, `transferred-py`) to crates.io and the `transferred` wheel to PyPI. CI publishes; this skill is the human pre/post work.
-
-Use `make` targets where they exist. If a step has no target, do it by hand or extend the Makefile.
+CI publishes the crates to crates.io and the wheels to PyPI; this skill is the human work around it. Use `make` targets where they exist; otherwise do the step by hand or extend the Makefile.
 
 ## Preconditions
 
-- All scope items for the version in `PLAN.md` are `[x]` except `Deploy 0.0.x`
-- Every public source/destination/format added or changed this version has an example in `examples/`
-- `make pre-release` passes locally
+- The version's `PLAN.md` scope is `[x]`.
+- Every public source, destination or format added or changed has an `examples/*.py`.
+- `make pre-release` passes.
 
-## 1 — Pre-release ergonomics test
+## 1 — Try the API as a user
 
-Tests passing ≠ API feeling good.
-Bad docstrings, awkward signatures, and unclear errors only surface when used like a user would.
+Tests don't catch bad docstrings, awkward signatures or unclear errors.
 
 ```bash
 make python-dev-build
 cd crates/transferred-py && uv run python
 ```
 
-Exercise every public class added or changed this version. Example:
+Exercise every public class added or changed:
 
-```python
-from transferred import Transfer, FilesDestination
-
-help(Transfer)
-Transfer(source=[{"a": 1}], destination=FilesDestination("/tmp/out")).run()
-```
-
-Check:
 - Docstrings useful in `help(...)` / IDE hover
 - Public classes importable from documented module paths
 - Error messages clear when wrong types are passed
 - `RunReport.__repr__` reads well
 - Every new public class has a committed `examples/*.py`; `make examples` passes
 
-## 2 — Update README
+## 2 — Sync README
 
-Sync the whole README.md end-to-end with this version's surface,
-including the code example (it's not covered by tests) and supported sources and destinations.
-Output blocks (e.g. `print(report)`) must match actual output verbatim.
-Code should be styled the same way as our Python code.
+Sync the whole README.md end to end with this version's surface:
 
-## 3 — Version bump
+- The code example, which no test covers
+- Supported sources and destinations
+- Output blocks (e.g. `print(report)`) match actual output verbatim
+- Code styled the same way as our Python code
 
-Edit `version = "..."` in workspace root `Cargo.toml`, tick `Deploy 0.0.x` in `PLAN.md`, then:
+## 3 — Bump
 
-```bash
-make bump-lock
-make check
-```
+Set `version` in the root `Cargo.toml` and tick `Deploy X.Y.Z` in `PLAN.md` if present, then `make bump-lock && make check`. Commit `bump version to X.Y.Z`.
 
-Commit message — single-line descriptive imperative, no Conventional Commits prefixes:
+Stop: the user reviews the working tree before anything is committed. Then open a PR and ask to merge.
 
-```
-bump version to X.Y.Z
-```
-
-## 4 — Hand the diff over
-
-Stop and ask the user to review the working tree before anything is committed.
-
-## 5 — Open PR, ask for merge
-
-Ask about merging to `main`.
-
-## 6 — Tag and push
+## 4 — Tag
 
 ```bash
 git checkout main && git pull
 make release-tag
 ```
 
-Triggers `.github/workflows/release.yml`.
-CI's `verify` job rejects tags not on `main` or with version mismatching `transferred-core`'s `Cargo.toml`.
+Triggers `release.yml`, whose `verify` job rejects a tag off `main` or not matching the `Cargo.toml` version. A fix needed before publishing: merge it, then `make release-retag`.
 
-## 7 — Approve environments
+Ask the user to approve both environments in GH Actions:
 
-Ask the user to approve the release for both environments in the GH Actions tab:
 - `crates-io` — publishes core → files → postgres → py
 - `pypi` — Trusted Publishers / OIDC
 
-## 8 — Post-release smoke test
+## 5 — Smoke test the published package
 
-Wait for green CI, then install the package from the published wheel:
+After CI is green, install from the published wheel:
 
 ```bash
 cd crates/transferred-py
@@ -104,14 +76,24 @@ import transferred
 "
 ```
 
+And on Linux:
+
+```bash
+docker run --rm ghcr.io/astral-sh/uv:python3.14-trixie-slim \
+    uv run --no-project --with "transferred[arrow]==X.Y.Z" python -c "..."
+```
+
+`--refresh` only skips uv's local cache. PyPI's CDN can lag a few minutes after upload, so a missing version or wheel may just be stale: wait and retry.
+
 Check:
+
 - Binary wheel, not sdist fallback (no compile output)
 - `import transferred` works
-- Representative `Transfer(...).run()` succeeds
+- A `Transfer(...).run()` exercising the new surface succeeds
 
 Restore dev install: `make python-dev-build`.
 
-## 9 — Verify pages
+## 6 — Verify pages
 
-- Check `https://pypi.org/project/transferred/X.Y.Z/` renders
-- Check each crate page on crates.io
+- `https://pypi.org/project/transferred/X.Y.Z/` renders and lists as many files as the previous release. Same CDN lag applies.
+- Each crate's page on crates.io
