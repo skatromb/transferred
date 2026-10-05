@@ -7,19 +7,18 @@ from typing import TYPE_CHECKING, Any, Self
 
 from transferred._base import Destination, Source
 from transferred._native import _Transfer
-from transferred.arrow import ArrowSource, ArrowStream
+from transferred.arrow import ArrowSource, DataFrame
 
 if TYPE_CHECKING:
     import pydantic
     from _typeshed import DataclassInstance
 
 
-type SourceLike = (
-    Source
-    | ArrowStream
-    | Iterable[dict[str, Any] | DataclassInstance | pydantic.BaseModel]
-)
+type SourceLike = Source | DataFrame | Iterable[Row]
 """Anything `Transfer(source=...)` accepts."""
+
+type Row = dict[str, Any] | DataclassInstance | pydantic.BaseModel
+"""A single input row: `dict`, `@dataclass` instance, or `pydantic.BaseModel`."""
 
 
 class Transfer(_Transfer):
@@ -70,7 +69,7 @@ def _coerce_source(source: SourceLike) -> Source:
     if isinstance(source, Source):
         return source
 
-    if isinstance(source, ArrowStream):
+    if isinstance(source, DataFrame):
         return ArrowSource(source)
 
     if isinstance(source, Iterable):
