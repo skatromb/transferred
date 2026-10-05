@@ -78,8 +78,8 @@ jobs:
         with:
           target: ${{ matrix.platform.target }}
           manylinux: auto
-          # Vendored OpenSSL's build script needs `IPC::Cmd`, which the manylinux image lacks.
-          before-script-linux: yum install -y perl-IPC-Cmd
+          # Vendored OpenSSL's build script needs `IPC::Cmd` and `Time::Piece`, which the manylinux image lacks.
+          before-script-linux: yum install -y perl-IPC-Cmd perl-Time-Piece
           working-directory: crates/transferred-py
           args: --release --out dist --find-interpreter
 
