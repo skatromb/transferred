@@ -1,10 +1,10 @@
-//! Shared connect path: libpq `sslmode` semantics on top of the platform's TLS.
+//! Shared connect path: libpq `sslmode` semantics on top of rustls.
 
-use native_tls::TlsConnector;
-use postgres_native_tls::MakeTlsConnector;
 use tokio_postgres::{Client, Config};
 use tracing::warn;
 use transferred_core::AnyError;
+
+use crate::tls::connector;
 
 /// libpq's strictest `sslmode`, spelled the same in URL and key=value DSNs; `Config` rejects it.
 const VERIFY_FULL: &str = "sslmode=verify-full";
@@ -33,15 +33,6 @@ fn split_verify_full(dsn: &str) -> (String, bool) {
         dsn.replace(VERIFY_FULL, "sslmode=require"),
         dsn.contains(VERIFY_FULL),
     )
-}
-
-/// A TLS connector that checks the server against the platform trust store only under `verify-full`.
-fn connector(verify: bool) -> Result<MakeTlsConnector, AnyError> {
-    let connector = TlsConnector::builder()
-        .danger_accept_invalid_certs(!verify)
-        .build()?;
-
-    Ok(MakeTlsConnector::new(connector))
 }
 
 #[cfg(test)]

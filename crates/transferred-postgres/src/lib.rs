@@ -6,6 +6,7 @@ mod destination;
 pub mod geoarrow;
 mod pg_range;
 mod source;
+mod tls;
 
 pub use destination::{PostgresDestination, STAGING_SUFFIX};
 pub use pg_range::PgRange;
