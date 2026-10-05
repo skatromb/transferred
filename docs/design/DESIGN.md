@@ -1,6 +1,6 @@
 # `transferred` — Design
 
-Package name `transferred` on both crates.io and PyPI. Workspace is split into per-connector crates (`transferred-core`, `transferred-files`, `transferred-postgres`, `transferred-bigquery`) plus a Python binding crate and `transferred-perf` (unpublished perf harness). `transferred-files` is the local-filesystem connector — it owns the `Files` source + destination *and* the file-format codecs (Parquet now; Csv/Avro later, in-crate). Formats split into their own crates only if that earns its keep. Workspace version is shared across all crates; untie only if release cadence diverges.
+Package name `transferred` on both crates.io and PyPI. Workspace is split into per-connector crates (`transferred-core`, `transferred-files`, `transferred-postgres`, `transferred-bigquery`) plus a Python binding crate and `transferred-perf` (unpublished perf harness). `transferred-files` is the local-filesystem connector — it owns the `Files` source + destination _and_ the file-format codecs (Parquet now; Csv/Avro later, in-crate). Formats split into their own crates only if that earns its keep. Workspace version is shared across all crates; untie only if release cadence diverges.
 
 ## Why
 
@@ -125,24 +125,24 @@ No row-level Python callbacks. The FFI boundary is crossed once per transfer (pe
 File-shaped destinations are decoupled from file formats. A destination describes **where** bytes land; a format codec describes **how** they are encoded.
 
 - `FormatRead` (decode → Arrow) and `FormatWrite` (encode ← Arrow) traits — split, not one symmetric trait, so a read-only or write-only codec doesn't have to stub the other half. Both traits and the `Parquet` codec live in `transferred-files`. Implementations carry encoder knobs:
-  - `Parquet(compression="zstd")` — keeps the parquet-rs default row-group size (1,048,576 rows; `DEFAULT_MAX_ROW_GROUP_ROW_COUNT`). Row-group sizing is a write-side memory lever but isn't exposed yet — revisit once a byte-based cap (`set_max_row_group_bytes`) earns its keep.
-  - `Avro(...)`
-  - `Json(...)`
-  - `Csv(...)`
+    - `Parquet(compression="zstd")` — keeps the parquet-rs default row-group size (1,048,576 rows; `DEFAULT_MAX_ROW_GROUP_ROW_COUNT`). Row-group sizing is a write-side memory lever but isn't exposed yet — revisit once a byte-based cap (`set_max_row_group_bytes`) earns its keep.
+    - `Avro(...)`
+    - `Json(...)`
+    - `Csv(...)`
 - File-shaped destinations carry a `format`, defaulting to `Parquet()`:
-  - `FilesDestination(path, format=Parquet(), single_file=False)` — local filesystem. `path` is always a directory (see below).
-  - `S3Destination(bucket, key, format=Parquet())`, `GCSDestination(bucket, key, format=Parquet())` — cloud, `object_store`-backed, each carrying its own typed auth params. Separate classes, not a `FilesDestination(backend=)` enum: per-backend auth surfaces (S3 region/keys/endpoint vs GCS service-account) differ, and `object_store`'s own unified surface is either Rust builders or a stringly-typed options bag — neither a clean typed Python API.
+    - `FilesDestination(path, format=Parquet(), single_file=False)` — local filesystem. `path` is always a directory (see below).
+    - `S3Destination(bucket, key, format=Parquet())`, `GCSDestination(bucket, key, format=Parquet())` — cloud, `object_store`-backed, each carrying its own typed auth params. Separate classes, not a `FilesDestination(backend=)` enum: per-backend auth surfaces (S3 region/keys/endpoint vs GCS service-account) differ, and `object_store`'s own unified surface is either Rust builders or a stringly-typed options bag — neither a clean typed Python API.
 - Row-protocol destinations have no `format` knob — the wire protocol is the encoding:
-  - `BigQueryDestination(project, dataset, table)` — Storage Write API.
-  - `PostgresDestination(dsn, table)` — `COPY ... FROM STDIN`.
+    - `BigQueryDestination(project, dataset, table)` — Storage Write API.
+    - `PostgresDestination(dsn, table)` — `COPY ... FROM STDIN`.
 
 **`FilesDestination` output shape.** `path` is always a directory, overwritten if it exists;
 written atomically via a tmp dir + rename. Written file paths come back in the run report.
 
-| `single_file` | output |
-| ------------- | ------ |
-| `False` (default) | one `part-NNNNN.<ext>` per source partition |
-| `True` | all partitions flattened into one `<dir>.<ext>` (named after the directory) |
+| `single_file`     | output                                                                      |
+| ----------------- | --------------------------------------------------------------------------- |
+| `False` (default) | one `part-NNNNN.<ext>` per source partition                                 |
+| `True`            | all partitions flattened into one `<dir>.<ext>` (named after the directory) |
 
 A flag, not extension inference — no path-shape ambiguity (dotted dirs, type
 conflicts). The directory has no extension, so format is never inferred from it.
@@ -188,7 +188,7 @@ S3Destination(bucket="dwh", key="orders/")       # cloud, same defaults
 **Schema resolution flow.** Source-owned; destination validates. Arrow is internal.
 
 1. Source produces its inferred Arrow schema natively.
-2. Destination validates each column against its accepted type set. Plan-time fail (`SchemaError`) only when the type is fundamentally incompatible and no Arrow cast kernel exists at all. Width and precision mismatches that *might* fit are left to step 4.
+2. Destination validates each column against its accepted type set. Plan-time fail (`SchemaError`) only when the type is fundamentally incompatible and no Arrow cast kernel exists at all. Width and precision mismatches that _might_ fit are left to step 4.
 3. If a destination already exists (file, table), its schema is compared against the source's. Incompatibility → `SchemaError`, naming the column and both types.
 4. Source emits batches; the engine coerces each batch per column (Tier 1 auto, Tier 2 warn, Tier 3 fail). Arrow `cast` uses `safe=true`; the first overflow row aborts the run. Atomic destinations guarantee no half-written state on failure.
 5. Destination writes the batches, mapping to its native representation.
@@ -229,6 +229,7 @@ Python-side memory (iterable path via `_iterable_to_reader`):
 **Conversion seam — design intent.** Row-shape normalization (dict / dataclass / pydantic → `dict[str, Any]`) and dict → Arrow batch building both happen on the **Python side**. Rust only ever sees `arrow::RecordBatch` arriving across the C Data Interface, single hot path.
 
 Rationale:
+
 - Both paths cross the CPython FFI **once per cell** — every read of a `PyLongObject` / `PyUnicodeObject` is a CPython API call whichever language owns the loop. The gap is a constant factor (pyarrow ~2x), not an order of magnitude.
 - So the decisive factor is **code volume**: ~200 lines of unsafe-ish PyO3 conversion, null handling, schema inference and nested types, against one `pa.RecordBatch.from_pylist()` call into a battle-tested implementation that the rest of the ecosystem already speaks.
 - Cost accepted: pyarrow is an **optional dep** via the `transferred[arrow]` extra (`transferred[iterable]` aliased, ~30 MB wheel), so a base install stays lean for Rust-native connectors. Missing pyarrow at iterable conversion raises `ImportError` with an install hint; a DataFrame needs no pyarrow of its own.
@@ -240,7 +241,7 @@ Fast path for callers who already have Arrow: pass the DataFrame itself, which s
 - **Atomic loads.** Each backend uses its own native atomic primitive.
     - BQ: Storage Write API in `pending` mode against a staging table named per load, then `CREATE OR REPLACE TABLE target AS SELECT * FROM staging`, then `DROP TABLE staging`. That one statement is where atomicity comes from. It is a query rather than the cheaper copy job because rows the Storage Write API has just committed sit in [write-optimized storage](https://docs.cloud.google.com/bigquery/docs/write-api-rest), which a copy job does not read — it returns zero rows, a clone the same, and a rename is refused with `has streaming data`. Flushing takes minutes, up to 90 in rare cases, and cannot be asked for. A `SELECT` is the only reader that sees them, so a load pays for one scan of what it wrote and the target is recreated — labels, description and table-level IAM do not survive. Staging carries a timestamp because a table created under a just-dropped name stays invisible to the Storage Write API, which refuses the write stream with `NotFound`. It is created through `tables.insert` with a typed field list rather than DDL, which is where `partition_by`/`cluster_by` land too, so the only SQL a load builds is the swap and the drop. Schema enforcement is server-side: AppendRows rejects a batch whose Arrow field does not match the column, naming both. No GCS staging, no Parquet encoding, no `staging_bucket` knob on the public API.
     - Postgres: staging table built from the source-derived schema, `COPY ... FROM STDIN`, then `BEGIN; DROP target; RENAME staging; COMMIT;` under transactional DDL. The swap runs through `Client::transaction()`, whose `Drop` rolls back — otherwise a failed statement strands the session in an aborted transaction and silently swallows staging cleanup. No client-side schema compare: source schema wins and the target is replaced outright, so there is nothing to compare against. Indexes, grants and ownership are not preserved.
-  Transfers never leave the destination half-written. `mode="append"` and `mode="upsert"` are out of scope while the project is in initial development. `on_schema_change="replace"` to opt into destructive schema replacement is a deferred kwarg.
+      Transfers never leave the destination half-written. `mode="append"` and `mode="upsert"` are out of scope while the project is in initial development. `on_schema_change="replace"` to opt into destructive schema replacement is a deferred kwarg.
 - **Source filter surface.** `table=` and `query=` bound the extract. No partial filter DSL on top — keeps the API one knob wide.
 - **Errors.** Every failure surfaces as a `TransferredError` subclass, whichever connector raised it.
 - **Credentials.** All GCP auth delegates to `google-cloud-auth`: Application Default Credentials, `GOOGLE_APPLICATION_CREDENTIALS` service-account JSON, gcloud user creds, workload identity. Postgres uses standard DSN-embedded creds or libpq env vars.
@@ -259,13 +260,13 @@ Arrow is the internal lingua franca and the only vocabulary the mapping speaks; 
 
 Arrow covers most primitives directly. The tricky types — geometry, JSON, UUID, ranges, intervals, vendor-specific — are meant to go through a registry rather than ad-hoc per-connector code. **That registry is deferred and does not exist yet.** The Arrow schema is the entire contract between a source and a destination, and each destination pattern-matches `(DataType, extension name)` for itself:
 
-| Arrow representation      | Files (Parquet)                | Postgres                                                        |
-| ------------------------- | ------------------------------ | --------------------------------------------------------------- |
-| Native types              | written as-is                  | mapped by `arrow_to_pg`                                         |
-| `arrow.uuid`, `arrow.json`| metadata written verbatim      | `uuid`, `json`                                                  |
-| `geoarrow.wkb`            | metadata written verbatim      | `geometry`/`geography`, with the SRID when the CRS is an authority code |
-| `arrow.opaque`            | metadata written verbatim      | `bytea`, type name dropped                                      |
-| Anything else             | written as-is                  | refused, naming the Arrow type                                  |
+| Arrow representation       | Files (Parquet)           | Postgres                                                                |
+| -------------------------- | ------------------------- | ----------------------------------------------------------------------- |
+| Native types               | written as-is             | mapped by `arrow_to_pg`                                                 |
+| `arrow.uuid`, `arrow.json` | metadata written verbatim | `uuid`, `json`                                                          |
+| `geoarrow.wkb`             | metadata written verbatim | `geometry`/`geography`, with the SRID when the CRS is an authority code |
+| `arrow.opaque`             | metadata written verbatim | `bytea`, type name dropped                                              |
+| Anything else              | written as-is             | refused, naming the Arrow type                                          |
 
 Parquet interprets none of it — the schema goes straight to the writer, so every extension and every CRS spelling survives untouched. Postgres is the only destination that reads the tags, which is why the registry waits for a second reader rather than being built for one.
 
@@ -284,11 +285,11 @@ fallback (expand a range into columns, flatten a struct, serialize to text) or r
 
 **Coercion safety tiers.** Not every coercion is equally safe. The runtime classifies each and picks a default:
 
-| Tier                 | What it covers                                           | Default               | Reporting               |
-| -------------------- | -------------------------------------------------------- | --------------------- | ----------------------- |
-| Safe (lossless)      | Range → expand. JSON → `arrow.json`. UUID → `arrow.uuid`. Standard primitive widening. `geography(_, 4326)` → BQ `GEOGRAPHY`. | Auto-apply            | INFO, in run summary    |
-| Lossy structural     | Unknown type → `arrow.opaque` (bytes). Composite → struct flatten. Hstore → JSON. `geometry(_, 4326)` no Z/M → BQ `GEOGRAPHY` (planar→geodesic edge reinterpretation). | Auto-apply            | WARN, in run summary    |
-| Lossy semantic       | CRS reprojection. `ST_MakeValid`. Z/M drop. Decimal truncation. tz coercion.            | **Fail**              | ERROR, stops the run    |
+| Tier             | What it covers                                                                                                                                                         | Default    | Reporting            |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | -------------------- |
+| Safe (lossless)  | Range → expand. JSON → `arrow.json`. UUID → `arrow.uuid`. Standard primitive widening. `geography(_, 4326)` → BQ `GEOGRAPHY`.                                          | Auto-apply | INFO, in run summary |
+| Lossy structural | Unknown type → `arrow.opaque` (bytes). Composite → struct flatten. Hstore → JSON. `geometry(_, 4326)` no Z/M → BQ `GEOGRAPHY` (planar→geodesic edge reinterpretation). | Auto-apply | WARN, in run summary |
+| Lossy semantic   | CRS reprojection. `ST_MakeValid`. Z/M drop. Decimal truncation. tz coercion.                                                                                           | **Fail**   | ERROR, stops the run |
 
 Tier defaults are not overridable; per-column control arrives with the deferred type registry. Lossy-semantic coercions are not implemented at all, so the run fails on the offending column — drop it with `skip_columns=` on the source.
 
@@ -305,39 +306,39 @@ Never silently coerce to `TEXT` or `BYTES` without a summary entry — that is t
 
 **Concrete coverage targets:**
 
-| Source type (Postgres)        | Arrow representation                 | Notes                                                     |
-| ----------------------------- | ------------------------------------ | --------------------------------------------------------- |
-| `int2`/`int4`/`int8`          | `Int16`/`Int32`/`Int64`              | Native.                                                   |
-| `numeric(p,s)`                | `Decimal128(p,s)`                    | Native. Bare `numeric` → `Decimal128(38, 9)` (BQ `NUMERIC`) + WARN |
-| `text`/`varchar`              | `Utf8`                               | Native.                                                   |
-| `bytea`                       | `Binary`                             | Native.                                                   |
-| `bool`                        | `Boolean`                            | Native.                                                   |
-| `date`                        | `Date32`                             | Native.                                                   |
-| `timestamp`/`timestamptz`     | `Timestamp(Microsecond, tz)`         | Native. `tz=None` for `timestamp`.                        |
-| `interval`                    | `Interval(MonthDayNano)`             | Native, exact match.                                      |
-| `uuid`                        | `FixedSizeBinary(16)` + `arrow.uuid` | Canonical extension.                                      |
-| `json`/`jsonb`                | `Utf8` + `arrow.json`                | Canonical extension.                                      |
-| `enum`, `citext`              | `Utf8`                               | Native. The wire form already is the text; the variant set and case-folding are not carried. |
-| `geometry`/`geography` (PostGIS) | `Binary` + `geoarrow.wkb` + CRS   | Community extension. EWKB passed through; column CRS from typmod. |
-| `tsrange`/`int4range`/...     | `Struct{lower, upper, lower_inc, upper_inc, empty}` + `transferred.pg_range` | Private extension. Bounds null when infinite; `empty` is a tag bit no pair of bounds can express. Destination fallback = expand (0.2.0). |
-| `hstore`, `ltree`, composites | `arrow.opaque` initially             | Later promotion to structured forms.                      |
+| Source type (Postgres)           | Arrow representation                                                         | Notes                                                                                                                                    |
+| -------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `int2`/`int4`/`int8`             | `Int16`/`Int32`/`Int64`                                                      | Native.                                                                                                                                  |
+| `numeric(p,s)`                   | `Decimal128(p,s)`                                                            | Native. Bare `numeric` → `Decimal128(38, 9)` (BQ `NUMERIC`) + WARN                                                                       |
+| `text`/`varchar`                 | `Utf8`                                                                       | Native.                                                                                                                                  |
+| `bytea`                          | `Binary`                                                                     | Native.                                                                                                                                  |
+| `bool`                           | `Boolean`                                                                    | Native.                                                                                                                                  |
+| `date`                           | `Date32`                                                                     | Native.                                                                                                                                  |
+| `timestamp`/`timestamptz`        | `Timestamp(Microsecond, tz)`                                                 | Native. `tz=None` for `timestamp`.                                                                                                       |
+| `interval`                       | `Interval(MonthDayNano)`                                                     | Native, exact match.                                                                                                                     |
+| `uuid`                           | `FixedSizeBinary(16)` + `arrow.uuid`                                         | Canonical extension.                                                                                                                     |
+| `json`/`jsonb`                   | `Utf8` + `arrow.json`                                                        | Canonical extension.                                                                                                                     |
+| `enum`, `citext`                 | `Utf8`                                                                       | Native. The wire form already is the text; the variant set and case-folding are not carried.                                             |
+| `geometry`/`geography` (PostGIS) | `Binary` + `geoarrow.wkb` + CRS                                              | Community extension. EWKB passed through; column CRS from typmod.                                                                        |
+| `tsrange`/`int4range`/...        | `Struct{lower, upper, lower_inc, upper_inc, empty}` + `transferred.pg_range` | Private extension. Bounds null when infinite; `empty` is a tag bit no pair of bounds can express. Destination fallback = expand (0.2.0). |
+| `hstore`, `ltree`, composites    | `arrow.opaque` initially                                                     | Later promotion to structured forms.                                                                                                     |
 
 ### Tech stack
 
-| Concern          | Choice                                              | Reason                                                         |
-| ---------------- | --------------------------------------------------- | -------------------------------------------------------------- |
-| Core             | Rust                                                | Performance, types, no GC.                                     |
-| Python binding   | PyO3 + maturin, `cp314` + `cp314t`                  | Standard for adoption; free-threaded included.                 |
-| Internal format  | Apache Arrow (`arrow-rs`)                           | Zero-copy to BQ, Parquet, Polars.                              |
-| Async runtime    | Tokio                                               | Required by most cloud SDKs.                                   |
-| Postgres         | `tokio-postgres` + binary `COPY`                    | `COPY` is the fastest extract path.                            |
-| BigQuery         | `google-cloud-bigquery` + `google-cloud-bigquery-v2` | Storage Write direct, no Parquet/GCS staging. Google's own.    |
-| GCP auth         | `google-cloud-auth`                                 | ADC, service-account JSON, gcloud, workload identity.          |
-| Object storage   | `object_store` crate                                | Unified S3/GCS/Azure API.                                      |
-| Parquet          | `parquet` (arrow-rs)                                | Same family as Arrow. Audit gaps vs Polars.                    |
-| Errors           | `thiserror`, surfaced as `transferred.TransferredError`      | One root exception, typed subclasses.                          |
-| Logging          | `tracing` bridged into Python `logging`             | One config story for users.                                    |
-| License          | MIT                                                 | Liberal. Matches the rest of the analytical Python/Rust stack. |
+| Concern         | Choice                                                  | Reason                                                         |
+| --------------- | ------------------------------------------------------- | -------------------------------------------------------------- |
+| Core            | Rust                                                    | Performance, types, no GC.                                     |
+| Python binding  | PyO3 + maturin, `cp314` + `cp314t`                      | Standard for adoption; free-threaded included.                 |
+| Internal format | Apache Arrow (`arrow-rs`)                               | Zero-copy to BQ, Parquet, Polars.                              |
+| Async runtime   | Tokio                                                   | Required by most cloud SDKs.                                   |
+| Postgres        | `tokio-postgres` + binary `COPY`                        | `COPY` is the fastest extract path.                            |
+| BigQuery        | `google-cloud-bigquery` + `google-cloud-bigquery-v2`    | Storage Write direct, no Parquet/GCS staging. Google's own.    |
+| GCP auth        | `google-cloud-auth`                                     | ADC, service-account JSON, gcloud, workload identity.          |
+| Object storage  | `object_store` crate                                    | Unified S3/GCS/Azure API.                                      |
+| Parquet         | `parquet` (arrow-rs)                                    | Same family as Arrow. Audit gaps vs Polars.                    |
+| Errors          | `thiserror`, surfaced as `transferred.TransferredError` | One root exception, typed subclasses.                          |
+| Logging         | `tracing` bridged into Python `logging`                 | One config story for users.                                    |
+| License         | MIT                                                     | Liberal. Matches the rest of the analytical Python/Rust stack. |
 
 ### Known risks
 

@@ -15,7 +15,7 @@ Goal: atomic full load PG → BQ. Direct type mapping, no coercion engine.
 - Destination table-creation options bag (additive over the source-derived DDL): BQ `partition_by=`/`cluster_by=`, both set-at-create and cost-relevant. A PG `primary_key=` waits for incremental loads, which is the only thing that reads one.
 - Auth via `google-cloud-auth` (ADC, service-account JSON, gcloud, workload identity).
 - Direct Arrow ↔ BQ type mapping: `geography(_, 4326)` → BQ `GEOGRAPHY`, `geometry(_, 4326)` no Z/M → BQ `GEOGRAPHY`. Unsupported types error, no tiered coercion.
-- BQ `GEOGRAPHY` exists only in WGS84, so the mapping has to *decide* whether a `geoarrow.wkb` column is WGS84, not merely carry its CRS. `crs: "EPSG:4326"` is a string compare; a PROJJSON or WKT2 CRS needs PROJ, and no geoarrow crate supplies it — `geoarrow-schema` only carries the value and delegates conversion to a `CrsTransform` the caller writes, its own default silently dropping the CRS. So refusing anything but an authority code is the 0.2.0 answer. BQ reads the tag and its metadata for itself; where a shared `Wkb` ends up living is the interchange contract's call.
+- BQ `GEOGRAPHY` exists only in WGS84, so the mapping has to _decide_ whether a `geoarrow.wkb` column is WGS84, not merely carry its CRS. `crs: "EPSG:4326"` is a string compare; a PROJJSON or WKT2 CRS needs PROJ, and no geoarrow crate supplies it — `geoarrow-schema` only carries the value and delegates conversion to a `CrsTransform` the caller writes, its own default silently dropping the CRS. So refusing anything but an authority code is the 0.2.0 answer. BQ reads the tag and its metadata for itself; where a shared `Wkb` ends up living is the interchange contract's call.
 - Decide there whether `transferred.pg_range` becomes `transferred.range`. BQ `RANGE<DATE|DATETIME|TIMESTAMP>` is always `[lower, upper)` with NULL for an infinite bound and no empty range at all, so a BQ range fits the same five-field struct — at which point the `pg_` in the name is a lie, and `empty` reads as the PG-only field it is. Renaming is one constant plus the metadata every reader compares against, so it is a 0.2.0 decision, not a 0.1.0 hedge. The name generalises further than the mapping does: `int4range` and `numrange` have no BQ range to land in, so they go as the struct we already store or as a simpler type, decided per range when the mapping is written.
 - `Timestamp(_, None)` → BQ `DATETIME`, never `TIMESTAMP`. Both Arrow `None` and PG `timestamp` mean wall-clock without a zone, and `TIMESTAMP` is an instant, so reaching for it would invent a zone for the commonest column type in a PG schema. An instant needs the zone named, which nothing in the API can say yet.
 - `TableFieldSchema.timestamp_precision` lets a BQ column hold picoseconds, which no Arrow unit reaches. Reading one truncates to `Nanosecond`.
@@ -28,9 +28,9 @@ Goal: atomic full load PG → BQ. Direct type mapping, no coercion engine.
 - [ ] Swap and drop-staging as query jobs, located from the dataset through `DatasetService::get_dataset`. Both name a table inside SQL text, so `check_identifier` still guards them.
 - [ ] Auth. `google-cloud-auth` honours `GOOGLE_APPLICATION_CREDENTIALS` but has no `_JSON` twin, so CI reads the variable itself and builds the credential from the key with `service_account::Builder`.
 - [~] Arrow ↔ BQ type mapping, internal only. The schema comes from the source, so no BQ type is ever named in Python. Primitives, `JSON`, `NUMERIC` and `BIGNUMERIC` land; `GEOGRAPHY`, `RANGE`, `uuid` and structs do not yet.
-  - Type names are ours: `TableFieldSchema::type` is a bare `String` in the generated client, so nothing checks the spelling before the server does.
-  - What BQ accepts from an Arrow batch was measured, not assumed: `Decimal128` matches a `NUMERIC` column and `Decimal256` a `BIGNUMERIC`, each refusing the other; `TIMESTAMP` and `DATETIME` take microseconds only, naming the unit when they refuse; `Int16` and `Float32` widen on their own.
-  - Precision/scale are separate `TableFieldSchema` fields, `ARRAY` is `mode=REPEATED`, `STRUCT` carries `fields` — the type name says nothing about any of them.
+    - Type names are ours: `TableFieldSchema::type` is a bare `String` in the generated client, so nothing checks the spelling before the server does.
+    - What BQ accepts from an Arrow batch was measured, not assumed: `Decimal128` matches a `NUMERIC` column and `Decimal256` a `BIGNUMERIC`, each refusing the other; `TIMESTAMP` and `DATETIME` take microseconds only, naming the unit when they refuse; `Int16` and `Float32` widen on their own.
+    - Precision/scale are separate `TableFieldSchema` fields, `ARRAY` is `mode=REPEATED`, `STRUCT` carries `fields` — the type name says nothing about any of them.
 - [~] BQ env-gated integration test — `make check-integration`, credentials via `make gcp-login`.
 
 ## Try hypothesis
@@ -96,7 +96,7 @@ Model decided — see [INCREMENTAL.md](./docs/design/INCREMENTAL.md), D1–D10.
 
 ## 0.6 — Arrow interchange contract
 
-Goal: state what the Arrow types layer between a source and a destination *is*, so a connector author learns it from a document rather than from reading `pg_to_arrow.rs`.
+Goal: state what the Arrow types layer between a source and a destination _is_, so a connector author learns it from a document rather than from reading `pg_to_arrow.rs`.
 
 **Scope:**
 
@@ -126,6 +126,7 @@ Not before here: hiding a `pub` type is a breaking change, so this cannot be a p
 - Try to run code in a [dev container](https://zed.dev/blog/dev-containers)
 
 ## Never ~~say never~~
+
 - Transformations beyond what type mapping forces.
 - YAML/TOML config.
 - Streaming and CDC (but who knows... v2.0?)
