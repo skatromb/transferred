@@ -1,4 +1,4 @@
-"""Convert a Python iterable of rows into an `ArrowSource`.
+"""Convert a Python iterable of rows into a `pa.RecordBatchReader`.
 
 Bridges Python-native data (`dict` / `@dataclass` / `pydantic.BaseModel`) to the
 Arrow seam. Requires pyarrow — install via `pip install transferred[iterable]`.
@@ -10,7 +10,6 @@ from itertools import batched, chain
 from typing import TYPE_CHECKING, Any
 
 from transferred._native import EmptySourceError
-from transferred.arrow import ArrowSource
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -20,18 +19,14 @@ if TYPE_CHECKING:
 _BATCH_SIZE = 4096
 
 
-def _iterable_to_arrow(iterable: Iterable[Row]) -> ArrowSource:
-    """Wrap an iterable of dict / dataclass / pydantic rows as an `ArrowSource`.
+def _iterable_to_reader(iterable: Iterable[Row]) -> pa.RecordBatchReader:
+    """Batch an iterable of dict / dataclass / pydantic rows into a `pa.RecordBatchReader`.
 
     Raises:
         ImportError: pyarrow not installed.
         EmptySourceError: iterable is empty.
         TypeError: rows are none of dict / dataclass / pydantic.BaseModel.
     """
-    return ArrowSource(_iterable_to_reader(iterable))
-
-
-def _iterable_to_reader(iterable: Iterable[Row]) -> pa.RecordBatchReader:
     try:
         import pyarrow as pa
     except ImportError as error:
@@ -74,6 +69,6 @@ def _converter_for(row: Row) -> Callable[[Any], dict[str, Any]]:
         return lambda model: model.model_dump()
 
     raise TypeError(
-        f"unsupported row type {type(row).__name__!r}. "
-        "Supported: dict, dataclass, pydantic.BaseModel."
+        f"unsupported row type `{type(row).__name__}`. "
+        "Supported: `dict`, `dataclass`, `pydantic.BaseModel`."
     )

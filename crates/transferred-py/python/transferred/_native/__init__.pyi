@@ -112,8 +112,7 @@ class TransferredError(builtins.Exception):
 @typing.final
 class _ArrowSource:
     r"""
-    Internal `PyO3` wrapper around a pyarrow `RecordBatchReader`. Constructed by
-    the user-facing Python `ArrowSource`; not intended to be used directly.
+    Internal `PyO3` wrapper around an Arrow C stream, built by `Transfer` from a `DataFrame` or rows.
     """
     def __new__(cls, reader: typing.Any) -> typing.Self: ...
 

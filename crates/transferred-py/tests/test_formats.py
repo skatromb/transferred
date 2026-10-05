@@ -27,5 +27,5 @@ def test_unknown_compression_raises():
 
 def test_format_is_immutable():
     """Reassigning a knob after construction would not reach the Rust codec."""
-    with pytest.raises(AttributeError, match="Parquet is immutable"):
+    with pytest.raises(AttributeError, match="`Parquet` is immutable"):
         Parquet().compression = "snappy"

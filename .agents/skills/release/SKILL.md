@@ -31,9 +31,8 @@ Exercise every public class added or changed this version. Example:
 
 ```python
 from transferred import Transfer, FilesDestination
-from transferred.arrow import ArrowSource
 
-help(ArrowSource)
+help(Transfer)
 Transfer(source=[{"a": 1}], destination=FilesDestination("/tmp/out")).run()
 ```
 

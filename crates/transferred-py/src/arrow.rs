@@ -1,8 +1,4 @@
-//! Internal bridge: wraps a pyarrow `RecordBatchReader` as a `transferred-core` `Source`.
-//!
-//! Not user-facing on its own — the public Python class `ArrowSource` (or any
-//! Python wrapper exposing `_native_source`) constructs a pyarrow reader and
-//! feeds it through here.
+//! Internal bridge: wraps an Arrow C stream as a `transferred-core` `Source`.
 
 #![expect(
     clippy::multiple_inherent_impl,
@@ -21,8 +17,7 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use transferred_core::{BatchStream, BoxedSource, Result, Source, TransferredError};
 
-/// Internal `PyO3` wrapper around a pyarrow `RecordBatchReader`. Constructed by
-/// the user-facing Python `ArrowSource`; not intended to be used directly.
+/// Internal `PyO3` wrapper around an Arrow C stream, built by `Transfer` from a `DataFrame` or rows.
 #[gen_stub_pyclass]
 #[pyclass(name = "_ArrowSource", module = "transferred._native", unsendable)]
 pub(crate) struct PyArrowSource {
