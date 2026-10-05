@@ -35,6 +35,18 @@ Goal: atomic full load PG → BQ. Direct type mapping, no coercion engine.
 
 ## Try hypothesis
 
+## Make nice postgres connection class
+
+Postgres gets connection details now like this: "postgres://user:pass@localhost:5432/db". I want it to be a dataclass or something
+```python
+PostgresConnection:
+    host: str
+    user: str
+    password: str | None = None
+    db: str | None = None
+    port: Port? | str? = 5432
+```
+
 ## Interlude — per-destination run report
 
 Runs once the BQ destination lands, while the API is still ours to change.
