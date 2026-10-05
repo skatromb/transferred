@@ -6,13 +6,7 @@ import pyarrow as pa
 import pytest
 from pyarrow import parquet as pq
 from test_utils import write_seed
-from transferred import (
-    ArrowSource,
-    EmptySourceError,
-    FilesDestination,
-    FilesSource,
-    Transfer,
-)
+from transferred import EmptySourceError, FilesDestination, FilesSource, Transfer
 
 
 def test_single_file_flattens_partitions(tmp_path: Path, out_dir: Path):
@@ -45,9 +39,6 @@ def test_empty_source_raises(out_dir: Path):
     reader = pa.RecordBatchReader.from_batches(schema, [])
 
     with pytest.raises(EmptySourceError):
-        Transfer(
-            source=ArrowSource(reader),
-            destination=FilesDestination(out_dir),
-        ).run()
+        Transfer(source=reader, destination=FilesDestination(out_dir)).run()
 
     assert not out_dir.exists()

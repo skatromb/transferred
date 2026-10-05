@@ -9,7 +9,6 @@ from transferred._native import IoError as IoError
 from transferred._native import RunReport as RunReport
 from transferred._native import SourceError as SourceError
 from transferred._native import TransferredError as TransferredError
-from transferred.arrow import ArrowSource as ArrowSource
 from transferred.files import FilesDestination as FilesDestination
 from transferred.files import FilesSource as FilesSource
 from transferred.formats import Parquet as Parquet

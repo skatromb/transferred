@@ -79,14 +79,15 @@ Transfer(source=order_iter, destination=FilesDestination("out")).run()
 
 Module layout for the iterable + Arrow path:
 
-- `transferred.arrow.ArrowSource` — accepts anything exposing `__arrow_c_stream__`. The Arrow seam into Rust: `arrow-pyarrow`'s `FromPyArrow` reads the capsule, so `pa.Table`, `pa.RecordBatch`, `pa.RecordBatchReader` and non-pyarrow producers (polars, duckdb) all arrive the same way and pyarrow itself is never imported here.
-- `transferred.iterable._iterable_to_arrow` — wraps an iterable of `dict` / `@dataclass` / `pydantic.BaseModel` as an `ArrowSource`. The batching itself lives in `_iterable_to_reader`, which builds the `pa.RecordBatchReader` (see Memory model). Depends on `arrow` (one-way), not the other way.
-- `transferred.transfer.Transfer` — Python wrapper around `_native.Transfer`. Coerces iterables on construction.
+- `transferred.transfer.DataFrame` — protocol for anything exposing `__arrow_c_stream__`. The Arrow seam into Rust: `arrow-pyarrow`'s `FromPyArrow` reads the capsule into the native `_ArrowSource`, so `pa.Table`, `pa.RecordBatch`, `pa.RecordBatchReader` and non-pyarrow producers (polars, pandas, duckdb) all arrive the same way and pyarrow itself is never imported here.
+- `transferred.iterable._iterable_to_reader` — batches an iterable of `dict` / `@dataclass` / `pydantic.BaseModel` into a `pa.RecordBatchReader` (see Memory model).
+- `transferred.transfer.Transfer` — Python wrapper around `_native.Transfer`. Coerces DataFrames and iterables on construction.
 
-Dispatcher rules in `Transfer.__init__`:
+Dispatcher rules in `Transfer.__new__`:
 
-- `Source` instance (e.g. `FilesSource`, `ArrowSource`) → used directly.
-- Any other `Iterable` (excluding `str`/`bytes`/`bytearray`/`dict`) → wrapped via `_iterable_to_arrow`. Rows are batched into `pa.RecordBatch` of `_BATCH_SIZE` (4096), one FFI crossing per batch, schema inferred from first batch.
+- `Source` instance (e.g. `FilesSource`) → used directly.
+- `DataFrame` → wrapped in `_ArrowSource`. Checked before `Iterable`, since a reader iterates its batches.
+- Any other `Iterable` → batched via `_iterable_to_reader` into `pa.RecordBatch` of `_BATCH_SIZE` (4096), one FFI crossing per batch, schema inferred from first batch.
 - Anything else → `TypeError`.
 
 Row shapes accepted by the iterable path: `dict`, `dataclass`, `pydantic.BaseModel` (v2 — recognised by `model_dump`, so pydantic is never imported to convert a row). All normalized to `dict[str, Any]` on the Python side via a once-sniffed converter; pyarrow then builds the `RecordBatch`. `namedtuple` / `attrs` / `msgspec.Struct` deferred — trivial to add when requested.
@@ -117,7 +118,7 @@ No staging inventory. Staging artifacts are an implementation detail of each des
 atomicity primitive and are always cleaned up; a `keep_staging=` escape hatch stays out until
 someone needs to debug a real failure with it.
 
-No row-level Python callbacks. The FFI boundary is crossed once per transfer (per-batch for `ArrowSource`), not per row.
+No row-level Python callbacks. The FFI boundary is crossed once per transfer (per-batch for a DataFrame or rows), not per row.
 
 ### File destinations and formats
 
@@ -218,11 +219,11 @@ Deferred (both):
 - Byte-aware budget. Memory is bounded by batch shape × K, with no semaphore. If real workloads show skew (huge variable-width columns) blowing out the bound, `transferred-core` gets one and partitions acquire permits sized by `RecordBatch::get_array_memory_size()`.
 - Concurrent transfers in one process. Each transfer assumes it owns the worker's budget, so several `Transfer.run()` calls compound memory. Run them in separate processes if isolation matters.
 
-Python-side memory (iterable path via `_iterable_to_arrow`):
+Python-side memory (iterable path via `_iterable_to_reader`):
 
-- Generator sources stream one row at a time. The internal `_iterable_to_reader` collects `_BATCH_SIZE` rows (4096) into a tuple via `itertools.batched`, calls `pa.RecordBatch.from_pylist(chunk)`, drops the tuple, hands the batch to Rust via Arrow C Data Interface. One FFI crossing per batch.
+- Generator sources stream one row at a time. `_iterable_to_reader` collects `_BATCH_SIZE` rows (4096) into a tuple via `itertools.batched`, calls `pa.RecordBatch.from_pylist(chunk)`, drops the tuple, hands the batch to Rust via Arrow C Data Interface. One FFI crossing per batch.
 - Peak Python-side memory per batch ≈ `_BATCH_SIZE × avg_row_bytes × 2` (chunk + Arrow buffers briefly co-resident).
-- List sources: caller is responsible for what they materialise — engine cannot help if the user pre-builds a 10 GiB list. Same for a `pa.Table`; `ArrowSource`'s docstring asks for a reader once the data outgrows RAM.
+- List sources: caller is responsible for what they materialise — engine cannot help if the user pre-builds a 10 GiB list. Same for a `pa.Table`; `Transfer`'s docstring asks for a reader once the data outgrows RAM.
 - `memory_budget_mb=` knob (deferred): translated to row count via running average row size, adjusts batch_size adaptively.
 
 **Conversion seam — design intent.** Row-shape normalization (dict / dataclass / pydantic → `dict[str, Any]`) and dict → Arrow batch building both happen on the **Python side**. Rust only ever sees `arrow::RecordBatch` arriving across the C Data Interface, single hot path.
@@ -230,9 +231,9 @@ Python-side memory (iterable path via `_iterable_to_arrow`):
 Rationale:
 - Both paths cross the CPython FFI **once per cell** — every read of a `PyLongObject` / `PyUnicodeObject` is a CPython API call whichever language owns the loop. The gap is a constant factor (pyarrow ~2x), not an order of magnitude.
 - So the decisive factor is **code volume**: ~200 lines of unsafe-ish PyO3 conversion, null handling, schema inference and nested types, against one `pa.RecordBatch.from_pylist()` call into a battle-tested implementation that the rest of the ecosystem already speaks.
-- Cost accepted: pyarrow is an **optional dep** via the `transferred[arrow]` extra (`transferred[iterable]` aliased, ~30 MB wheel), so a base install stays lean for Rust-native connectors. Missing pyarrow at iterable conversion raises `ImportError` with an install hint; `ArrowSource` needs no pyarrow of its own.
+- Cost accepted: pyarrow is an **optional dep** via the `transferred[arrow]` extra (`transferred[iterable]` aliased, ~30 MB wheel), so a base install stays lean for Rust-native connectors. Missing pyarrow at iterable conversion raises `ImportError` with an install hint; a DataFrame needs no pyarrow of its own.
 
-Fast path for callers who already have Arrow: `ArrowSource(arrow_stream)` skips the iterable conversion and goes straight to the C Data Interface.
+Fast path for callers who already have Arrow: pass the DataFrame itself, which skips the iterable conversion and goes straight to the C Data Interface.
 
 ### Runtime contract
 

@@ -5,7 +5,7 @@ from pathlib import Path
 import pyarrow as pa
 import pytest
 from test_utils import run_transfer
-from transferred import ArrowSource, FilesDestination, Transfer
+from transferred import FilesDestination, Transfer
 
 
 def test_rejects_dict_as_source(out_dir: Path):
@@ -15,12 +15,6 @@ def test_rejects_dict_as_source(out_dir: Path):
             source={"id": 1, "name": "x"},  # ty: ignore[invalid-argument-type]
             destination=FilesDestination(out_dir),
         )
-
-
-def test_keeps_explicit_arrow_source(out_dir: Path):
-    source = ArrowSource(pa.table({"id": range(4)}))
-
-    assert run_transfer(source, out_dir) == 4
 
 
 def test_wraps_bare_arrow_data(out_dir: Path):
@@ -38,7 +32,9 @@ def test_prefers_arrow_over_iteration(out_dir: Path):
 
 
 def test_rejects_non_source_non_iterable(out_dir: Path):
-    with pytest.raises(TypeError, match="source must be a transferred source"):
+    with pytest.raises(
+        TypeError, match=r"`source` must be a `transferred\.Source`, a `DataFrame`"
+    ):
         Transfer(
             source=10,  # ty: ignore[invalid-argument-type]
             destination=FilesDestination(out_dir),
@@ -47,7 +43,7 @@ def test_rejects_non_source_non_iterable(out_dir: Path):
 
 def test_rejects_non_destination():
     with pytest.raises(
-        TypeError, match="destination must be a transferred destination"
+        TypeError, match=r"`destination` must be a `transferred\.Destination`, got"
     ):
         Transfer(
             source=[{"id": 1}],

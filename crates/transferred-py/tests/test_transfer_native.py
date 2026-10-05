@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-import pyarrow as pa
 import pytest
-from transferred import ArrowSource, Destination, FilesDestination, Source, Transfer
+from test_utils import write_seed
+from transferred import Destination, FilesDestination, FilesSource, Source, Transfer
 
 
 class _UnwiredSource(Source):
@@ -16,20 +16,22 @@ class _UnwiredDestination(Destination):
 
 
 def test_source_subclass_without_native(out_dir: Path):
-    with pytest.raises(TypeError, match="source must be a transferred source object"):
+    with pytest.raises(TypeError, match=r"^`source` must be a `transferred\.Source`$"):
         Transfer(source=_UnwiredSource(), destination=FilesDestination(out_dir))
 
 
 def test_destination_subclass_without_native():
     with pytest.raises(
-        TypeError, match="destination must be a transferred destination object"
+        TypeError, match=r"^`destination` must be a `transferred\.Destination`$"
     ):
         Transfer(source=[{"id": 1}], destination=_UnwiredDestination())
 
 
-def test_source_reused_by_another_transfer(out_dir: Path):
+def test_source_reused_by_another_transfer(tmp_path: Path, out_dir: Path):
     """The first `Transfer` takes the native source out of the wrapper."""
-    source = ArrowSource(pa.table({"id": [1]}))
+    seed = tmp_path / "seed.parquet"
+    write_seed(seed, [1])
+    source = FilesSource(seed)
     Transfer(source=source, destination=FilesDestination(out_dir))
 
     with pytest.raises(RuntimeError, match="already consumed by another Transfer"):

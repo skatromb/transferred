@@ -89,5 +89,3 @@ print(report)
 #   duration: 0s
 #   written objects:
 #     from_reader/part-00001.parquet
-
-# `ArrowSource(arrow_stream)` wraps any of the three by hand, for a call that reads better named.

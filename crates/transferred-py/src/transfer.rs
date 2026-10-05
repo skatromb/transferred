@@ -89,7 +89,7 @@ fn extract_source(source: &Bound<'_, PyAny>) -> PyResult<BoxedSource> {
     let any_source = source
         .extract()
         .ok()
-        .ok_or_else(|| PyTypeError::new_err("source must be a transferred source object"))?;
+        .ok_or_else(|| PyTypeError::new_err("`source` must be a `transferred.Source`"))?;
     let taken = match any_source {
         AnySource::Files(files) => files.try_borrow_mut()?.take(),
         AnySource::Arrow(arrow) => arrow.try_borrow_mut()?.take(),
@@ -100,9 +100,10 @@ fn extract_source(source: &Bound<'_, PyAny>) -> PyResult<BoxedSource> {
 }
 
 fn extract_destination(destination: &Bound<'_, PyAny>) -> PyResult<BoxedDestination> {
-    let any_destination = destination.extract().ok().ok_or_else(|| {
-        PyTypeError::new_err("destination must be a transferred destination object")
-    })?;
+    let any_destination = destination
+        .extract()
+        .ok()
+        .ok_or_else(|| PyTypeError::new_err("`destination` must be a `transferred.Destination`"))?;
     let taken = match any_destination {
         AnyDestination::Files(files) => files.try_borrow_mut()?.take(),
         AnyDestination::Postgres(postgres) => postgres.try_borrow_mut()?.take(),
