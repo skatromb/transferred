@@ -10,8 +10,8 @@ from transferred._native import _ArrowSource
 
 
 @runtime_checkable
-class ArrowStream(Protocol):
-    """Anything implementing Arrow PyCapsule interface: DataFrame, Arrow.Table, BatchReader."""
+class DataFrame(Protocol):
+    """A pandas or polars `DataFrame`, `pa.Table`, duckdb result — anything with `__arrow_c_stream__`."""
 
     def __arrow_c_stream__(self, requested_schema: object | None = None) -> object: ...
 
@@ -53,8 +53,8 @@ class ArrowSource(Source):
 
     _native_source: _ArrowSource
 
-    def __init__(self, arrow_stream: ArrowStream) -> None:
-        if not isinstance(arrow_stream, ArrowStream):
+    def __init__(self, arrow_stream: DataFrame) -> None:
+        if not isinstance(arrow_stream, DataFrame):
             raise TypeError(
                 f"{type(arrow_stream).__name__!r} does not implement the Arrow `PyCapsule` "
                 "interface — pass a pyarrow `Table`, `RecordBatch` or `RecordBatchReader`, "

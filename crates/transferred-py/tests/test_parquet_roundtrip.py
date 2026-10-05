@@ -1,8 +1,4 @@
-"""Parquet round-trip via the Python API.
-
-Writes a few batches to a Parquet file via `Transfer + FilesDestination`, then
-reads them back via `Transfer + FilesSource` and verifies the row count.
-"""
+"""`FilesSource` → `FilesDestination` copies a Parquet file unchanged."""
 
 from pathlib import Path
 
@@ -21,24 +17,20 @@ def _build_input_table() -> pa.Table:
     )
 
 
-def test_parquet_write_then_read(tmp_path: Path, out_dir: Path):
-    # Arrange — write a seed Parquet via pyarrow so a FilesSource has something to read.
+def test_parquet_roundtrip_unchanged(tmp_path: Path, out_dir: Path):
     expected = _build_input_table()
     seed = tmp_path / "seed.parquet"
     pq.write_table(expected, seed)
 
-    # Act — drive the round-trip through the Rust engine.
     report = Transfer(
         source=FilesSource(seed),
         destination=FilesDestination(out_dir, format=Parquet(compression="zstd")),
     ).run()
 
-    # Assert.
     assert isinstance(report, RunReport)
     assert (report.rows, report.written_objects) == (
         expected.num_rows,
         [str(out_dir / "part-00001.parquet")],
     )
     assert report.bytes_written > 0
-    assert out_dir.is_dir()
     assert pq.read_table(report.written_objects[0]).equals(expected)

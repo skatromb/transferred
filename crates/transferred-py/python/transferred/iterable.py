@@ -14,11 +14,8 @@ from transferred.arrow import ArrowSource
 
 if TYPE_CHECKING:
     import pyarrow as pa
-    from _typeshed import DataclassInstance
-    from pydantic import BaseModel
 
-    type Row = dict[str, Any] | DataclassInstance | BaseModel
-    """A single input row: `dict`, `@dataclass` instance, or `pydantic.BaseModel`."""
+    from transferred.transfer import Row
 
 _BATCH_SIZE = 4096
 

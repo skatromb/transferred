@@ -7,13 +7,6 @@ from transferred import FilesDestination, RunReport, Transfer
 
 _ROWS = 3
 
-_REPR = (
-    rf"RunReport\(rows={_ROWS}, bytes_written=\d+, "
-    rf'written_objects=\["[^"]+part-00001\.parquet"\], '
-    rf"duration_seconds=\d+\.\d{{3}}\)"
-)
-"""Every field, in order, with the byte count and the timing left open."""
-
 
 def _run(out_dir: Path) -> RunReport:
     source = [{"id": row_id} for row_id in range(_ROWS)]
@@ -26,4 +19,9 @@ def test_duration_is_measured(out_dir: Path):
 
 def test_repr_renders_one_line_of_fields(out_dir: Path):
     """`repr` is what a debugger and a failed assert show; `str` is the run summary."""
-    assert re.fullmatch(_REPR, repr(_run(out_dir)))
+    regex = (
+        rf"RunReport\(rows={_ROWS}, bytes_written=\d+, "
+        r'written_objects=\["[^"]+part-00001\.parquet"\], '
+        r"duration_seconds=\d+\.\d{3}\)"
+    )
+    assert re.fullmatch(regex, repr(_run(out_dir)))

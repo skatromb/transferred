@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-import pyarrow as pa
 import pytest
 from pyarrow import parquet as pq
+from test_utils import write_seed
 from transferred import (
     FilesDestination,
     FilesSource,
@@ -14,15 +14,9 @@ from transferred import (
 )
 
 
-def _write_seed(path: Path, ids: list[int]) -> None:
-    id_column = pa.array(ids, type=pa.int64())
-    table = pa.table({"id": id_column})
-    pq.write_table(table, path)
-
-
 def test_glob_matches_multiple_files(tmp_path: Path, out_dir: Path):
-    _write_seed(tmp_path / "a.parquet", [1, 2, 3])
-    _write_seed(tmp_path / "b.parquet", [4, 5])
+    write_seed(tmp_path / "a.parquet", [1, 2, 3])
+    write_seed(tmp_path / "b.parquet", [4, 5])
 
     report = Transfer(
         source=FilesSource(str(tmp_path / "*.parquet")),
@@ -30,7 +24,10 @@ def test_glob_matches_multiple_files(tmp_path: Path, out_dir: Path):
     ).run()
 
     assert report.rows == 5
-    assert len(report.written_objects) == 2  # one part per source file
+    assert report.written_objects == [
+        str(out_dir / "part-00001.parquet"),
+        str(out_dir / "part-00002.parquet"),
+    ]
     assert pq.read_table(out_dir).num_rows == 5
 
 
@@ -45,8 +42,8 @@ def test_glob_no_match_raises(tmp_path: Path, out_dir: Path):
 def test_explicit_list_of_paths(tmp_path: Path, out_dir: Path):
     first = tmp_path / "a.parquet"
     second = tmp_path / "b.parquet"
-    _write_seed(first, [10, 20])
-    _write_seed(second, [30, 40, 50])
+    write_seed(first, [10, 20])
+    write_seed(second, [30, 40, 50])
 
     report = Transfer(
         source=FilesSource([first, second]),
@@ -58,7 +55,7 @@ def test_explicit_list_of_paths(tmp_path: Path, out_dir: Path):
 
 def test_literal_string_without_wildcards(tmp_path: Path, out_dir: Path):
     seed = tmp_path / "seed.parquet"
-    _write_seed(seed, [1, 2, 3])
+    write_seed(seed, [1, 2, 3])
 
     report = Transfer(
         source=FilesSource(str(seed)),
@@ -78,7 +75,7 @@ def test_missing_literal_path_raises(tmp_path: Path, out_dir: Path):
 
 def test_directory_among_paths_raises_clearly(tmp_path: Path, out_dir: Path):
     seed = tmp_path / "seed.parquet"
-    _write_seed(seed, [1, 2, 3])
+    write_seed(seed, [1, 2, 3])
     subdir = tmp_path / "subdir"
     subdir.mkdir()
 

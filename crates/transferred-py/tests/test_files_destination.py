@@ -5,6 +5,7 @@ from pathlib import Path
 import pyarrow as pa
 import pytest
 from pyarrow import parquet as pq
+from test_utils import write_seed
 from transferred import (
     ArrowSource,
     EmptySourceError,
@@ -14,15 +15,9 @@ from transferred import (
 )
 
 
-def _write_seed(path: Path, ids: list[int]) -> None:
-    id_column = pa.array(ids, type=pa.int64())
-    table = pa.table({"id": id_column})
-    pq.write_table(table, path)
-
-
 def test_single_file_flattens_partitions(tmp_path: Path, out_dir: Path):
-    _write_seed(tmp_path / "a.parquet", [1, 2, 3])
-    _write_seed(tmp_path / "b.parquet", [4, 5])
+    write_seed(tmp_path / "a.parquet", [1, 2, 3])
+    write_seed(tmp_path / "b.parquet", [4, 5])
 
     report = Transfer(
         source=FilesSource(str(tmp_path / "*.parquet")),
@@ -35,16 +30,14 @@ def test_single_file_flattens_partitions(tmp_path: Path, out_dir: Path):
 
 
 def test_existing_output_is_overwritten(tmp_path: Path, out_dir: Path):
-    _write_seed(tmp_path / "a.parquet", [1, 2, 3])
+    seed = tmp_path / "a.parquet"
+    write_seed(seed, [1, 2, 3])
+    out_dir.mkdir()
+    (out_dir / "stale.parquet").touch()
 
-    for _ in range(2):
-        report = Transfer(
-            source=FilesSource(str(tmp_path / "a.parquet")),
-            destination=FilesDestination(out_dir),
-        ).run()
+    Transfer(source=FilesSource(seed), destination=FilesDestination(out_dir)).run()
 
-    assert report.rows == 3
-    assert list(out_dir.glob("*.parquet")) == [out_dir / "part-00001.parquet"]
+    assert list(out_dir.iterdir()) == [out_dir / "part-00001.parquet"]
 
 
 def test_empty_source_raises(out_dir: Path):
