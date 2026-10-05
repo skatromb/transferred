@@ -120,7 +120,7 @@ impl ColumnDecoder {
     }
 
     /// Decodes one cell onto the end of the column.
-    fn append(&mut self, cell: Cell<'_>) -> Result<()> {
+    fn append(&mut self, cell: Cell) -> Result<()> {
         self.decoding
             .append(&mut *self.builder, cell)
             .map_err(|error| TransferredError::in_source(format!("column {}: {error}", self.name)))
@@ -315,7 +315,7 @@ impl Decoding {
 
     /// Decodes one cell from Postgres binary form onto `builder`; `None` is a NULL.
     #[expect(clippy::too_many_lines, reason = "handles many types")]
-    fn append(&self, builder: &mut dyn ArrayBuilder, cell: Cell<'_>) -> Result<()> {
+    fn append(&self, builder: &mut dyn ArrayBuilder, cell: Cell) -> Result<()> {
         match self {
             Self::Bool => {
                 cast::<BooleanBuilder>(builder)?.append_option(decode(&PgType::BOOL, cell)?);
@@ -381,7 +381,7 @@ impl Decoding {
 }
 
 /// Appends a range: both bounds through the element's own decoding, then the three tag bits.
-fn append_range(bounds: &Decoding, range: &mut StructBuilder, cell: Cell<'_>) -> Result<()> {
+fn append_range(bounds: &Decoding, range: &mut StructBuilder, cell: Cell) -> Result<()> {
     let parsed = cell
         .map(range_from_sql)
         .transpose()
@@ -423,7 +423,7 @@ const fn bound<'buf>(bound: &RangeBound<Cell<'buf>>) -> Cell<'buf> {
 }
 
 /// Which bounds are inclusive; an infinite one never is, and an empty range or a SQL NULL has none.
-const fn inclusive(range: Option<&Range<'_>>) -> (bool, bool) {
+const fn inclusive(range: Option<&Range>) -> (bool, bool) {
     match range {
         Some(Range::Nonempty(low, high)) => (
             matches!(low, RangeBound::Inclusive(_)),
@@ -527,7 +527,7 @@ mod tests {
     }
 
     /// Decodes one `int4range` value into the one-row struct its column lands in.
-    fn decode_range(bytes: Cell<'_>) -> Result<StructArray> {
+    fn decode_range(bytes: Cell) -> Result<StructArray> {
         let decoding = int4_range();
         let mut builder = make_builder(&decoding.arrow_type(), 1);
         decoding.append(&mut *builder, bytes)?;

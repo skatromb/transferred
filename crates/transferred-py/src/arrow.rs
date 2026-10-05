@@ -32,7 +32,7 @@ impl PyArrowSource {
         imports = ("typing")
     ))]
     #[new]
-    fn new(reader: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn new(reader: &Bound<PyAny>) -> PyResult<Self> {
         Ok(Self {
             inner: Some(ArrowSource {
                 reader: ArrowArrayStreamReader::from_pyarrow_bound(reader)?,
@@ -71,7 +71,7 @@ struct ArrowReaderStream {
 impl Stream for ArrowReaderStream {
     type Item = Result<RecordBatch>;
 
-    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Option<Self::Item>> {
         let next = Python::attach(|_py| self.reader.next());
         Poll::Ready(match next {
             None => None,

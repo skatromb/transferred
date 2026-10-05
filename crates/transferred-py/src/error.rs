@@ -28,7 +28,7 @@ pub(crate) struct TransferredError;
 impl TransferredError {
     #[new]
     #[pyo3(signature = (*_args))]
-    const fn new(_args: &Bound<'_, PyTuple>) -> Self {
+    const fn new(_args: &Bound<PyTuple>) -> Self {
         Self
     }
 }
@@ -42,7 +42,7 @@ pub(crate) struct SourceError;
 impl SourceError {
     #[new]
     #[pyo3(signature = (*_args))]
-    fn new(_args: &Bound<'_, PyTuple>) -> PyClassInitializer<Self> {
+    fn new(_args: &Bound<PyTuple>) -> PyClassInitializer<Self> {
         PyClassInitializer::from(TransferredError).add_subclass(Self)
     }
 }
@@ -56,7 +56,7 @@ pub(crate) struct EmptySourceError;
 impl EmptySourceError {
     #[new]
     #[pyo3(signature = (*_args))]
-    fn new(_args: &Bound<'_, PyTuple>) -> PyClassInitializer<Self> {
+    fn new(_args: &Bound<PyTuple>) -> PyClassInitializer<Self> {
         PyClassInitializer::from(TransferredError)
             .add_subclass(SourceError)
             .add_subclass(Self)
@@ -72,7 +72,7 @@ pub(crate) struct DestinationError;
 impl DestinationError {
     #[new]
     #[pyo3(signature = (*_args))]
-    fn new(_args: &Bound<'_, PyTuple>) -> PyClassInitializer<Self> {
+    fn new(_args: &Bound<PyTuple>) -> PyClassInitializer<Self> {
         PyClassInitializer::from(TransferredError).add_subclass(Self)
     }
 }
@@ -86,7 +86,7 @@ pub(crate) struct ArrowError;
 impl ArrowError {
     #[new]
     #[pyo3(signature = (*_args))]
-    fn new(_args: &Bound<'_, PyTuple>) -> PyClassInitializer<Self> {
+    fn new(_args: &Bound<PyTuple>) -> PyClassInitializer<Self> {
         PyClassInitializer::from(TransferredError).add_subclass(Self)
     }
 }
@@ -100,7 +100,7 @@ pub(crate) struct IoError;
 impl IoError {
     #[new]
     #[pyo3(signature = (*_args))]
-    fn new(_args: &Bound<'_, PyTuple>) -> PyClassInitializer<Self> {
+    fn new(_args: &Bound<PyTuple>) -> PyClassInitializer<Self> {
         PyClassInitializer::from(TransferredError).add_subclass(Self)
     }
 }
@@ -127,7 +127,7 @@ pub(crate) fn to_pyerr(err: CoreError) -> PyErr {
     }
 }
 
-pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+pub(crate) fn register(module: &Bound<PyModule>) -> PyResult<()> {
     module.add_class::<TransferredError>()?;
     module.add_class::<SourceError>()?;
     module.add_class::<EmptySourceError>()?;
@@ -149,7 +149,7 @@ mod tests {
     struct Layer(&'static str, Option<Box<Self>>);
 
     impl fmt::Display for Layer {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             f.write_str(self.0)
         }
     }
