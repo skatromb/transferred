@@ -33,7 +33,7 @@ impl PyTransfer {
         imports = ("typing")
     ))]
     #[new]
-    fn new(source: &Bound<'_, PyAny>, destination: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn new(source: &Bound<PyAny>, destination: &Bound<PyAny>) -> PyResult<Self> {
         Ok(Self {
             inner: Some(Transfer::new(
                 extract_source(source)?,
@@ -42,7 +42,7 @@ impl PyTransfer {
         })
     }
 
-    fn run(&mut self, py: Python<'_>) -> PyResult<PyRunReport> {
+    fn run(&mut self, py: Python) -> PyResult<PyRunReport> {
         let transfer = self
             .inner
             .take()
@@ -85,7 +85,7 @@ enum AnyDestination<'py> {
     },
 }
 
-fn extract_source(source: &Bound<'_, PyAny>) -> PyResult<BoxedSource> {
+fn extract_source(source: &Bound<PyAny>) -> PyResult<BoxedSource> {
     let any_source = source
         .extract()
         .ok()
@@ -99,7 +99,7 @@ fn extract_source(source: &Bound<'_, PyAny>) -> PyResult<BoxedSource> {
     taken.ok_or_else(already_consumed)
 }
 
-fn extract_destination(destination: &Bound<'_, PyAny>) -> PyResult<BoxedDestination> {
+fn extract_destination(destination: &Bound<PyAny>) -> PyResult<BoxedDestination> {
     let any_destination = destination
         .extract()
         .ok()

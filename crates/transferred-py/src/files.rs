@@ -61,8 +61,8 @@ impl PyFilesSource {
             type_repr = "str | os.PathLike | list[str | os.PathLike]",
             imports = ("os",)
         ))]
-        path: &Bound<'_, PyAny>,
-        format: &Bound<'_, PyAny>,
+        path: &Bound<PyAny>,
+        format: &Bound<PyAny>,
     ) -> PyResult<Self> {
         let source = if path.cast::<PyList>().is_ok() {
             let paths: Vec<PathBuf> = path.extract()?;
@@ -100,7 +100,7 @@ impl PyFilesDestination {
     ))]
     #[new]
     #[pyo3(signature = (path, format, single_file = false))]
-    fn new(path: PathBuf, format: &Bound<'_, PyAny>, single_file: bool) -> PyResult<Self> {
+    fn new(path: PathBuf, format: &Bound<PyAny>, single_file: bool) -> PyResult<Self> {
         Ok(Self {
             inner: Some(FilesDestination::new(
                 path,
@@ -120,8 +120,8 @@ impl PyFilesDestination {
 
 /// Extracts a `Parquet` codec from the `format=` argument. Parquet is the only
 /// format today, so any `Parquet` instance resolves here.
-fn parquet_arg(format: &Bound<'_, PyAny>) -> PyResult<Parquet> {
-    Ok(format.extract::<PyRef<'_, PyParquet>>()?.inner)
+fn parquet_arg(format: &Bound<PyAny>) -> PyResult<Parquet> {
+    Ok(format.extract::<PyRef<PyParquet>>()?.inner)
 }
 
 fn parse_compression(compression: Option<&str>) -> PyResult<Compression> {
