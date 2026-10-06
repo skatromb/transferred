@@ -1,3 +1,6 @@
+PY := cd crates/transferred-py && uv run --no-sync
+PY_ROOT := uv run --project crates/transferred-py --no-sync
+
 # Full gate: Rust + Python + stub drift.
 .PHONY: check
 check: rust-check python-check stubs-check
@@ -88,27 +91,24 @@ python-setup:
 # Lint + format Python sources. Auto-fixes locally; CI fails if anything changed.
 .PHONY: ruff
 ruff: python-setup
-	@cd crates/transferred-py && \
-		uv run --no-sync ruff format . ../../examples ../../perf && \
-		uv run --no-sync ruff check . ../../examples ../../perf
+	@$(PY) ruff format . ../../examples ../../perf
+	@$(PY) ruff check . ../../examples ../../perf
 	@if [ -n "$$CI" ]; then git diff --exit-code -- '*.py'; fi
 
 # Lint with wemake-python-styleguide. `WPS` rules only — see `.flake8`.
 .PHONY: wps
 wps: python-setup
-	@uv run --project crates/transferred-py --no-sync flake8 .
+	@$(PY_ROOT) flake8 .
 
 # Type-check Python sources against the auto-generated `_native` stubs.
 .PHONY: ty
 ty: python-setup
-	@cd crates/transferred-py && \
-	uv run --no-sync ty check
+	@$(PY) ty check
 
 # Run pytest. Same entry point for local + CI.
 .PHONY: pytest
 pytest: python-setup
-	@cd crates/transferred-py && \
-	uv run --no-sync pytest
+	@$(PY) pytest
 
 # Dependency groups synced before a Python build. `perf` widens it with its baselines.
 PYTHON_GROUPS := --group dev
@@ -166,7 +166,7 @@ coverage-python: llvm-cov-install
 .PHONY: perf
 perf: PYTHON_GROUPS := --group dev --group perf
 perf: python-dev-build
-	@uv run --project crates/transferred-py --no-sync python -m perf.run
+	@$(PY_ROOT) python -m perf.run
 
 # Same, with dlt's four legs. Minutes each, so they stay out of the quick loop.
 .PHONY: perf-full
@@ -177,13 +177,13 @@ perf-full: perf
 .PHONY: perf-versions
 perf-versions: PYTHON_GROUPS := --group dev --group perf
 perf-versions: python-dev-build
-	@uv run --project crates/transferred-py --no-sync python -m perf.versions
+	@$(PY_ROOT) python -m perf.versions
 
 # Types each engine's Postgres target lands. Scale-independent — `PERF_ROW_NUM=100000 make fidelity`.
 .PHONY: fidelity
 fidelity: PYTHON_GROUPS := --group dev --group perf
 fidelity: python-dev-build
-	@uv run --project crates/transferred-py --no-sync python -m perf.fidelity
+	@$(PY_ROOT) python -m perf.fidelity
 
 # Profile one workload's on-CPU time. macOS only. `make profile WORKLOAD=parquet_to_postgres`.
 .PHONY: profile
