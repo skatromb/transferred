@@ -44,6 +44,9 @@ jobs:
     environment:
       name: crates-io
       url: https://crates.io/crates/transferred-core
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
 
@@ -53,10 +56,14 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Authenticate with crates.io
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
       - name: Publish crates
         run: cargo publish --workspace
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
   # `PyO3/maturin-action` builds wheels inside a manylinux container,
   # `--find-interpreter` picks up every CPython the image ships (3.14/t, 3.15/t)
