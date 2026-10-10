@@ -4,6 +4,7 @@
 [![Coverage](https://img.shields.io/codecov/c/github/skatromb/transferred.svg)](https://codecov.io/gh/skatromb/transferred)
 [![Python](https://img.shields.io/pypi/pyversions/transferred.svg)](https://pypi.org/project/transferred/)
 [![PyPI](https://img.shields.io/pypi/v/transferred.svg)](https://pypi.org/project/transferred/)
+[![Downloads](https://static.pepy.tech/personalized-badge/transferred?period=month&units=international_system&left_color=grey&right_color=green&left_text=downloads/month)](https://www.pepy.tech/projects/transferred)
 [![wemake-python-styleguide](https://img.shields.io/badge/style-wemake-000000.svg)](https://github.com/wemake-services/wemake-python-styleguide)
 
 <img src="https://raw.githubusercontent.com/skatromb/transferred/main/logo.png" alt="transferred" width="240">
