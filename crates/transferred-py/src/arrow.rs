@@ -1,10 +1,5 @@
 //! Internal bridge: wraps an Arrow C stream as a `transferred-core` `Source`.
 
-#![expect(
-    clippy::multiple_inherent_impl,
-    reason = "Rust-only methods stay out of `#[pymethods]`"
-)]
-
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -14,30 +9,30 @@ use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use futures::Stream;
 use pyo3::prelude::*;
-use transferred_core::{BatchStream, BoxedSource, Result, Source, TransferredError};
+use transferred_core::{BatchStream, Result, Source, TransferredError};
+
+use crate::transfer::PySource;
 
 /// Internal `PyO3` wrapper around an Arrow C stream, built by `Transfer` from a `DataFrame` or rows.
-#[pyclass(name = "_ArrowSource", module = "transferred._native", unsendable)]
-pub(crate) struct PyArrowSource {
-    inner: Option<ArrowSource>,
-}
+#[pyclass(
+    name = "_ArrowSource",
+    module = "transferred._native",
+    extends = PySource,
+    subclass,
+    unsendable
+)]
+pub(crate) struct PyArrowSource;
 
 #[pymethods]
 impl PyArrowSource {
     #[new]
-    fn new(reader: &Bound<PyAny>) -> PyResult<Self> {
-        Ok(Self {
-            inner: Some(ArrowSource {
+    fn new(reader: &Bound<PyAny>) -> PyResult<PyClassInitializer<Self>> {
+        Ok(PySource::init(
+            Self,
+            ArrowSource {
                 reader: ArrowArrayStreamReader::from_pyarrow_bound(reader)?,
-            }),
-        })
-    }
-}
-
-impl PyArrowSource {
-    /// Takes the wrapped source, leaving `None` behind.
-    pub(crate) fn take(&mut self) -> Option<BoxedSource> {
-        Some(Box::new(self.inner.take()?))
+            },
+        ))
     }
 }
 

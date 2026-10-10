@@ -9,6 +9,11 @@ class ArrowError(TransferredError):
     """
     def __new__(cls, /, *_args) -> ArrowError: ...
 
+class Destination:
+    """
+    A `transferred` data destination. Subclasses are passed to `Transfer(destination=...)`.
+    """
+
 class DestinationError(TransferredError):
     """
     Destination write failed (permission denied, disk full, schema mismatch).
@@ -74,6 +79,11 @@ class RunReport:
         Identifiers of what the destination wrote (file paths, URIs, tables).
         """
 
+class Source:
+    """
+    A `transferred` data source. Subclasses are passed to `Transfer(source=...)`.
+    """
+
 class SourceError(TransferredError):
     """
     Source read failed (file missing, malformed Parquet, etc.).
@@ -97,55 +107,48 @@ class TransferredError(Exception):
     """
     def __new__(cls, /, *_args) -> TransferredError: ...
 
-@final
-class _ArrowSource:
+class _ArrowSource(Source):
     """
     Internal `PyO3` wrapper around an Arrow C stream, built by `Transfer` from a `DataFrame` or rows.
     """
     def __new__(cls, /, reader: Any) -> _ArrowSource: ...
 
-@final
-class _FilesDestination:
+class _FilesDestination(Destination):
     """
     Internal `PyO3` wrapper around `transferred_files::FilesDestination`.
     """
     def __new__(cls, /, path: str |PathLike[str], format: _Parquet, single_file: bool = False) -> _FilesDestination: ...
 
-@final
-class _FilesSource:
+class _FilesSource(Source):
     """
     Internal `PyO3` wrapper around `transferred_files::FilesSource`.
     """
     def __new__(cls, /, path: Sequence[str |PathLike[str]] |str |PathLike[str], format: _Parquet) -> _FilesSource: ...
 
-@final
 class _Parquet:
     """
     Internal `PyO3` wrapper around `transferred_files::Parquet`.
     """
     def __new__(cls, /, compression: str |None) -> _Parquet: ...
 
-@final
-class _PostgresDestination:
+class _PostgresDestination(Destination):
     """
     Internal `PyO3` wrapper around `transferred_postgres::PostgresDestination`.
     """
     def __new__(cls, /, dsn: str, table: str) -> _PostgresDestination: ...
 
-@final
-class _PostgresSource:
+class _PostgresSource(Source):
     """
     Internal `PyO3` wrapper around `transferred_postgres::PostgresSource`.
     """
     def __new__(cls, /, dsn: str, table: str) -> _PostgresSource: ...
 
-@final
 class _Transfer:
     """
-    Internal `PyO3` wrapper around `transferred_core::Transfer`. Wrapped by the
+    Internal `PyO3` wrapper around `transferred_core::Transfer`. Subclassed by the
     user-facing Python `Transfer`; not used directly.
     """
-    def __new__(cls, /, source: Any, destination: Any) -> _Transfer: ...
+    def __new__(cls, /, source: Source, destination: Destination) -> _Transfer: ...
     def run(self, /) -> RunReport: ...
 
 def __getattr__(name: str) -> Incomplete: ...

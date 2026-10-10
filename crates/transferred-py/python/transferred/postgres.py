@@ -1,10 +1,11 @@
 """`PostgresSource` and `PostgresDestination` — read and write Postgres tables."""
 
-from transferred._base import Destination, Source
+from typing import Self, cast
+
 from transferred._native import _PostgresDestination, _PostgresSource
 
 
-class PostgresSource(Source):
+class PostgresSource(_PostgresSource):
     """Postgres table source. No I/O performed at construction.
 
     Args:
@@ -23,13 +24,11 @@ class PostgresSource(Source):
         >>> report = transfer.run()  # doctest: +SKIP
     """
 
-    _native_source: _PostgresSource
-
-    def __init__(self, dsn: str, table: str) -> None:
-        self._native_source = _PostgresSource(dsn, table)
+    def __new__(cls, dsn: str, table: str) -> Self:
+        return cast(Self, super().__new__(cls, dsn, table))
 
 
-class PostgresDestination(Destination):
+class PostgresDestination(_PostgresDestination):
     """Postgres table destination, replacing the table. No I/O performed at construction.
 
     Rows load into a staging table and swap in one transaction, so the target
@@ -54,7 +53,5 @@ class PostgresDestination(Destination):
         >>> report = transfer.run()  # doctest: +SKIP
     """
 
-    _native_destination: _PostgresDestination
-
-    def __init__(self, dsn: str, table: str) -> None:
-        self._native_destination = _PostgresDestination(dsn, table)
+    def __new__(cls, dsn: str, table: str) -> Self:
+        return cast(Self, super().__new__(cls, dsn, table))

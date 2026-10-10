@@ -1,23 +1,20 @@
 //! Files source/destination + Parquet format Python wrappers.
 
-#![expect(
-    clippy::multiple_inherent_impl,
-    reason = "Rust-only methods stay out of `#[pymethods]`"
-)]
-
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use transferred_core::{BoxedDestination, BoxedSource};
 use transferred_files::{Compression, FilesDestination, FilesSource, GlobOrPaths, Parquet};
+
+use crate::transfer::{PyDestination, PySource};
 
 /// Internal `PyO3` wrapper around `transferred_files::Parquet`.
 #[pyclass(
     name = "_Parquet",
     module = "transferred._native",
     unsendable,
+    subclass,
     skip_from_py_object
 )]
 #[derive(Clone)]
@@ -37,23 +34,25 @@ impl PyParquet {
 }
 
 /// Internal `PyO3` wrapper around `transferred_files::FilesSource`.
-#[pyclass(name = "_FilesSource", module = "transferred._native", unsendable)]
-pub(crate) struct PyFilesSource {
-    inner: Option<FilesSource>,
-}
+#[pyclass(
+    name = "_FilesSource",
+    module = "transferred._native",
+    extends = PySource,
+    subclass,
+    unsendable
+)]
+pub(crate) struct PyFilesSource;
 
 #[pymethods]
 impl PyFilesSource {
     #[new]
     #[pyo3(signature = (path, format))]
-    fn new(path: PathArg, format: &PyParquet) -> Self {
+    fn new(path: PathArg, format: &PyParquet) -> PyClassInitializer<Self> {
         let source = match path {
             PathArg::Many(paths) => GlobOrPaths::Paths(paths),
             PathArg::One(single) => GlobOrPaths::Glob(single.to_string_lossy().into_owned()),
         };
-        Self {
-            inner: Some(FilesSource::new(source, Arc::new(format.inner))),
-        }
+        PySource::init(Self, FilesSource::new(source, Arc::new(format.inner)))
     }
 }
 
@@ -64,38 +63,25 @@ enum PathArg {
     One(PathBuf),
 }
 
-impl PyFilesSource {
-    /// Takes the wrapped source, leaving `None` behind.
-    pub(crate) fn take(&mut self) -> Option<BoxedSource> {
-        Some(Box::new(self.inner.take()?))
-    }
-}
-
 /// Internal `PyO3` wrapper around `transferred_files::FilesDestination`.
-#[pyclass(name = "_FilesDestination", module = "transferred._native", unsendable)]
-pub(crate) struct PyFilesDestination {
-    inner: Option<FilesDestination>,
-}
+#[pyclass(
+    name = "_FilesDestination",
+    module = "transferred._native",
+    extends = PyDestination,
+    subclass,
+    unsendable
+)]
+pub(crate) struct PyFilesDestination;
 
 #[pymethods]
 impl PyFilesDestination {
     #[new]
     #[pyo3(signature = (path, format, single_file = false))]
-    fn new(path: PathBuf, format: &PyParquet, single_file: bool) -> Self {
-        Self {
-            inner: Some(FilesDestination::new(
-                path,
-                Arc::new(format.inner),
-                single_file,
-            )),
-        }
-    }
-}
-
-impl PyFilesDestination {
-    /// Takes the wrapped destination, leaving `None` behind.
-    pub(crate) fn take(&mut self) -> Option<BoxedDestination> {
-        Some(Box::new(self.inner.take()?))
+    fn new(path: PathBuf, format: &PyParquet, single_file: bool) -> PyClassInitializer<Self> {
+        PyDestination::init(
+            Self,
+            FilesDestination::new(path, Arc::new(format.inner), single_file),
+        )
     }
 }
 

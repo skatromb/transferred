@@ -1,20 +1,11 @@
 """File formats for file-shaped sources and destinations."""
 
-from typing import Any, Literal
+from typing import Literal, Self, cast
 
 from transferred._native import _Parquet
 
 
-class Format:
-    """A file format codec. Pass to `FilesSource`/`FilesDestination(format=...)`."""
-
-    _native_format: Any
-
-    def __setattr__(self, name: str, new_value: object) -> None:
-        raise AttributeError(f"`{type(self).__name__}` is immutable")
-
-
-class Parquet(Format):
+class Parquet(_Parquet):
     """Parquet format. Carries encoder knobs; decoding needs none.
 
     Args:
@@ -26,5 +17,7 @@ class Parquet(Format):
         >>> parquet_format = Parquet(compression="snappy")
     """
 
-    def __init__(self, compression: Literal["zstd", "snappy"] | None = "zstd") -> None:
-        object.__setattr__(self, "_native_format", _Parquet(compression))
+    __slots__ = ()
+
+    def __new__(cls, compression: Literal["zstd", "snappy"] | None = "zstd") -> Self:
+        return cast(Self, super().__new__(cls, compression))

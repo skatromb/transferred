@@ -1,30 +1,10 @@
-"""Refusals from the Rust extractor, reached past the Python dispatcher's own checks."""
+"""Refusals from the native `Transfer`."""
 
 from pathlib import Path
 
 import pytest
 from test_utils import write_seed
-from transferred import Destination, FilesDestination, FilesSource, Source, Transfer
-
-
-class _UnwiredSource(Source):
-    """Passes `isinstance(source, Source)` with no `_native_source` behind it."""
-
-
-class _UnwiredDestination(Destination):
-    """Passes `isinstance(destination, Destination)` with no native destination."""
-
-
-def test_source_subclass_without_native(out_dir: Path):
-    with pytest.raises(TypeError, match=r"^`source` must be a `transferred\.Source`$"):
-        Transfer(source=_UnwiredSource(), destination=FilesDestination(out_dir))
-
-
-def test_destination_subclass_without_native():
-    with pytest.raises(
-        TypeError, match=r"^`destination` must be a `transferred\.Destination`$"
-    ):
-        Transfer(source=[{"id": 1}], destination=_UnwiredDestination())
+from transferred import FilesDestination, FilesSource, Transfer
 
 
 def test_source_reused_by_another_transfer(tmp_path: Path, out_dir: Path):
