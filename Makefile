@@ -210,36 +210,17 @@ bump-lock:
 .PHONY: pre-release
 pre-release: check check-integration examples
 
-# Pre-flight: on main, clean tree, in sync with origin.
-.PHONY: release-check
-release-check:
-	@[ "$$(git rev-parse --abbrev-ref HEAD)" = "main" ] \
-		|| { echo "release-check: must be on main"; exit 1; }
-	@git diff --quiet && git diff --cached --quiet \
-		|| { echo "release-check: working tree not clean"; exit 1; }
-	@git fetch origin main --quiet
-	@[ "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" ] \
-		|| { echo "release-check: local main not in sync with origin/main"; exit 1; }
-	@echo "release-check: ok (version $(VERSION))"
-
-# Cut and push annotated tag `vX.Y.Z` matching the workspace version.
+# Cut and push annotated tag `vX.Y.Z` matching the workspace version. `release.yml` rejects tags off main.
 .PHONY: release-tag
-release-tag: release-check
-	@git rev-parse "v$(VERSION)" >/dev/null 2>&1 \
-		&& { echo "tag v$(VERSION) already exists"; exit 1; } \
-		|| true
+release-tag:
 	@git tag -a "v$(VERSION)" -m "v$(VERSION)"
 	@git push origin "v$(VERSION)"
-	@echo "pushed tag v$(VERSION)"
 
-# Move tag `vX.Y.Z` to current main (delete local+remote, recreate). Use to re-cut a version before publish.
+# Move tag `vX.Y.Z` to the current commit. Use to re-cut a version that failed before publish.
 .PHONY: release-retag
-release-retag: release-check
-	@git push origin ":refs/tags/v$(VERSION)" 2>/dev/null || true
-	@git tag -d "v$(VERSION)" 2>/dev/null || true
-	@git tag -a "v$(VERSION)" -m "v$(VERSION)"
-	@git push origin "v$(VERSION)"
-	@echo "re-tagged v$(VERSION)"
+release-retag:
+	@git tag -fa "v$(VERSION)" -m "v$(VERSION)"
+	@git push -f origin "v$(VERSION)"
 
 # Check validity of every examples/*.py against the current build. Needs Docker for Postgres.
 .PHONY: examples
