@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Protocol, Self, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from transferred._base import Destination, Source
-from transferred._native import _ArrowSource, _Transfer
+from transferred._native import RunReport, _ArrowSource, _Transfer
 from transferred.iterable import _iterable_to_reader
 
 if TYPE_CHECKING:
@@ -21,7 +21,7 @@ type Row = dict[str, Any] | DataclassInstance | pydantic.BaseModel
 """A single input row: `dict`, `@dataclass` instance, or `pydantic.BaseModel`."""
 
 
-class Transfer(_Transfer):
+class Transfer:
     """Orchestrate a single source → destination run. Single-shot.
 
     Args:
@@ -55,7 +55,9 @@ class Transfer(_Transfer):
             output_directory/part-00001.parquet
     """
 
-    def __new__(cls, source: SourceLike, destination: Destination) -> Self:
+    _native_transfer: _Transfer
+
+    def __init__(self, source: SourceLike, destination: Destination) -> None:
         coerced_source = _coerce_source(source)
 
         if not isinstance(destination, Destination):
@@ -64,7 +66,10 @@ class Transfer(_Transfer):
                 f"got `{type(destination).__name__}`"
             )
 
-        return super().__new__(cls, coerced_source, destination)
+        self._native_transfer = _Transfer(coerced_source, destination)
+
+    def run(self) -> RunReport:
+        return self._native_transfer.run()
 
 
 def _coerce_source(source: SourceLike) -> Source:

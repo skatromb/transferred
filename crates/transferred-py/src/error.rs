@@ -5,7 +5,6 @@ use std::error::Error;
 use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
-use pyo3_stub_gen::derive::gen_stub_pyclass;
 use transferred_core::TransferredError as CoreError;
 
 /// Base exception for all `transferred` failures.
@@ -20,7 +19,6 @@ use transferred_core::TransferredError as CoreError;
 ///     ... except TransferredError as e:
 ///     ...     print(f"transfer failed: {e}")
 ///     ```
-#[gen_stub_pyclass]
 #[pyclass(extends = PyException, module = "transferred._native", subclass, frozen)]
 pub(crate) struct TransferredError;
 
@@ -34,7 +32,6 @@ impl TransferredError {
 }
 
 /// Source read failed (file missing, malformed Parquet, etc.).
-#[gen_stub_pyclass]
 #[pyclass(extends = TransferredError, module = "transferred._native", subclass, frozen)]
 pub(crate) struct SourceError;
 
@@ -48,7 +45,6 @@ impl SourceError {
 }
 
 /// Source produced no batches — nothing to transfer.
-#[gen_stub_pyclass]
 #[pyclass(extends = SourceError, module = "transferred._native", subclass, frozen)]
 pub(crate) struct EmptySourceError;
 
@@ -64,7 +60,6 @@ impl EmptySourceError {
 }
 
 /// Destination write failed (permission denied, disk full, schema mismatch).
-#[gen_stub_pyclass]
 #[pyclass(extends = TransferredError, module = "transferred._native", subclass, frozen)]
 pub(crate) struct DestinationError;
 
@@ -78,7 +73,6 @@ impl DestinationError {
 }
 
 /// Arrow schema or array conversion failed.
-#[gen_stub_pyclass]
 #[pyclass(extends = TransferredError, module = "transferred._native", subclass, frozen)]
 pub(crate) struct ArrowError;
 
@@ -92,7 +86,6 @@ impl ArrowError {
 }
 
 /// Filesystem I/O error not attributable to source or destination logic.
-#[gen_stub_pyclass]
 #[pyclass(extends = TransferredError, module = "transferred._native", subclass, frozen)]
 pub(crate) struct IoError;
 
@@ -125,16 +118,6 @@ pub(crate) fn to_pyerr(err: CoreError) -> PyErr {
         CoreError::Arrow(cause) => PyErr::new::<ArrowError, _>(causes(&cause)),
         CoreError::Io(cause) => PyErr::new::<IoError, _>(causes(&cause)),
     }
-}
-
-pub(crate) fn register(module: &Bound<PyModule>) -> PyResult<()> {
-    module.add_class::<TransferredError>()?;
-    module.add_class::<SourceError>()?;
-    module.add_class::<EmptySourceError>()?;
-    module.add_class::<DestinationError>()?;
-    module.add_class::<ArrowError>()?;
-    module.add_class::<IoError>()?;
-    Ok(())
 }
 
 #[cfg(test)]

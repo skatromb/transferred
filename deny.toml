@@ -3,9 +3,6 @@
 
 [advisories]
 yanked = "deny"
-# RustSec's unmaintained class is informational, not a vulnerability, and every hit
-# today is transitive under `pyo3-stub-gen` with no upgrade available.
-unmaintained = "workspace"
 
 [licenses]
 allow = [
@@ -17,7 +14,6 @@ allow = [
     "CC0-1.0",
     "ISC",
     "Unicode-3.0",
-    "Unicode-DFS-2016",
     "Zlib",
 ]
 

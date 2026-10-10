@@ -61,7 +61,7 @@ addopts = "--doctest-modules"
 doctest_optionflags = "ELLIPSIS"
 
 [tool.ruff]
-extend-exclude = ["python/transferred/_native/__init__.pyi"]
+extend-exclude = ["python/transferred/_native.pyi"]
 
 [tool.ruff.lint]
 preview = true

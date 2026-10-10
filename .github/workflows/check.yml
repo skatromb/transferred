@@ -70,9 +70,6 @@ jobs:
       - name: make rust-check
         run: make rust-check
 
-      - name: make stubs-check
-        run: make stubs-check
-
   rust-x86_64:
     name: Rust (x86_64)
     needs: changes
@@ -114,6 +111,9 @@ jobs:
 
       - name: make python-check
         run: make python-check
+
+      - name: make stubs-check
+        run: make stubs-check
 
   integration:
     name: Integration
