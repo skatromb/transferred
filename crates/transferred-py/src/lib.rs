@@ -30,7 +30,7 @@ mod _native {
         ArrowError, DestinationError, EmptySourceError, IoError, SourceError, TransferredError,
     };
     #[pymodule_export]
-    use crate::files::{PyFilesDestination, PyFilesSource, PyParquet};
+    use crate::files::{PyFilesDestination, PyFilesSource, PyFormat, PyParquet};
     #[pymodule_export]
     use crate::postgres::{PyPostgresDestination, PyPostgresSource};
     #[pymodule_export]

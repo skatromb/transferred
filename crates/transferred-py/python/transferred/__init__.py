@@ -4,6 +4,7 @@ from transferred._native import ArrowError as ArrowError
 from transferred._native import Destination as Destination
 from transferred._native import DestinationError as DestinationError
 from transferred._native import EmptySourceError as EmptySourceError
+from transferred._native import Format as Format
 from transferred._native import IoError as IoError
 from transferred._native import RunReport as RunReport
 from transferred._native import Source as Source

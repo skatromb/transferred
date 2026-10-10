@@ -26,6 +26,11 @@ class EmptySourceError(SourceError):
     """
     def __new__(cls, /, *_args) -> EmptySourceError: ...
 
+class Format:
+    """
+    A file format codec. Pass to `FilesSource`/`FilesDestination(format=...)`.
+    """
+
 class IoError(TransferredError):
     """
     Filesystem I/O error not attributable to source or destination logic.
@@ -117,15 +122,15 @@ class _FilesDestination(Destination):
     """
     Internal `PyO3` wrapper around `transferred_files::FilesDestination`.
     """
-    def __new__(cls, /, path: str |PathLike[str], format: _Parquet, single_file: bool = False) -> _FilesDestination: ...
+    def __new__(cls, /, path: str |PathLike[str], format: Format, single_file: bool = False) -> _FilesDestination: ...
 
 class _FilesSource(Source):
     """
     Internal `PyO3` wrapper around `transferred_files::FilesSource`.
     """
-    def __new__(cls, /, path: Sequence[str |PathLike[str]] |str |PathLike[str], format: _Parquet) -> _FilesSource: ...
+    def __new__(cls, /, path: Sequence[str |PathLike[str]] |str |PathLike[str], format: Format) -> _FilesSource: ...
 
-class _Parquet:
+class _Parquet(Format):
     """
     Internal `PyO3` wrapper around `transferred_files::Parquet`.
     """
