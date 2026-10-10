@@ -3,13 +3,13 @@
 import os
 from typing import Self, cast
 
-from transferred._native import _FilesDestination, _FilesSource
+from transferred._native import Format, _FilesDestination, _FilesSource
 from transferred.formats import Parquet
 
 StrPath = str | os.PathLike[str]
 
 _PARQUET = Parquet()
-"""Default `format=` below. One shared instance; `Parquet` forbids mutation."""
+"""Default `format=` below. One shared instance; `Format` forbids mutation."""
 
 
 class FilesSource(_FilesSource):
@@ -43,7 +43,7 @@ class FilesSource(_FilesSource):
         ... ).run()
     """
 
-    def __new__(cls, path: StrPath | list[StrPath], format: Parquet = _PARQUET) -> Self:
+    def __new__(cls, path: StrPath | list[StrPath], format: Format = _PARQUET) -> Self:
         return cast(Self, super().__new__(cls, path, format))
 
 
@@ -74,7 +74,7 @@ class FilesDestination(_FilesDestination):
     def __new__(
         cls,
         path: StrPath,
-        format: Parquet = _PARQUET,
+        format: Format = _PARQUET,
         *,
         single_file: bool = False,
     ) -> Self:
