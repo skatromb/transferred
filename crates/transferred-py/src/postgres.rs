@@ -6,24 +6,17 @@
 )]
 
 use pyo3::prelude::*;
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use transferred_core::{BoxedDestination, BoxedSource};
 use transferred_postgres::{PostgresDestination, PostgresSource};
 
 /// Internal `PyO3` wrapper around `transferred_postgres::PostgresSource`.
-#[gen_stub_pyclass]
 #[pyclass(name = "_PostgresSource", module = "transferred._native", unsendable)]
 pub(crate) struct PyPostgresSource {
     inner: Option<PostgresSource>,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyPostgresSource {
-    #[gen_stub(override_return_type(
-        type_repr = "typing.Self",
-        imports = ("typing")
-    ))]
     #[new]
     #[pyo3(signature = (dsn, table))]
     const fn new(dsn: String, table: String) -> Self {
@@ -41,7 +34,6 @@ impl PyPostgresSource {
 }
 
 /// Internal `PyO3` wrapper around `transferred_postgres::PostgresDestination`.
-#[gen_stub_pyclass]
 #[pyclass(
     name = "_PostgresDestination",
     module = "transferred._native",
@@ -51,13 +43,8 @@ pub(crate) struct PyPostgresDestination {
     inner: Option<PostgresDestination>,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyPostgresDestination {
-    #[gen_stub(override_return_type(
-        type_repr = "typing.Self",
-        imports = ("typing")
-    ))]
     #[new]
     #[pyo3(signature = (dsn, table))]
     const fn new(dsn: String, table: String) -> Self {

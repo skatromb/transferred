@@ -56,7 +56,7 @@ deny: deny-install
 
 # Fail if regen changes the current on-disk stub
 .PHONY: stubs-check
-stubs-check: STUB_PYI := crates/transferred-py/python/transferred/_native/__init__.pyi
+stubs-check: STUB_PYI := crates/transferred-py/python/transferred/_native.pyi
 stubs-check:
 	@cp $(STUB_PYI) $(STUB_PYI).bak
 	@$(MAKE) -s stubs
@@ -67,10 +67,10 @@ stubs-check:
 	fi
 	@rm -f $(STUB_PYI).bak
 
-# Regenerate `_native.pyi` stubs from `#[gen_stub_*]` annotations.
+# Regenerate `_native.pyi` from PyO3 introspection data.
 .PHONY: stubs
-stubs:
-	@cargo run --bin stub_gen -p transferred-py
+stubs: python-setup
+	@$(PY) maturin generate-stubs --quiet --out python
 
 
 # ============================================================================
@@ -126,8 +126,6 @@ python-dev-build:
 # Coverage
 # ============================================================================
 
-# A stub generator `make stubs` runs and no test does. Its coverage means nothing.
-COVERAGE_IGNORE := --ignore-filename-regex 'stub_gen\.rs'
 
 # Install cargo-llvm-cov, which instruments the workspace crates for coverage.
 .PHONY: llvm-cov-install
@@ -141,7 +139,7 @@ coverage-rust: llvm-cov-install
 		cargo llvm-cov clean --profraw-only && \
 		cargo test --workspace && \
 		cargo test -p transferred-postgres --features integration && \
-		cargo llvm-cov report --lcov --output-path coverage-rust.lcov $(COVERAGE_IGNORE)
+		cargo llvm-cov report --lcov --output-path coverage-rust.lcov
 
 # Rust and Python coverage from pytest, which reaches Rust through the extension module.
 .PHONY: coverage-python
@@ -153,7 +151,7 @@ coverage-python: llvm-cov-install
 		uv run --no-sync maturin develop --uv && \
 		uv run --no-sync pytest --cov=transferred --cov-report=xml:../../coverage-python.xml && \
 		cd ../.. && \
-		cargo llvm-cov report --lcov --output-path coverage-python.lcov $(COVERAGE_IGNORE)
+		cargo llvm-cov report --lcov --output-path coverage-python.lcov
 
 
 

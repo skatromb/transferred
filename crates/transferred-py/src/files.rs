@@ -10,13 +10,10 @@ use std::sync::Arc;
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use transferred_core::{BoxedDestination, BoxedSource};
 use transferred_files::{Compression, FilesDestination, FilesSource, GlobOrPaths, Parquet};
 
 /// Internal `PyO3` wrapper around `transferred_files::Parquet`.
-#[gen_stub_pyclass]
 #[pyclass(
     name = "_Parquet",
     module = "transferred._native",
@@ -28,7 +25,6 @@ pub(crate) struct PyParquet {
     inner: Parquet,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyParquet {
     #[new]
@@ -41,40 +37,31 @@ impl PyParquet {
 }
 
 /// Internal `PyO3` wrapper around `transferred_files::FilesSource`.
-#[gen_stub_pyclass]
 #[pyclass(name = "_FilesSource", module = "transferred._native", unsendable)]
 pub(crate) struct PyFilesSource {
     inner: Option<FilesSource>,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyFilesSource {
-    #[gen_stub(override_return_type(
-        type_repr = "typing.Self",
-        imports = ("typing")
-    ))]
     #[new]
     #[pyo3(signature = (path, format))]
-    fn new(
-        #[gen_stub(override_type(
-            type_repr = "str | os.PathLike | list[str | os.PathLike]",
-            imports = ("os",)
-        ))]
-        path: &Bound<PyAny>,
-        format: &Bound<PyAny>,
-    ) -> PyResult<Self> {
-        let source = if path.cast::<PyList>().is_ok() {
-            let paths: Vec<PathBuf> = path.extract()?;
-            GlobOrPaths::Paths(paths)
-        } else {
-            let single: PathBuf = path.extract()?;
-            GlobOrPaths::Glob(single.to_string_lossy().into_owned())
+    fn new(path: PathArg, format: &PyParquet) -> Self {
+        let source = match path {
+            PathArg::Many(paths) => GlobOrPaths::Paths(paths),
+            PathArg::One(single) => GlobOrPaths::Glob(single.to_string_lossy().into_owned()),
         };
-        Ok(Self {
-            inner: Some(FilesSource::new(source, Arc::new(parquet_arg(format)?))),
-        })
+        Self {
+            inner: Some(FilesSource::new(source, Arc::new(format.inner))),
+        }
     }
+}
+
+/// `path=` of `FilesSource`: a list of paths, or one path or glob.
+#[derive(FromPyObject)]
+enum PathArg {
+    Many(Vec<PathBuf>),
+    One(PathBuf),
 }
 
 impl PyFilesSource {
@@ -85,29 +72,23 @@ impl PyFilesSource {
 }
 
 /// Internal `PyO3` wrapper around `transferred_files::FilesDestination`.
-#[gen_stub_pyclass]
 #[pyclass(name = "_FilesDestination", module = "transferred._native", unsendable)]
 pub(crate) struct PyFilesDestination {
     inner: Option<FilesDestination>,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyFilesDestination {
-    #[gen_stub(override_return_type(
-        type_repr = "typing.Self",
-        imports = ("typing")
-    ))]
     #[new]
     #[pyo3(signature = (path, format, single_file = false))]
-    fn new(path: PathBuf, format: &Bound<PyAny>, single_file: bool) -> PyResult<Self> {
-        Ok(Self {
+    fn new(path: PathBuf, format: &PyParquet, single_file: bool) -> Self {
+        Self {
             inner: Some(FilesDestination::new(
                 path,
-                Arc::new(parquet_arg(format)?),
+                Arc::new(format.inner),
                 single_file,
             )),
-        })
+        }
     }
 }
 
@@ -116,12 +97,6 @@ impl PyFilesDestination {
     pub(crate) fn take(&mut self) -> Option<BoxedDestination> {
         Some(Box::new(self.inner.take()?))
     }
-}
-
-/// Extracts a `Parquet` codec from the `format=` argument. Parquet is the only
-/// format today, so any `Parquet` instance resolves here.
-fn parquet_arg(format: &Bound<PyAny>) -> PyResult<Parquet> {
-    Ok(format.extract::<PyRef<PyParquet>>()?.inner)
 }
 
 fn parse_compression(compression: Option<&str>) -> PyResult<Compression> {

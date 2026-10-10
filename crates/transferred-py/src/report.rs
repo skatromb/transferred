@@ -7,7 +7,6 @@
 
 use humansize::{BINARY, format_size};
 use pyo3::prelude::*;
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use std::fmt::Write as _;
 use std::time::Duration;
 use thousands::Separable as _;
@@ -33,7 +32,6 @@ use transferred_core::RunReport;
 ///         out/part-00001.parquet
 ///         out/part-00002.parquet
 ///     ```
-#[gen_stub_pyclass]
 #[pyclass(name = "RunReport", module = "transferred._native", frozen)]
 pub(crate) struct PyRunReport {
     inner: RunReport,
@@ -45,7 +43,6 @@ impl PyRunReport {
     }
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyRunReport {
     /// Total rows written.

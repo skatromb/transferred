@@ -2,7 +2,6 @@
 
 use pyo3::exceptions::{PyRuntimeError, PyTypeError};
 use pyo3::prelude::*;
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use tokio::runtime::Builder;
 use transferred_core::{BoxedDestination, BoxedSource, Transfer};
 
@@ -12,26 +11,15 @@ use crate::files::{PyFilesDestination, PyFilesSource};
 use crate::postgres::{PyPostgresDestination, PyPostgresSource};
 use crate::report::PyRunReport;
 
-/// Internal `PyO3` wrapper around `transferred_core::Transfer`. Subclassed by the
+/// Internal `PyO3` wrapper around `transferred_core::Transfer`. Wrapped by the
 /// user-facing Python `Transfer`; not used directly.
-#[gen_stub_pyclass]
-#[pyclass(
-    name = "_Transfer",
-    module = "transferred._native",
-    unsendable,
-    subclass
-)]
+#[pyclass(name = "_Transfer", module = "transferred._native", unsendable)]
 pub(crate) struct PyTransfer {
     inner: Option<Transfer>,
 }
 
-#[gen_stub_pymethods]
 #[pymethods]
 impl PyTransfer {
-    #[gen_stub(override_return_type(
-        type_repr = "typing.Self",
-        imports = ("typing")
-    ))]
     #[new]
     fn new(source: &Bound<PyAny>, destination: &Bound<PyAny>) -> PyResult<Self> {
         Ok(Self {

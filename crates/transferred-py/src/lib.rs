@@ -11,7 +11,6 @@ mod transfer;
 
 use pyo3::prelude::*;
 use pyo3_log::{Caching, Logger};
-use pyo3_stub_gen::define_stub_info_gatherer;
 
 /// Routes Rust `tracing` events into Python `logging` under the `transferred` logger.
 fn install_logging(py: Python) -> PyResult<()> {
@@ -23,18 +22,25 @@ fn install_logging(py: Python) -> PyResult<()> {
 }
 
 #[pymodule]
-fn _native(py: Python, module: &Bound<PyModule>) -> PyResult<()> {
-    install_logging(py)?;
-    error::register(module)?;
-    module.add_class::<report::PyRunReport>()?;
-    module.add_class::<files::PyParquet>()?;
-    module.add_class::<files::PyFilesSource>()?;
-    module.add_class::<files::PyFilesDestination>()?;
-    module.add_class::<arrow::PyArrowSource>()?;
-    module.add_class::<postgres::PyPostgresSource>()?;
-    module.add_class::<postgres::PyPostgresDestination>()?;
-    module.add_class::<transfer::PyTransfer>()?;
-    Ok(())
-}
+mod _native {
+    #[pymodule_export]
+    use crate::arrow::PyArrowSource;
+    #[pymodule_export]
+    use crate::error::{
+        ArrowError, DestinationError, EmptySourceError, IoError, SourceError, TransferredError,
+    };
+    #[pymodule_export]
+    use crate::files::{PyFilesDestination, PyFilesSource, PyParquet};
+    #[pymodule_export]
+    use crate::postgres::{PyPostgresDestination, PyPostgresSource};
+    #[pymodule_export]
+    use crate::report::PyRunReport;
+    #[pymodule_export]
+    use crate::transfer::PyTransfer;
+    use pyo3::prelude::*;
 
-define_stub_info_gatherer!(stub_info);
+    #[pymodule_init]
+    fn init(module: &Bound<PyModule>) -> PyResult<()> {
+        super::install_logging(module.py())
+    }
+}
