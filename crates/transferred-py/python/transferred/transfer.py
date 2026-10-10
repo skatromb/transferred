@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, Self, cast, runtime_checkable
 
-from transferred._base import Destination, Source
-from transferred._native import RunReport, _ArrowSource, _Transfer
+from transferred._native import Destination, Source, _ArrowSource, _Transfer
 from transferred.iterable import _iterable_to_reader
 
 if TYPE_CHECKING:
@@ -21,7 +20,7 @@ type Row = dict[str, Any] | DataclassInstance | pydantic.BaseModel
 """A single input row: `dict`, `@dataclass` instance, or `pydantic.BaseModel`."""
 
 
-class Transfer:
+class Transfer(_Transfer):
     """Orchestrate a single source → destination run. Single-shot.
 
     Args:
@@ -55,9 +54,7 @@ class Transfer:
             output_directory/part-00001.parquet
     """
 
-    _native_transfer: _Transfer
-
-    def __init__(self, source: SourceLike, destination: Destination) -> None:
+    def __new__(cls, source: SourceLike, destination: Destination) -> Self:
         coerced_source = _coerce_source(source)
 
         if not isinstance(destination, Destination):
@@ -66,10 +63,7 @@ class Transfer:
                 f"got `{type(destination).__name__}`"
             )
 
-        self._native_transfer = _Transfer(coerced_source, destination)
-
-    def run(self) -> RunReport:
-        return self._native_transfer.run()
+        return cast(Self, super().__new__(cls, coerced_source, destination))
 
 
 def _coerce_source(source: SourceLike) -> Source:
@@ -78,25 +72,16 @@ def _coerce_source(source: SourceLike) -> Source:
         return source
 
     if isinstance(source, DataFrame):
-        return _DataFrameSource(source)
+        return _ArrowSource(source)
 
     if isinstance(source, Iterable):
         arrow_batch_reader = _iterable_to_reader(source)
-        return _DataFrameSource(arrow_batch_reader)
+        return _ArrowSource(arrow_batch_reader)
 
     raise TypeError(
         f"`source` must be a `transferred.Source`, a `DataFrame` or an iterable of rows, "
         f"got `{type(source).__name__}`"
     )
-
-
-class _DataFrameSource(Source):
-    """A `Source` over a `DataFrame`, built by `Transfer` so users never construct it."""
-
-    _native_source: _ArrowSource
-
-    def __init__(self, dataframe: DataFrame) -> None:
-        self._native_source = _ArrowSource(dataframe)
 
 
 @runtime_checkable

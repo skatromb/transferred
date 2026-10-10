@@ -1,35 +1,26 @@
 //! Postgres source + destination Python wrappers.
 
-#![expect(
-    clippy::multiple_inherent_impl,
-    reason = "Rust-only methods stay out of `#[pymethods]`"
-)]
-
 use pyo3::prelude::*;
-use transferred_core::{BoxedDestination, BoxedSource};
 use transferred_postgres::{PostgresDestination, PostgresSource};
 
+use crate::transfer::{PyDestination, PySource};
+
 /// Internal `PyO3` wrapper around `transferred_postgres::PostgresSource`.
-#[pyclass(name = "_PostgresSource", module = "transferred._native", unsendable)]
-pub(crate) struct PyPostgresSource {
-    inner: Option<PostgresSource>,
-}
+#[pyclass(
+    name = "_PostgresSource",
+    module = "transferred._native",
+    extends = PySource,
+    subclass,
+    unsendable
+)]
+pub(crate) struct PyPostgresSource;
 
 #[pymethods]
 impl PyPostgresSource {
     #[new]
     #[pyo3(signature = (dsn, table))]
-    const fn new(dsn: String, table: String) -> Self {
-        Self {
-            inner: Some(PostgresSource::new(dsn, table)),
-        }
-    }
-}
-
-impl PyPostgresSource {
-    /// Takes the wrapped source, leaving `None` behind.
-    pub(crate) fn take(&mut self) -> Option<BoxedSource> {
-        Some(Box::new(self.inner.take()?))
+    fn new(dsn: String, table: String) -> PyClassInitializer<Self> {
+        PySource::init(Self, PostgresSource::new(dsn, table))
     }
 }
 
@@ -37,26 +28,17 @@ impl PyPostgresSource {
 #[pyclass(
     name = "_PostgresDestination",
     module = "transferred._native",
+    extends = PyDestination,
+    subclass,
     unsendable
 )]
-pub(crate) struct PyPostgresDestination {
-    inner: Option<PostgresDestination>,
-}
+pub(crate) struct PyPostgresDestination;
 
 #[pymethods]
 impl PyPostgresDestination {
     #[new]
     #[pyo3(signature = (dsn, table))]
-    const fn new(dsn: String, table: String) -> Self {
-        Self {
-            inner: Some(PostgresDestination::new(dsn, table)),
-        }
-    }
-}
-
-impl PyPostgresDestination {
-    /// Takes the wrapped destination, leaving `None` behind.
-    pub(crate) fn take(&mut self) -> Option<BoxedDestination> {
-        Some(Box::new(self.inner.take()?))
+    fn new(dsn: String, table: String) -> PyClassInitializer<Self> {
+        PyDestination::init(Self, PostgresDestination::new(dsn, table))
     }
 }

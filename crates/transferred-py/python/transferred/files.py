@@ -1,18 +1,18 @@
 """`FilesSource` and `FilesDestination` — local filesystem, any file format."""
 
 import os
+from typing import Self, cast
 
-from transferred._base import Destination, Source
 from transferred._native import _FilesDestination, _FilesSource
-from transferred.formats import Format, Parquet
+from transferred.formats import Parquet
 
 StrPath = str | os.PathLike[str]
 
 _PARQUET = Parquet()
-"""Default `format=` below. One shared instance; `Format` forbids mutation."""
+"""Default `format=` below. One shared instance; `Parquet` forbids mutation."""
 
 
-class FilesSource(Source):
+class FilesSource(_FilesSource):
     """Local file source. No I/O performed at construction.
 
     Accepts a single path, a glob pattern, or a list of paths.
@@ -43,15 +43,11 @@ class FilesSource(Source):
         ... ).run()
     """
 
-    _native_source: _FilesSource
-
-    def __init__(
-        self, path: StrPath | list[StrPath], format: Format = _PARQUET
-    ) -> None:
-        self._native_source = _FilesSource(path, format._native_format)
+    def __new__(cls, path: StrPath | list[StrPath], format: Parquet = _PARQUET) -> Self:
+        return cast(Self, super().__new__(cls, path, format))
 
 
-class FilesDestination(Destination):
+class FilesDestination(_FilesDestination):
     """Local directory destination. Writes atomically via tmp dir + rename.
 
     Written file paths are returned after `.run()` in `RunReport.written_objects`.
@@ -75,15 +71,11 @@ class FilesDestination(Destination):
         ... ).run()
     """
 
-    _native_destination: _FilesDestination
-
-    def __init__(
-        self,
+    def __new__(
+        cls,
         path: StrPath,
-        format: Format = _PARQUET,
+        format: Parquet = _PARQUET,
         *,
         single_file: bool = False,
-    ) -> None:
-        self._native_destination = _FilesDestination(
-            path, format._native_format, single_file
-        )
+    ) -> Self:
+        return cast(Self, super().__new__(cls, path, format, single_file))

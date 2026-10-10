@@ -36,7 +36,7 @@ mod _native {
     #[pymodule_export]
     use crate::report::PyRunReport;
     #[pymodule_export]
-    use crate::transfer::PyTransfer;
+    use crate::transfer::{PyDestination, PySource, PyTransfer};
     use pyo3::prelude::*;
 
     #[pymodule_init]

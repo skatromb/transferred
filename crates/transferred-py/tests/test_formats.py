@@ -5,7 +5,7 @@ from typing import Literal, get_args, get_origin, get_type_hints
 import pytest
 from transferred.formats import Parquet
 
-_hint = get_type_hints(Parquet.__init__)["compression"]
+_hint = get_type_hints(Parquet.__new__)["compression"]
 annotated_compressions = next(
     arg for arg in get_args(_hint) if get_origin(arg) is Literal
 )
@@ -27,5 +27,5 @@ def test_unknown_compression_raises():
 
 def test_format_is_immutable():
     """Reassigning a knob after construction would not reach the Rust codec."""
-    with pytest.raises(AttributeError, match="`Parquet` is immutable"):
-        Parquet().compression = "snappy"
+    with pytest.raises(AttributeError, match="no __dict__ for setting new attributes"):
+        Parquet().compression = "snappy"  # ty: ignore[unresolved-attribute]
