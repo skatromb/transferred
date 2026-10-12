@@ -6,7 +6,13 @@ import pyarrow as pa
 import pytest
 from pyarrow import parquet as pq
 from test_utils import write_seed
-from transferred import EmptySourceError, FilesDestination, FilesSource, Transfer
+from transferred import (
+    EmptySourceError,
+    FilesDestination,
+    FilesSource,
+    IoError,
+    Transfer,
+)
 
 
 def test_single_file_flattens_partitions(tmp_path: Path, out_dir: Path):
@@ -32,6 +38,17 @@ def test_existing_output_is_overwritten(tmp_path: Path, out_dir: Path):
     Transfer(source=FilesSource(seed), destination=FilesDestination(out_dir)).run()
 
     assert list(out_dir.iterdir()) == [out_dir / "part-00001.parquet"]
+
+
+def test_file_at_path_is_kept(tmp_path: Path, out_dir: Path):
+    seed = tmp_path / "a.parquet"
+    write_seed(seed, [1, 2, 3])
+    out_dir.write_text("not ours")
+
+    with pytest.raises(IoError):
+        Transfer(source=FilesSource(seed), destination=FilesDestination(out_dir)).run()
+
+    assert out_dir.read_text() == "not ours"
 
 
 def test_empty_source_raises(out_dir: Path):

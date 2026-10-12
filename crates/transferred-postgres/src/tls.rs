@@ -2,33 +2,29 @@
 
 use std::sync::Arc;
 
+use log::warn;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::crypto::{CryptoProvider, verify_tls12_signature, verify_tls13_signature};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct, Error as TlsError, SignatureScheme};
 use tokio_postgres_rustls::MakeRustlsConnect;
-use tracing::warn;
 use transferred_core::AnyError;
 
-/// Builds a connector that checks the server against the platform trust store only under `verify-full`.
-pub(crate) fn connector(verify: bool) -> Result<MakeRustlsConnect, AnyError> {
-    if verify {
-        return verifying_connector();
-    }
-
+/// Builds a connector that encrypts but accepts any server certificate.
+pub(crate) fn encrypting_connector() -> MakeRustlsConnect {
     let builder = ClientConfig::builder();
     let verifier = AcceptAnyServer(Arc::clone(builder.crypto_provider()));
 
-    Ok(MakeRustlsConnect::new(
+    MakeRustlsConnect::new(
         builder
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(verifier))
             .with_no_client_auth(),
-    ))
+    )
 }
 
 /// Builds a connector that trusts the platform's CA certificates.
-fn verifying_connector() -> Result<MakeRustlsConnect, AnyError> {
+pub(crate) fn verifying_connector() -> Result<MakeRustlsConnect, AnyError> {
     let (connector, unreadable) = MakeRustlsConnect::with_native_certs().map_err(|errors| {
         format!(
             "sslmode=verify-full: no usable CA certificate in the platform trust store: {errors:?}"
@@ -36,7 +32,7 @@ fn verifying_connector() -> Result<MakeRustlsConnect, AnyError> {
     })?;
 
     if !unreadable.is_empty() {
-        warn!(target: "postgres::connection", errors = ?unreadable, "skipped unreadable platform CA certificates");
+        warn!(target: "postgres::connection", "skipped unreadable platform CA certificates: {unreadable:?}");
     }
 
     Ok(connector)

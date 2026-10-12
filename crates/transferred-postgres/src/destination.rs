@@ -7,8 +7,8 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use futures::{StreamExt as _, TryStreamExt as _, stream};
+use log::warn;
 use tokio_postgres::Client;
-use tracing::warn;
 use transferred_core::{BatchStream, Destination, Result, RunReport, TransferredError};
 
 use postgres_protocol::escape::escape_identifier;
@@ -48,23 +48,12 @@ impl Destination for PostgresDestination {
             .await
             .map_err(TransferredError::in_destination)?;
         let mut loader = Loader::new(client, &self.table).await?;
-
-        let attempt: Result<u64> = async {
-            let rows = loader.load(partitions).await?;
-            loader.swap().await?;
-            Ok(rows)
-        }
-        .await;
-
-        if attempt.is_err() {
-            loader.drop_staging().await;
-        }
-        let rows = attempt?;
+        let rows = loader.replace(partitions).await?;
 
         Ok(RunReport {
             rows,
             bytes_written: 0,
-            written_objects: vec![loader.target.clone()],
+            written_objects: vec![loader.target],
             duration: start.elapsed(),
         })
     }
@@ -95,38 +84,47 @@ impl Loader {
             .split_last()
             .ok_or_else(|| TransferredError::in_destination("target table name is empty"))?;
 
-        let staging = format!("{name}{STAGING_SUFFIX}");
-        if staging.len() > MAX_IDENTIFIER_BYTES {
-            return Err(TransferredError::in_destination(format!(
-                "staging table name `{staging}` exceeds the \
-                 {MAX_IDENTIFIER_BYTES}-byte Postgres identifier limit"
-            )));
-        }
-
         Ok(Self {
-            target: qualify(schema, name),
-            staging: qualify(schema, &staging),
-            target_name: escape_identifier(name),
             client,
+            target: qualify(schema, name),
+            staging: qualify(schema, &staging_name(name)?),
+            target_name: escape_identifier(name),
         })
+    }
+
+    /// Loads into staging and swaps it in, dropping staging if either step fails.
+    async fn replace(&mut self, partitions: Vec<BatchStream>) -> Result<u64> {
+        let attempt = async {
+            let rows = self.load(partitions).await?;
+            self.swap().await?;
+            Ok(rows)
+        }
+        .await;
+
+        if attempt.is_err() {
+            self.drop_staging().await;
+        }
+        attempt
     }
 
     /// Creates the staging table from the first batch's schema, then COPYs every batch into it.
     async fn load(&self, partitions: Vec<BatchStream>) -> Result<u64> {
-        let mut rest = stream::iter(partitions).flatten().boxed();
-
-        let Some(first) = rest.try_next().await? else {
+        let mut batches = stream::iter(partitions).flatten().boxed();
+        let Some(first) = batches.try_next().await? else {
             return Err(TransferredError::EmptySource);
         };
 
         let encoder = Encoder::new(first.schema())?;
         self.create_staging(&encoder.declarations()).await?;
+        self.copy(&encoder, stream::iter([Ok(first)]).chain(batches).boxed())
+            .await
+    }
 
+    /// Streams every batch into the staging table through one COPY.
+    async fn copy(&self, encoder: &Encoder, mut batches: BatchStream) -> Result<u64> {
         let mut copy = CopyIn::open(&self.client, &self.staging).await?;
-        copy.write_batch(&encoder, &first).await?;
-
-        while let Some(batch) = rest.try_next().await? {
-            copy.write_batch(&encoder, &batch).await?;
+        while let Some(batch) = batches.try_next().await? {
+            copy.write_batch(encoder, &batch).await?;
         }
 
         copy.finish().await
@@ -134,6 +132,7 @@ impl Loader {
 
     /// Replaces the target with the staging table in one transaction, so the swap is all-or-nothing.
     async fn swap(&mut self) -> Result<()> {
+        let sql = self.swap_sql();
         let transaction = self
             .client
             .transaction()
@@ -141,13 +140,7 @@ impl Loader {
             .map_err(TransferredError::in_destination)?;
 
         transaction
-            .batch_execute(&format!(
-                "drop table if exists {target}; \
-                 alter table {staging} rename to {target_name};",
-                target = self.target,
-                staging = self.staging,
-                target_name = self.target_name,
-            ))
+            .batch_execute(&sql)
             .await
             .map_err(TransferredError::in_destination)?;
 
@@ -155,6 +148,16 @@ impl Loader {
             .commit()
             .await
             .map_err(TransferredError::in_destination)
+    }
+
+    /// Drops the target and renames staging into its place.
+    fn swap_sql(&self) -> String {
+        format!(
+            "drop table if exists {target}; alter table {staging} rename to {target_name};",
+            target = self.target,
+            staging = self.staging,
+            target_name = self.target_name,
+        )
     }
 
     /// Creates the staging table, replacing whatever an interrupted load left behind.
@@ -172,9 +175,22 @@ impl Loader {
     async fn drop_staging(&self) {
         let sql = format!("drop table if exists {}", self.staging);
         if let Err(error) = self.client.batch_execute(&sql).await {
-            warn!(target: "postgres::destination", table = %self.staging, %error, "failed to drop staging table");
+            warn!(target: "postgres::destination", "failed to drop staging table {}: {error}", self.staging);
         }
     }
+}
+
+/// Names the staging table for `name`, refusing one Postgres would truncate into its target.
+fn staging_name(name: &str) -> Result<String> {
+    let staging = format!("{name}{STAGING_SUFFIX}");
+    if staging.len() > MAX_IDENTIFIER_BYTES {
+        return Err(TransferredError::in_destination(format!(
+            "staging table name `{staging}` exceeds the \
+             {MAX_IDENTIFIER_BYTES}-byte Postgres identifier limit"
+        )));
+    }
+
+    Ok(staging)
 }
 
 /// Joins identifier parts into one quoted, dotted table reference.

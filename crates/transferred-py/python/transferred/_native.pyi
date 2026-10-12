@@ -122,7 +122,7 @@ class _FilesDestination(Destination):
     """
     Internal `PyO3` wrapper around `transferred_files::FilesDestination`.
     """
-    def __new__(cls, /, path: str |PathLike[str], format: Format, single_file: bool = False) -> _FilesDestination: ...
+    def __new__(cls, /, path: str |PathLike[str], format: Format, *, single_file: bool = False) -> _FilesDestination: ...
 
 class _FilesSource(Source):
     """

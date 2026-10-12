@@ -21,12 +21,12 @@ use arrow_schema::{
 use bytes::Bytes;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use geoarrow_schema::WkbType;
+use log::warn;
 use pg_interval::Interval as PgInterval;
 use postgres_protocol::types::{Range, RangeBound, range_from_sql};
 use rust_decimal::Decimal;
 use tokio_postgres::Column as PgColumn;
 use tokio_postgres::types::{FromSql, Kind, Type as PgType};
-use tracing::warn;
 use transferred_core::{Result, TransferredError};
 
 use super::BATCH_ROWS;
@@ -201,18 +201,20 @@ impl Decoding {
             // `geoarrow.wkb` holds EWKB, so the bytes pass through untouched, SRID per value and all.
             (_, GEOMETRY) => Self::Geo(geoarrow::planar(geoarrow::srid(typmod))),
             (_, GEOGRAPHY) => Self::Geo(geoarrow::spherical(geoarrow::srid(typmod))),
-            _ => {
-                warn!(
-                    target: "postgres::source",
-                    column = name,
-                    "no Arrow mapping for Postgres type `{}` (oid {}); \
-                     passing its bytes through as opaque binary",
-                    pg_type.name(),
-                    pg_type.oid()
-                );
-                Self::Opaque(Opaque::new(pg_type.name(), VENDOR))
-            }
+            _ => Self::opaque(pg_type, name),
         }
+    }
+
+    /// Falls back to the raw bytes for a type with no Arrow mapping, warning that it did.
+    fn opaque(pg_type: &PgType, name: &str) -> Self {
+        warn!(
+            target: "postgres::source",
+            "column {name}: no Arrow mapping for Postgres type `{}` (oid {}); \
+             passing its bytes through as opaque binary",
+            pg_type.name(),
+            pg_type.oid()
+        );
+        Self::Opaque(Opaque::new(pg_type.name(), VENDOR))
     }
 
     /// Decodes a `numeric` typmod into the `Decimal128` its values are restated at.
@@ -221,8 +223,7 @@ impl Decoding {
             let (precision, scale) = BARE_NUMERIC;
             warn!(
                 target: "postgres::source",
-                column = name,
-                "`numeric` without declared precision; mapping to \
+                "column {name}: `numeric` without declared precision; mapping to \
                  Decimal128({precision}, {scale}) and rounding beyond {scale} decimals"
             );
             return Ok(Self::Numeric { precision, scale });
@@ -263,6 +264,7 @@ impl Decoding {
     }
 
     /// Arrow schema field for the column: nullable, tagged with its extension type if it has one.
+    #[expect(clippy::too_many_lines, reason = "matches every column type")]
     fn field(&self, name: &str) -> Result<ArrowField> {
         let mut field = ArrowField::new(name, self.arrow_type(), true);
 
@@ -392,52 +394,35 @@ fn append_range(bounds: &Decoding, range: &mut StructBuilder, cell: Cell) -> Res
         ));
     };
 
-    let (low, high) = bound_bytes(parsed.as_ref());
-    let (low_inclusive, high_inclusive) = inclusive(parsed.as_ref());
+    let ((low, low_inclusive), (high, high_inclusive)) = match &parsed {
+        Some(Range::Nonempty(low, high)) => (bound(low), bound(high)),
+        _ => ((None, false), (None, false)),
+    };
+
     bounds.append(&mut **lower, low)?;
     bounds.append(&mut **upper, high)?;
-    tag(lower_inc, low_inclusive)?;
-    tag(upper_inc, high_inclusive)?;
+    tag(lower_inc)?.append_value(low_inclusive);
+    tag(upper_inc)?.append_value(high_inclusive);
     // An empty range and a SQL NULL both leave every bound null. `empty` separates them, and
     // the struct's own validity is the only thing that says a whole range was NULL.
-    tag(empty, matches!(parsed, Some(Range::Empty)))?;
+    tag(empty)?.append_value(matches!(parsed, Some(Range::Empty)));
     range.append(parsed.is_some());
 
     Ok(())
 }
 
-/// Both bounds' bytes; an infinite bound sends none, and an empty range or a SQL NULL has no bounds.
-const fn bound_bytes<'buf>(range: Option<&Range<'buf>>) -> (Cell<'buf>, Cell<'buf>) {
-    match range {
-        Some(Range::Nonempty(low, high)) => (bound(low), bound(high)),
-        _ => (None, None),
+/// A bound's bytes and whether it is inclusive; an infinite bound has no bytes and is never inclusive.
+const fn bound<'buf>(bound: &RangeBound<Cell<'buf>>) -> (Cell<'buf>, bool) {
+    match *bound {
+        RangeBound::Inclusive(bytes) => (bytes, true),
+        RangeBound::Exclusive(bytes) => (bytes, false),
+        RangeBound::Unbounded => (None, false),
     }
 }
 
-/// A bound's bytes; `None` is an infinite bound, the only kind Postgres sends no value for.
-const fn bound<'buf>(bound: &RangeBound<Cell<'buf>>) -> Cell<'buf> {
-    match bound {
-        RangeBound::Inclusive(bytes) | RangeBound::Exclusive(bytes) => *bytes,
-        RangeBound::Unbounded => None,
-    }
-}
-
-/// Which bounds are inclusive; an infinite one never is, and an empty range or a SQL NULL has none.
-const fn inclusive(range: Option<&Range>) -> (bool, bool) {
-    match range {
-        Some(Range::Nonempty(low, high)) => (
-            matches!(low, RangeBound::Inclusive(_)),
-            matches!(high, RangeBound::Inclusive(_)),
-        ),
-        _ => (false, false),
-    }
-}
-
-/// Appends one of a range's tag bits.
-fn tag(builder: &mut Box<dyn ArrayBuilder>, set: bool) -> Result<()> {
-    cast::<BooleanBuilder>(&mut **builder)?.append_value(set);
-
-    Ok(())
+/// Builder of one of a range's tag bits.
+fn tag(builder: &mut Box<dyn ArrayBuilder>) -> Result<&mut BooleanBuilder> {
+    cast::<BooleanBuilder>(&mut **builder)
 }
 
 /// Text as Postgres sends it: every text type, and `json`, arrives as its own UTF-8.

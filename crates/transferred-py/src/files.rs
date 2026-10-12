@@ -89,7 +89,11 @@ pub(crate) struct PyFilesDestination;
 #[pymethods]
 impl PyFilesDestination {
     #[new]
-    #[pyo3(signature = (path, format, single_file = false))]
+    #[pyo3(signature = (path, format, *, single_file = false))]
+    #[expect(
+        clippy::fn_params_excessive_bools,
+        reason = "keyword-only in Python, so named at every call"
+    )]
     fn new(path: PathBuf, format: &PyFormat, single_file: bool) -> PyClassInitializer<Self> {
         PyDestination::init(
             Self,

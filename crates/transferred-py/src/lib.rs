@@ -12,10 +12,10 @@ mod transfer;
 use pyo3::prelude::*;
 use pyo3_log::{Caching, Logger};
 
-/// Routes Rust `tracing` events into Python `logging` under the `transferred` logger.
-fn install_logging(py: Python) -> PyResult<()> {
+/// Routes Rust `log` records into Python `logging` under the `transferred` logger.
+fn install_logging(python: Python) -> PyResult<()> {
     // Not the default `LoggersAndLevels`: caching levels would freeze `setLevel` calls made later.
-    let logger = Logger::new(py, Caching::Loggers)?.set_prefix("transferred");
+    let logger = Logger::new(python, Caching::Loggers)?.set_prefix("transferred");
     // Already installed means an earlier import wired this up.
     drop(logger.install());
     Ok(())

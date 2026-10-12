@@ -1,10 +1,10 @@
 //! Shared connect path: libpq `sslmode` semantics on top of rustls.
 
+use log::warn;
 use tokio_postgres::{Client, Config};
-use tracing::warn;
 use transferred_core::AnyError;
 
-use crate::tls::connector;
+use crate::tls::{encrypting_connector, verifying_connector};
 
 /// libpq's strictest `sslmode`, spelled the same in URL and key=value DSNs; `Config` rejects it.
 const VERIFY_FULL: &str = "sslmode=verify-full";
@@ -16,11 +16,16 @@ pub(crate) async fn connect(dsn: &str) -> Result<Client, AnyError> {
     let config: Config = rewritten.parse().map_err(|_err| {
         "invalid dsn: expected `postgres://user:password@host:port/database` or `key=value` pairs"
     })?;
-    let (client, connection) = config.connect(connector(verify)?).await?;
+    let connector = if verify {
+        verifying_connector()?
+    } else {
+        encrypting_connector()
+    };
+    let (client, connection) = config.connect(connector).await?;
 
     drop(tokio::spawn(async move {
         if let Err(error) = connection.await {
-            warn!(target: "postgres::connection", %error, "postgres connection closed");
+            warn!(target: "postgres::connection", "postgres connection closed: {error}");
         }
     }));
 

@@ -28,6 +28,7 @@ pub enum TransferredError {
 
     /// Underlying I/O failure (filesystem, network).
     #[error("io error")]
+    #[expect(clippy::min_ident_chars, reason = "Error is generic over `io`")]
     Io(#[from] io::Error),
 
     /// Arrow compute or schema error surfaced from the data layer.
