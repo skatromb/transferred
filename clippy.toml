@@ -1,22 +1,33 @@
-# Readable code and best practices from `restriction`
+# easy-peasy: Public API
+avoid-breaking-exported-api = false
+
+# easy-peasy: Tests may panic and print
+allow-dbg-in-tests = true
 allow-expect-in-tests = true
 allow-indexing-slicing-in-tests = true
 allow-panic-in-tests = true
+allow-print-in-tests = true
 allow-unwrap-in-tests = true
-allowed-idents-below-min-chars = ["Io", "py", "to"]
-min-ident-chars-threshold = 2
 
-# Thresholds from wemake-python-styleguide
-cognitive-complexity-threshold = 12
+# easy-peasy: Naming
+allowed-idents-below-min-chars = []
+check-inconsistent-struct-field-initializers = true
 disallowed-names = [
-    "arr", "bar", "baz", "content", "contents", "data", "do", "false", "foo", "ham",
+    "arr", "args", "bar", "baz", "content", "contents", "data", "entries", "entry", "foo", "ham",
     "handle", "handler", "info", "item", "items", "no", "obj", "object", "objects", "objs", "param",
-    "params", "parameters", "result", "results", "some", "spam", "temp", "tmp", "true", "val",
-    "vals", "value", "values", "var", "variable", "vars", "wrapper",
+    "params", "parameters", "result", "results", "some", "spam", "temp", "tmp", "val", "vals",
+    "value", "values", "var", "variable", "vars", "wrapper", "yes",
 ]
+min-ident-chars-threshold = 2
+upper-case-acronyms-aggressive = true
+
+# easy-peasy: Complexity
+cognitive-complexity-threshold = 6
 excessive-nesting-threshold = 4
-max-fn-params-bools = 1
-max-struct-bools = 1
+max-fn-params-bools = 0
 too-many-arguments-threshold = 4
-too-many-lines-threshold = 25
+too-many-lines-threshold = 20
 type-complexity-threshold = 75
+
+# easy-peasy: yours
+max-struct-bools = 1

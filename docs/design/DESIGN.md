@@ -246,7 +246,7 @@ Fast path for callers who already have Arrow: pass the DataFrame itself, which s
 - **Errors.** Every failure surfaces as a `TransferredError` subclass, whichever connector raised it.
 - **Credentials.** All GCP auth delegates to `google-cloud-auth`: Application Default Credentials, `GOOGLE_APPLICATION_CREDENTIALS` service-account JSON, gcloud user creds, workload identity. Postgres uses standard DSN-embedded creds or libpq env vars.
 - **Run report.** `RunReport` returned by `.run()` is the canonical post-run record. Logs are for trace; `RunReport` is for programs.
-- **Logging.** Rust uses `tracing`. A bridge layer emits events into Python's `logging` so users get one config story (`logging.getLogger("transferred").setLevel(...)`).
+- **Logging.** Rust uses `log`. `pyo3-log` forwards records into Python's `logging` so users get one config story (`logging.getLogger("transferred").setLevel(...)`).
 - **Batching.** Reader batch size is its own default (Parquet ≈ 1024 rows). No bytes target enforced; in-flight memory bounded by 1 batch per partition (see Memory model).
 - **Concurrency.** Async end-to-end on a tokio runtime the Rust side builds per `run()` — current-thread while a transfer is one serial pipeline; multi-thread arrives with concurrent partitions. Separate transfers run in separate processes. `run()` detaches from the GIL for its whole duration. Supported interpreters: Python 3.14 standard and free-threaded (`cp314`, `cp314t`) — see Tech stack.
 
@@ -337,7 +337,7 @@ Never silently coerce to `TEXT` or `BYTES` without a summary entry — that is t
 | Object storage  | `object_store` crate                                    | Unified S3/GCS/Azure API.                                      |
 | Parquet         | `parquet` (arrow-rs)                                    | Same family as Arrow. Audit gaps vs Polars.                    |
 | Errors          | `thiserror`, surfaced as `transferred.TransferredError` | One root exception, typed subclasses.                          |
-| Logging         | `tracing` bridged into Python `logging`                 | One config story for users.                                    |
+| Logging         | `log` bridged into Python `logging` by `pyo3-log`       | One config story for users.                                    |
 | License         | MIT                                                     | Liberal. Matches the rest of the analytical Python/Rust stack. |
 
 ### Known risks

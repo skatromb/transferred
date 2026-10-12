@@ -1,7 +1,7 @@
 //! Parquet codec — `FormatRead` + `FormatWrite` over the arrow-rs `parquet` crate.
 
 use async_trait::async_trait;
-use futures::{StreamExt as _, TryStreamExt as _};
+use futures::{StreamExt as _, TryStreamExt as _, stream};
 use transferred_core::{BatchStream, Result, TransferredError};
 // Leading `::` selects the extern `parquet` crate, not this `formats::parquet` module.
 use ::parquet::arrow::AsyncArrowWriter;
@@ -46,6 +46,13 @@ impl Parquet {
     pub const fn new(compression: Compression) -> Self {
         Self { compression }
     }
+
+    /// Writer settings: this codec's compression, parquet-rs defaults for the rest.
+    fn properties(self) -> WriterProperties {
+        WriterProperties::builder()
+            .set_compression(self.compression.into())
+            .build()
+    }
 }
 
 #[async_trait]
@@ -75,19 +82,12 @@ impl FormatWrite for Parquet {
             .await?
             .ok_or_else(|| TransferredError::EmptySource)?;
 
-        let properties = WriterProperties::builder()
-            .set_compression(self.compression.into())
-            .build();
+        let mut arrow_writer =
+            AsyncArrowWriter::try_new(writer, first.schema(), Some(self.properties()))
+                .map_err(TransferredError::in_destination)?;
 
-        let mut arrow_writer = AsyncArrowWriter::try_new(writer, first.schema(), Some(properties))
-            .map_err(TransferredError::in_destination)?;
-
-        arrow_writer
-            .write(&first)
-            .await
-            .map_err(TransferredError::in_destination)?;
-
-        while let Some(batch) = batches.try_next().await? {
+        let mut all_batches = stream::iter([Ok(first)]).chain(batches);
+        while let Some(batch) = all_batches.try_next().await? {
             arrow_writer
                 .write(&batch)
                 .await

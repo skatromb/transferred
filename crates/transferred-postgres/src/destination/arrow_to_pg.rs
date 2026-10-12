@@ -42,12 +42,7 @@ impl Encoder {
         let columns = schema
             .fields()
             .iter()
-            .map(|field| {
-                Ok(ColumnEncoder {
-                    name: escape_identifier(field.name()),
-                    encoding: Encoding::new(field)?,
-                })
-            })
+            .map(|field| ColumnEncoder::new(field))
             .collect::<Result<Vec<_>>>()?;
 
         let field_count = i16::try_from(columns.len()).map_err(|_err| {
@@ -112,6 +107,14 @@ struct ColumnEncoder {
 }
 
 impl ColumnEncoder {
+    /// Maps an Arrow field onto a Postgres column.
+    fn new(field: &ArrowField) -> Result<Self> {
+        Ok(Self {
+            name: escape_identifier(field.name()),
+            encoding: Encoding::new(field)?,
+        })
+    }
+
     /// Appends value `row_num` of `array` as one COPY field: its length, then its bytes.
     fn write_field(&self, array: &dyn Array, row_num: usize, buf: &mut BytesMut) -> Result<()> {
         // The length is only known once the value is written, so leave a hole and come back.
@@ -291,6 +294,7 @@ impl Encoding {
     }
 
     /// Picks the Postgres range over this element; a range outside these six is defined per database.
+    #[expect(clippy::too_many_lines, reason = "matches every encoding")]
     fn range_type(&self) -> Result<PgType> {
         Ok(match self {
             Self::Int4 => PgType::INT4_RANGE,
@@ -416,12 +420,9 @@ fn write_range(
         return Ok(IsNull::No);
     }
 
-    let lower_inc = cast::<BooleanArray>(lower_incs.as_ref())?.value(row_num);
-    let upper_inc = cast::<BooleanArray>(upper_incs.as_ref())?.value(row_num);
-
     range_to_sql(
-        |out| bound(element.write(lowers.as_ref(), row_num, out), lower_inc),
-        |out| bound(element.write(uppers.as_ref(), row_num, out), upper_inc),
+        |out| bound(element.write(lowers, row_num, out), lower_incs, row_num),
+        |out| bound(element.write(uppers, row_num, out), upper_incs, row_num),
         buf,
     )
     .map_err(TransferredError::in_destination)?;
@@ -433,7 +434,8 @@ fn write_range(
 type BoundResult = result::Result<RangeBound<ProtocolIsNull>, AnyError>;
 
 /// Bound for a value just written; a null one is infinite, as Postgres allows no NULL bound.
-fn bound(written: Result<IsNull>, inclusive: bool) -> BoundResult {
+fn bound(written: Result<IsNull>, inclusive_flags: &dyn Array, row_num: usize) -> BoundResult {
+    let inclusive = cast::<BooleanArray>(inclusive_flags)?.value(row_num);
     // The two `IsNull`s belong to different crates; only a bound we did write reaches the protocol's.
     Ok(match written? {
         IsNull::Yes => RangeBound::Unbounded,
@@ -511,6 +513,7 @@ mod tests {
     use super::*;
 
     /// Every type `pg_to_arrow` produces, in fixture order, so the pair stays symmetric.
+    #[expect(clippy::too_many_lines, reason = "lists every source type")]
     fn source_schema() -> Schema {
         Schema::new(vec![
             ArrowField::new("b", ArrowType::Boolean, true),

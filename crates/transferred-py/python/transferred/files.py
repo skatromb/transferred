@@ -78,4 +78,4 @@ class FilesDestination(_FilesDestination):
         *,
         single_file: bool = False,
     ) -> Self:
-        return cast(Self, super().__new__(cls, path, format, single_file))
+        return cast(Self, super().__new__(cls, path, format, single_file=single_file))

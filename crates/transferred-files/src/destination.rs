@@ -7,8 +7,8 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use futures::{StreamExt as _, stream};
+use log::warn;
 use tokio::fs::{self, File};
-use tracing::warn;
 use transferred_core::{BatchStream, Destination, Result, RunReport, TransferredError};
 
 use crate::formats::FormatWrite;
@@ -47,6 +47,10 @@ impl Destination for FilesDestination {
 impl FilesDestination {
     /// Builds a destination. No I/O performed.
     #[must_use]
+    #[expect(
+        clippy::fn_params_excessive_bools,
+        reason = "It's Python's keyword only argument `single_file=`"
+    )]
     pub fn new(path: PathBuf, format: Arc<dyn FormatWrite>, single_file: bool) -> Self {
         Self {
             path,
@@ -76,14 +80,8 @@ impl FilesDestination {
         tmp_dir: &Path,
         partitions: Vec<BatchStream>,
     ) -> Result<Vec<Written>> {
-        let streams: Vec<BatchStream> = if self.single_file {
-            vec![Box::pin(stream::iter(partitions).flatten())]
-        } else {
-            partitions
-        };
-
         let mut written = Vec::new();
-        for stream in streams {
+        for stream in self.file_streams(partitions) {
             let mut batches = stream.peekable();
             if Pin::new(&mut batches).peek().await.is_none() {
                 continue; // skip empty partitions — no stray part file
@@ -106,13 +104,21 @@ impl FilesDestination {
         Ok(written)
     }
 
+    /// Groups partitions into one stream per output file: all into one if `single_file`.
+    fn file_streams(&self, partitions: Vec<BatchStream>) -> Vec<BatchStream> {
+        if self.single_file {
+            vec![Box::pin(stream::iter(partitions).flatten())]
+        } else {
+            partitions
+        }
+    }
+
     /// Atomically overwrites `path` dir with `tmp_dir`, removing any existing output first.
     async fn atomic_replace(&self, tmp_dir: &Path) -> Result<()> {
-        match fs::metadata(&self.path).await {
-            Ok(meta) if meta.is_dir() => fs::remove_dir_all(&self.path).await?,
-            Ok(_) => fs::remove_file(&self.path).await?,
-            Err(err) if err.kind() == ErrorKind::NotFound => {}
-            Err(err) => return Err(err.into()),
+        if let Err(err) = fs::remove_dir_all(&self.path).await
+            && err.kind() != ErrorKind::NotFound
+        {
+            return Err(err.into());
         }
 
         fs::rename(tmp_dir, &self.path).await?;
@@ -150,7 +156,7 @@ async fn cleanup(tmp_dir: &Path) {
     if let Err(err) = fs::remove_dir_all(tmp_dir).await
         && err.kind() != ErrorKind::NotFound
     {
-        warn!(target: "files::destination", path = %tmp_dir.display(), error = %err, "failed to remove tmp dir");
+        warn!(target: "files::destination", "failed to remove tmp dir {}: {err}", tmp_dir.display());
     }
 }
 

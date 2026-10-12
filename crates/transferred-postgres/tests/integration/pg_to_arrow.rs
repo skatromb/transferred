@@ -291,6 +291,7 @@ async fn discrete_ranges_arrive_canonicalised() {
 
 /// `numrange`, `tsrange` and `tstzrange` keep the brackets of the literal.
 #[tokio::test]
+#[expect(clippy::too_many_lines, reason = "lists every continuous range type")]
 async fn continuous_ranges_keep_their_brackets() {
     let lower_micros = TimestampMicrosecondArray::from(vec![JAN_15_2024_12_34_56; 4]);
     let upper_micros = TimestampMicrosecondArray::from(vec![JAN_16_2024_00_00_00; 4]);

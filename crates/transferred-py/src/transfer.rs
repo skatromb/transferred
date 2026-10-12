@@ -79,13 +79,13 @@ impl PyTransfer {
         })
     }
 
-    fn run(&mut self, py: Python) -> PyResult<PyRunReport> {
+    fn run(&mut self, python: Python) -> PyResult<PyRunReport> {
         let transfer = self
             .inner
             .take()
             .ok_or_else(|| PyRuntimeError::new_err("Transfer already consumed"))?;
 
-        let report = py.detach(|| {
+        let report = python.detach(|| {
             let runtime = Builder::new_current_thread()
                 .enable_all()
                 .build()

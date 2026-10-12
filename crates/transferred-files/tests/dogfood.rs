@@ -46,20 +46,23 @@ async fn parquet_dogfood() {
 
     let read_schema = read[0].schema();
     assert_eq!(read_schema.fields(), schema.fields());
-
-    // Names spelled out, not taken from `Uuid::NAME`: a wrong constant would agree with itself.
-    // The equality above passes when metadata is absent on both sides, so assert it is present.
-    assert_eq!(extension_name(&read_schema, "uuid"), Some("arrow.uuid"));
-    assert_eq!(extension_name(&read_schema, "json"), Some("arrow.json"));
-    assert_eq!(extension_name(&read_schema, "opaque"), Some(Opaque::NAME));
-    assert_eq!(
-        extension_metadata(&read_schema, "opaque"),
-        Some(r#"{"type_name":"macaddr","vendor_name":"PostgreSQL"}"#)
-    );
+    assert_extensions_present(&read_schema);
 
     let concat_in = compute::concat_batches(&schema, &input).unwrap();
     let concat_read = compute::concat_batches(&read_schema, read.iter()).unwrap();
     assert_eq!(concat_in, concat_read);
+}
+
+/// Checks extension metadata survived, which a field equality also passes when absent on both sides.
+fn assert_extensions_present(schema: &Schema) {
+    // Names spelled out, not taken from `Uuid::NAME`: a wrong constant would agree with itself.
+    assert_eq!(extension_name(schema, "uuid"), Some("arrow.uuid"));
+    assert_eq!(extension_name(schema, "json"), Some("arrow.json"));
+    assert_eq!(extension_name(schema, "opaque"), Some(Opaque::NAME));
+    assert_eq!(
+        extension_metadata(schema, "opaque"),
+        Some(r#"{"type_name":"macaddr","vendor_name":"PostgreSQL"}"#)
+    );
 }
 
 /// Dumps in-memory batches to zstd Parquet parts under `path`.
@@ -96,6 +99,7 @@ async fn read_parquet(written: &RunReport) -> (RunReport, Vec<RecordBatch>) {
     (report, receiver.iter().collect())
 }
 
+#[expect(clippy::too_many_lines, reason = "lists every round-tripped type")]
 fn input_schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![
         Field::new("i32", DataType::Int32, false),
@@ -132,6 +136,7 @@ fn input_batch(schema: &Arc<Schema>, rows: u8, offset: u8) -> RecordBatch {
 }
 
 /// Columns of the schema's built-in Arrow types, nulls sprinkled at different strides.
+#[expect(clippy::too_many_lines, reason = "lists every built-in type")]
 fn plain_columns(rows: u8, offset: u8) -> Vec<ArrayRef> {
     let timestamps = TimestampMicrosecondArray::from_iter_values(
         (0..rows).map(|row| 1_700_000_000_000_000 + i64::from(row) * 1_000_000),
