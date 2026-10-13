@@ -21,7 +21,7 @@ Blazing fast, no transformations supported — hand them over to your Data Wareh
 pip install transferred
 ```
 
-Requires Python 3.14.
+Requires Python 3.12+. Wheels ship for 3.14+; older Pythons build from source and need a [Rust toolchain](https://rustup.rs).
 
 ## Usage
 

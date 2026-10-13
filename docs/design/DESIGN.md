@@ -248,7 +248,7 @@ Fast path for callers who already have Arrow: pass the DataFrame itself, which s
 - **Run report.** `RunReport` returned by `.run()` is the canonical post-run record. Logs are for trace; `RunReport` is for programs.
 - **Logging.** Rust uses `log`. `pyo3-log` forwards records into Python's `logging` so users get one config story (`logging.getLogger("transferred").setLevel(...)`).
 - **Batching.** Reader batch size is its own default (Parquet ≈ 1024 rows). No bytes target enforced; in-flight memory bounded by 1 batch per partition (see Memory model).
-- **Concurrency.** Async end-to-end on a tokio runtime the Rust side builds per `run()` — current-thread while a transfer is one serial pipeline; multi-thread arrives with concurrent partitions. Separate transfers run in separate processes. `run()` detaches from the GIL for its whole duration. Supported interpreters: Python 3.14 standard and free-threaded (`cp314`, `cp314t`) — see Tech stack.
+- **Concurrency.** Async end-to-end on a tokio runtime the Rust side builds per `run()` — current-thread while a transfer is one serial pipeline; multi-thread arrives with concurrent partitions. Separate transfers run in separate processes. `run()` detaches from the GIL for its whole duration. Supported interpreters: Python 3.12+, with wheels for 3.14 and 3.15, standard and free-threaded (`cp314`, `cp314t`, `cp315`, `cp315t`) — see Tech stack.
 
 ### Incremental loads
 
@@ -328,7 +328,7 @@ Never silently coerce to `TEXT` or `BYTES` without a summary entry — that is t
 | Concern         | Choice                                                  | Reason                                                         |
 | --------------- | ------------------------------------------------------- | -------------------------------------------------------------- |
 | Core            | Rust                                                    | Performance, types, no GC.                                     |
-| Python binding  | PyO3 + maturin, `cp314` + `cp314t`                      | Standard for adoption; free-threaded included.                 |
+| Python binding  | PyO3 + maturin, `cp314`/`cp315` + `t` variants          | Standard for adoption; free-threaded included.                 |
 | Internal format | Apache Arrow (`arrow-rs`)                               | Zero-copy to BQ, Parquet, Polars.                              |
 | Async runtime   | Tokio                                                   | Required by most cloud SDKs.                                   |
 | Postgres        | `tokio-postgres` + binary `COPY`                        | `COPY` is the fastest extract path.                            |
@@ -346,7 +346,7 @@ Never silently coerce to `TEXT` or `BYTES` without a summary entry — that is t
 - **Parquet feature gaps.** Mitigation: keep a running list of formats Polars failed on; verify each against `arrow-rs` before claiming coverage. Upstream patches if we have to.
 - **Schema drift between source and an existing destination.** Mitigation: the inferred schema is logged before the stream starts; destinations validate against it on write.
 - **Tricky types silently broken.** Mitigation: each destination refuses an Arrow type it cannot represent and names it, rather than coercing (see Type mapping); the registry replaces that per-connector matching later.
-- **Free-threaded ecosystem maturity.** Mitigation: `transferred` itself only depends on PyO3 + arrow-rs across the FFI seam. Users on cp314t are responsible for their own dependency stack.
+- **Free-threaded ecosystem maturity.** Mitigation: `transferred` itself only depends on PyO3 + arrow-rs across the FFI seam. Users on free-threaded Python are responsible for their own dependency stack.
 
 ## Strategy
 

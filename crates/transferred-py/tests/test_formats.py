@@ -27,5 +27,7 @@ def test_unknown_compression_raises():
 
 def test_format_is_immutable():
     """Reassigning a knob after construction would not reach the Rust codec."""
-    with pytest.raises(AttributeError, match="no __dict__ for setting new attributes"):
+    with pytest.raises(
+        AttributeError, match="'Parquet' object has no attribute 'compression'"
+    ):
         Parquet().compression = "snappy"  # ty: ignore[unresolved-attribute]

@@ -62,8 +62,8 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
-  # `PyO3/maturin-action` builds wheels inside a manylinux container,
-  # `--find-interpreter` picks up every CPython the image ships (3.14/t, 3.15/t)
+  # `PyO3/maturin-action` builds wheels inside a manylinux container.
+  # 3.14+ only; older Pythons build from the sdist.
   wheels-linux:
     name: Build wheels (${{ matrix.platform.target }})
     runs-on: ${{ matrix.platform.os }}
@@ -83,7 +83,7 @@ jobs:
           target: ${{ matrix.platform.target }}
           manylinux: auto
           working-directory: crates/transferred-py
-          args: --release --out dist --find-interpreter
+          args: --release --out dist --interpreter python3.14 python3.14t python3.15 python3.15t
 
       - name: Upload wheels artifact
         uses: actions/upload-artifact@v7
@@ -102,7 +102,7 @@ jobs:
         platform:
           - { os: macos-latest,   target: aarch64-apple-darwin }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
-        python: ["3.14", "3.14t"]
+        python: ["3.14", "3.14t", "3.15", "3.15t"]
     steps:
       - uses: actions/checkout@v7
 
