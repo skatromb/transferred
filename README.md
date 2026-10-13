@@ -5,6 +5,7 @@
 [![Python](https://img.shields.io/pypi/pyversions/transferred.svg)](https://pypi.org/project/transferred/)
 [![PyPI](https://img.shields.io/pypi/v/transferred.svg)](https://pypi.org/project/transferred/)
 [![Downloads](https://static.pepy.tech/personalized-badge/transferred?period=total&units=international_system&left_color=grey&right_color=green&left_text=downloads)](https://www.pepy.tech/projects/transferred)
+[![easy-peasy-rust](https://img.shields.io/badge/style-easy--peasy-fecc02.svg)](https://github.com/skatromb/easy-peasy-rust)
 [![wemake-python-styleguide](https://img.shields.io/badge/style-wemake-000000.svg)](https://github.com/wemake-services/wemake-python-styleguide)
 
 <img src="https://raw.githubusercontent.com/skatromb/transferred/main/logo.png" alt="transferred" width="240">
