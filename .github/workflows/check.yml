@@ -106,14 +106,19 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Install Python 3.14
-        run: uv python install 3.14
+      - name: Install Python 3.14 and 3.12
+        run: uv python install 3.14 3.12
 
       - name: make python-check
         run: make python-check
 
       - name: make stubs-check
         run: make stubs-check
+
+      - name: make pytest (oldest supported Python)
+        run: make pytest
+        env:
+          UV_PYTHON: "3.12"
 
   integration:
     name: Integration

@@ -8,13 +8,16 @@ description = "The most convenient data transfer tool."
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Vania Livadnyi" }]
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 keywords = ["data-transfer", "etl", "arrow", "parquet", "postgres"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Programming Language :: Rust",
     "Topic :: Database",
     "Topic :: Software Development :: Libraries",

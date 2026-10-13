@@ -79,7 +79,7 @@ def _seeded_row_num() -> int:
         return -1
     try:
         return row_count(TABLE)
-    except subprocess.CalledProcessError, ValueError:
+    except (subprocess.CalledProcessError, ValueError):
         return -1
 
 

@@ -4,6 +4,8 @@ Bridges Python-native data (`dict` / `@dataclass` / `pydantic.BaseModel`) to the
 Arrow seam. Requires pyarrow — install via `pip install transferred[iterable]`.
 """
 
+from __future__ import annotations
+
 import dataclasses
 from collections.abc import Callable, Iterable
 from itertools import batched, chain
