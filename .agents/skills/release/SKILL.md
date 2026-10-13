@@ -79,7 +79,7 @@ import transferred
 And on Linux:
 
 ```bash
-docker run --rm ghcr.io/astral-sh/uv:python3.14-trixie-slim \
+docker run --rm ghcr.io/astral-sh/uv:python3.15-trixie-slim \
     uv run --no-project --with "transferred[arrow]==X.Y.Z" python -c "..."
 ```
 
