@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from types import MappingProxyType
 
 import dlt
 from dlt.destinations import filesystem
@@ -26,24 +25,6 @@ SQLALCHEMY_DSN = DSN.replace("postgres://", "postgresql://", 1)
 
 SQLAlchemy dropped the `postgres://` alias, and dlt builds an engine for schema
 reflection even when the read itself goes through connectorx.
-"""
-
-TUNING = MappingProxyType(
-    {
-        # Without file rotation a single table is one file, and `load.workers` idles.
-        "NORMALIZE__DATA_WRITER__FILE_MAX_ITEMS": str(ROWS_PER_GROUP),
-        # Also the Parquet row-group size, which pyarrow takes from the batch it is given.
-        "DATA_WRITER__BUFFER_MAX_ITEMS": str(ROWS_PER_GROUP),
-        # Matches the fixtures; dlt's snappy default would trade file size for wall time.
-        "DATA_WRITER__COMPRESSION": "zstd",
-        # Skips a round trip to the destination for pipeline state on every run.
-        "RESTORE_FROM_DESTINATION": "false",
-    }
-)
-"""Documented performance settings, applied only by the tuned baselines.
-
-From https://dlthub.com/docs/reference/performance. Left at dlt's defaults in the
-untuned baselines, which is the point of measuring both.
 """
 
 
@@ -74,8 +55,23 @@ def main_table_row_num(out: Path, table: str) -> int:
 
 
 def tune() -> None:
-    """Apply `TUNING` to this workload's environment, dlt's highest-priority provider."""
-    os.environ.update(TUNING)
+    """Apply documented performance settings through the environment, dlt's highest-priority provider.
+
+    From https://dlthub.com/docs/reference/performance. Left at dlt's defaults in the
+    untuned baselines, which is the point of measuring both.
+    """
+    os.environ.update(
+        {
+            # Without file rotation a single table is one file, and `load.workers` idles.
+            "NORMALIZE__DATA_WRITER__FILE_MAX_ITEMS": str(ROWS_PER_GROUP),
+            # Also the Parquet row-group size, which pyarrow takes from the batch it is given.
+            "DATA_WRITER__BUFFER_MAX_ITEMS": str(ROWS_PER_GROUP),
+            # Matches the fixtures; dlt's snappy default would trade file size for wall time.
+            "DATA_WRITER__COMPRESSION": "zstd",
+            # Skips a round trip to the destination for pipeline state on every run.
+            "RESTORE_FROM_DESTINATION": "false",
+        }
+    )
 
 
 def bucket(out: Path) -> Path:
