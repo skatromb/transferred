@@ -1,0 +1,45 @@
+[package]
+name = "transferred-mysql"
+description = "MySQL source and destination for the transferred data transfer engine."
+readme = "../../README.md"
+keywords = ["transferred", "mysql", "arrow", "etl", "data-transfer"]
+categories = ["database"]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+exclude = ["tests"]
+
+[lints]
+workspace = true
+
+[dependencies]
+transferred-core = { workspace = true }
+arrow = { workspace = true }
+arrow-schema = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+log = { workspace = true }
+async-stream = "0.3"
+mysql_async = { version = "0.37.1", default-features = false, features = ["minimal-rust", "rustls-tls", "ring", "tls12"] }
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+serde_json = { version = "1", features = ["raw_value"] }
+url = "2"
+percent-encoding = "2"
+sha2 = "0.11"
+uuid = { version = "1", features = ["v4"] }
+
+[features]
+integration = []
+
+[dev-dependencies]
+transferred-postgres = { workspace = true }
+transferred-files = { workspace = true }
+tempfile = "3"
+tokio-postgres = "0.7"
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
+required-features = ["integration"]

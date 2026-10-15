@@ -130,6 +130,18 @@ class _FilesSource(Source):
     """
     def __new__(cls, /, path: Sequence[str |PathLike[str]] |str |PathLike[str], format: Format) -> _FilesSource: ...
 
+class _MySqlDestination(Destination):
+    """
+    Internal `PyO3` wrapper around `transferred_mysql::MySqlDestination`.
+    """
+    def __new__(cls, /, dsn: str, table: str) -> _MySqlDestination: ...
+
+class _MySqlSource(Source):
+    """
+    Internal `PyO3` wrapper around `transferred_mysql::MySqlSource`.
+    """
+    def __new__(cls, /, dsn: str, table: str) -> _MySqlSource: ...
+
 class _Parquet(Format):
     """
     Internal `PyO3` wrapper around `transferred_files::Parquet`.

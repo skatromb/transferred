@@ -23,6 +23,7 @@ extension-module = ["pyo3/extension-module"]
 [dependencies]
 transferred-core = { workspace = true }
 transferred-files = { workspace = true }
+transferred-mysql = { workspace = true }
 transferred-postgres = { workspace = true }
 arrow = { workspace = true, features = ["pyarrow"] }
 pyo3 = { version = "0.29", features = ["experimental-inspect"] }

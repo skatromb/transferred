@@ -11,6 +11,7 @@ Goal: atomic full load PG → BQ. Direct type mapping, no coercion engine.
 **SQL connector interoperability:**
 
 - [x] PostgreSQL accepts unsigned integers, exact Decimal128/256 up to 76 digits, microsecond durations and times. Bare numeric refuses rounding; empty tables emit their schema. Requires a minor release.
+- [x] MySQL source and destination: exact Arrow interchange, bounded multirow writes, verified TLS and atomic InnoDB replacement with dependency checks. [Contract](./docs/MYSQL.md).
 
 **Scope:**
 

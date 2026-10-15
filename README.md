@@ -62,9 +62,12 @@ Look at [docs/DLT_COMPARISON.md](https://github.com/skatromb/transferred/blob/ma
 | Type | Source | Destination |
 | ------ | ------ | ----------- |
 | Parquet files | `FilesSource` | `FilesDestination` |
-| Database table | `PostgresSource` | `PostgresDestination` |
+| PostgreSQL table | `PostgresSource` | `PostgresDestination` |
+| MySQL InnoDB table | `MySqlSource` | `MySqlDestination` |
 | DataFrames | polars or pandas `DataFrame`, a duckdb result, a `pa.Table`, pyarrow's `RecordBatch` or `RecordBatchReader` | — |
 | Python iterables | `dict` / `@dataclass` / `pydantic.BaseModel` (with `pip install transferred[iterable]`) | — |
+
+[MySQL](https://github.com/skatromb/transferred/blob/main/docs/MYSQL.md) supports exact numeric values and atomic replacement. Existing targets require dependency-check privileges; TLS verifies certificates by default.
 
 BigQuery, S3/GCS and incremental loads land later. See [PLAN.md](https://github.com/skatromb/transferred/blob/main/PLAN.md).
 

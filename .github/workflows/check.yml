@@ -42,7 +42,7 @@ jobs:
   # The only required status check. The jobs below stay optional so the path filter can skip them.
   check-all:
     name: Check all
-    needs: [changes, rust, rust-x86_64, python, integration]
+    needs: [changes, rust, rust-x86_64, python, integration, integration-mysql]
     if: always()
     runs-on: ubuntu-24.04-arm
     steps:
@@ -134,5 +134,29 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: make check-integration
-        run: make check-integration
+      - name: make check-integration-postgres
+        run: make check-integration-postgres
+
+  integration-mysql:
+    name: MySQL ${{ matrix.version }}
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        version: ["8.4.10", "8.4.11"]
+    env:
+      TRANSFERRED_MYSQL_IMAGE: mysql:${{ matrix.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: make check-integration-mysql
+        run: make check-integration-mysql

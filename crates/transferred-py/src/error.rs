@@ -2,7 +2,7 @@
 
 use std::error::Error;
 
-use pyo3::exceptions::PyException;
+use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 use transferred_core::TransferredError as CoreError;
@@ -108,6 +108,10 @@ fn causes(error: &dyn Error) -> String {
         cause = err.source();
     }
     message
+}
+
+pub(crate) fn invalid_arguments(err: &CoreError) -> PyErr {
+    PyValueError::new_err(causes(err.source().unwrap_or(err)))
 }
 
 pub(crate) fn to_pyerr(err: CoreError) -> PyErr {

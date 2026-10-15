@@ -13,6 +13,8 @@ from transferred._native import TransferredError as TransferredError
 from transferred.files import FilesDestination as FilesDestination
 from transferred.files import FilesSource as FilesSource
 from transferred.formats import Parquet as Parquet
+from transferred.mysql import MySqlDestination as MySqlDestination
+from transferred.mysql import MySqlSource as MySqlSource
 from transferred.postgres import PostgresDestination as PostgresDestination
 from transferred.postgres import PostgresSource as PostgresSource
 from transferred.transfer import Transfer as Transfer

@@ -6,9 +6,14 @@ PY_ROOT := uv run --project crates/transferred-py --no-sync
 check: rust-check python-check stubs-check
 
 # Integration tests, gated behind each crate's `integration` feature. Needs Docker.
-.PHONY: check-integration
-check-integration:
-	@cargo test -p transferred-postgres --features integration
+.PHONY: check-integration check-integration-postgres check-integration-mysql
+check-integration: check-integration-postgres check-integration-mysql
+
+check-integration-postgres:
+	@cargo test -p transferred-postgres --features integration -- --test-threads=1
+
+check-integration-mysql:
+	@cargo test -p transferred-mysql --features integration -- --test-threads=1
 
 
 
@@ -31,7 +36,7 @@ fmt:
 .PHONY: clippy
 clippy:
 	@cargo clippy --workspace --tests \
-		--features transferred-postgres/integration -- -D warnings
+		--features transferred-postgres/integration,transferred-mysql/integration -- -D warnings
 
 # Run Rust tests.
 .PHONY: cargo-test
@@ -138,7 +143,8 @@ coverage-rust: llvm-cov-install
 	@eval "$$(cargo llvm-cov show-env --sh)" && \
 		cargo llvm-cov clean --profraw-only && \
 		cargo test --workspace && \
-		cargo test -p transferred-postgres --features integration && \
+		cargo test -p transferred-postgres --features integration -- --test-threads=1 && \
+		cargo test -p transferred-mysql --features integration -- --test-threads=1 && \
 		cargo llvm-cov report --lcov --output-path coverage-rust.lcov
 
 # Rust and Python coverage from pytest, which reaches Rust through the extension module.
@@ -202,7 +208,7 @@ VERSION := $(shell cargo metadata --no-deps --format-version 1 \
 # Refresh Cargo.lock after manually editing `version = ...` in Cargo.toml.
 .PHONY: bump-lock
 bump-lock:
-	@cargo update -p transferred-core -p transferred-files -p transferred-postgres -p transferred-py
+	@cargo update -p transferred-core -p transferred-files -p transferred-mysql -p transferred-postgres -p transferred-py
 
 # Pre-release validation before the version bump.
 .PHONY: pre-release

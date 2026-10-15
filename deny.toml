@@ -4,6 +4,10 @@
 [advisories]
 yanked = "deny"
 
+[[licenses.exceptions]]
+name = "webpki-roots"
+allow = ["CDLA-Permissive-2.0"]
+
 [licenses]
 allow = [
     "MIT",
