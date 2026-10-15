@@ -33,9 +33,6 @@ insert into it_temporal values
 create table it_numeric (n numeric, small numeric(28,4), wide numeric(38,9));
 
 -- Each row holds one value in all three columns, so the asserted units differ only by scale.
--- Row 2 is 28 significant digits: rust_decimal's 96-bit mantissa stops short of Decimal128's 38.
--- Row 3 is a rounding midpoint. PG rounds it on write for the declared columns, but bare `n` keeps
--- all 10 decimals, so only there does the mapping itself round — half away from zero.
 insert into it_numeric values
     (1.5, 1.5, 1.5),
     (
@@ -43,7 +40,7 @@ insert into it_numeric values
         -1234567890123456789.123456789,
         -1234567890123456789.123456789
     ),
-    (0.1234567885, 0.1234567885, 0.1234567885),
+    (0.123456789, 0.1234567885, 0.1234567885),
     (null, null, null);
 
 create table it_semantic (u uuid, j json, jb jsonb);

@@ -8,6 +8,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` pending.
 
 Goal: atomic full load PG → BQ. Direct type mapping, no coercion engine.
 
+**SQL connector interoperability:**
+
+- [x] PostgreSQL accepts unsigned integers, exact Decimal128/256 up to 76 digits, microsecond durations and times. Bare numeric refuses rounding; empty tables emit their schema. Requires a minor release.
+
 **Scope:**
 
 - `transferred-bigquery` destination: Storage Write API in `pending` mode against a per-load staging table → `CREATE OR REPLACE TABLE target AS SELECT * FROM staging` → `DROP TABLE staging`. No GCS staging. Why a query and not a copy job is in DESIGN's runtime contract.

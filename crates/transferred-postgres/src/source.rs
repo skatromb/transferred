@@ -3,10 +3,11 @@
 mod copy_out;
 mod pg_to_arrow;
 
+use async_stream::try_stream;
 use async_trait::async_trait;
 use futures::stream::TryChunksError;
 use futures::{StreamExt as _, TryStreamExt as _};
-use tokio_postgres::Client;
+use tokio_postgres::{Client, CopyOutStream};
 use transferred_core::{BatchStream, Result, Source, TransferredError};
 
 use self::pg_to_arrow::Decoder;
@@ -57,15 +58,24 @@ async fn batches(client: &Client, table: &str) -> Result<BatchStream> {
         .await
         .map_err(TransferredError::in_source)?;
 
-    let mut decoder = Decoder::derive(query.columns())?;
+    let decoder = Decoder::derive(query.columns())?;
+    Ok(decoded_batches(copy, decoder))
+}
 
-    Ok(copy_out::rows(copy)
-        .try_chunks(BATCH_ROWS)
-        .map(move |chunk| {
+fn decoded_batches(copy: CopyOutStream, mut decoder: Decoder) -> BatchStream {
+    try_stream! {
+        let mut chunks = copy_out::rows(copy).try_chunks(BATCH_ROWS).boxed();
+        let mut emitted = false;
+        while let Some(chunk) = chunks.next().await {
             let rows = chunk.map_err(|TryChunksError(_, error)| error)?;
-            decoder.decode(&rows)
-        })
-        .boxed())
+            yield decoder.decode(&rows)?;
+            emitted = true;
+        }
+        if !emitted {
+            yield decoder.decode(&[])?;
+        }
+    }
+    .boxed()
 }
 
 /// The table's name as Postgres resolves and quotes it, so anything but a table fails here.

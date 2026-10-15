@@ -8,11 +8,13 @@ use std::mem;
 
 use arrow::array::{
     ArrayBuilder, ArrayRef, BinaryBuilder, BooleanBuilder, Date32Builder, Decimal128Builder,
-    FixedSizeBinaryBuilder, Float32Builder, Float64Builder, Int16Builder, Int32Builder,
-    Int64Builder, IntervalMonthDayNanoBuilder, RecordBatch, StringBuilder, StructBuilder,
-    TimestampMicrosecondBuilder, make_builder,
+    Decimal256Builder, FixedSizeBinaryBuilder, Float32Builder, Float64Builder, Int16Builder,
+    Int32Builder, Int64Builder, IntervalMonthDayNanoBuilder, RecordBatch, StringBuilder,
+    StructBuilder, Time64MicrosecondBuilder, TimestampMicrosecondBuilder, make_builder,
 };
-use arrow::datatypes::{DECIMAL128_MAX_PRECISION, Date32Type, IntervalMonthDayNano};
+use arrow::datatypes::{
+    DECIMAL128_MAX_PRECISION, DECIMAL256_MAX_PRECISION, Date32Type, IntervalMonthDayNano, i256,
+};
 use arrow_schema::extension::{Json, Opaque, Uuid};
 use arrow_schema::{
     DataType as ArrowType, Field as ArrowField, IntervalUnit, Schema as ArrowSchema,
@@ -24,7 +26,6 @@ use geoarrow_schema::WkbType;
 use log::warn;
 use pg_interval::Interval as PgInterval;
 use postgres_protocol::types::{Range, RangeBound, range_from_sql};
-use rust_decimal::Decimal;
 use tokio_postgres::Column as PgColumn;
 use tokio_postgres::types::{FromSql, Kind, Type as PgType};
 use transferred_core::{Result, TransferredError};
@@ -32,6 +33,7 @@ use transferred_core::{Result, TransferredError};
 use super::BATCH_ROWS;
 use super::copy_out::{Cell, Cells};
 use crate::geoarrow::{self, GEOGRAPHY, GEOMETRY};
+use crate::numeric;
 use crate::pg_range::PgRange;
 use crate::{NANOS_PER_MICRO, UUID_BYTES};
 
@@ -148,6 +150,7 @@ enum Decoding {
     Date,
     Timestamp,
     Timestamptz,
+    Time,
     Interval,
     Numeric {
         precision: u8,
@@ -179,6 +182,7 @@ impl Decoding {
             PgType::TIMESTAMP => Self::Timestamp,
             PgType::TIMESTAMPTZ => Self::Timestamptz,
             PgType::INTERVAL => Self::Interval,
+            PgType::TIME => Self::Time,
             PgType::UUID => Self::Uuid,
             PgType::JSON => Self::Json,
             PgType::JSONB => Self::Jsonb,
@@ -224,7 +228,7 @@ impl Decoding {
             warn!(
                 target: "postgres::source",
                 "column {name}: `numeric` without declared precision; mapping to \
-                 Decimal128({precision}, {scale}) and rounding beyond {scale} decimals"
+                 Decimal128({precision}, {scale}); values requiring rounding are refused"
             );
             return Ok(Self::Numeric { precision, scale });
         }
@@ -232,7 +236,7 @@ impl Decoding {
         Self::declared_numeric(typmod)
     }
 
-    /// Decodes the precision and scale a `numeric(p,s)` typmod packs, if `Decimal128` can hold them.
+    /// Decodes a numeric typmod that fits an Arrow decimal.
     fn declared_numeric(typmod: i32) -> Result<Self> {
         // `numeric_typmod_precision`/`numeric_typmod_scale`, minus `VARHDRSZ`; the XOR sign-extends the
         // 11-bit scale, which PG 15+ allows to be negative.
@@ -241,10 +245,9 @@ impl Decoding {
         let precision = (packed >> 16) & 0xffff;
         let scale = ((packed & 0x7ff) ^ 0x400).wrapping_sub(0x400);
 
-        // PG holds 1000 digits to Arrow's 38, and PG 15+ lets scale go negative or past precision.
         match (u8::try_from(precision), u8::try_from(scale)) {
             (Ok(digits), Ok(decimals))
-                if digits <= DECIMAL128_MAX_PRECISION && decimals <= digits =>
+                if digits > 0 && digits <= DECIMAL256_MAX_PRECISION && decimals <= digits =>
             {
                 Ok(Self::Numeric {
                     precision: digits,
@@ -253,7 +256,7 @@ impl Decoding {
             }
             _ => Err(TransferredError::in_source(format!(
                 "`numeric({precision},{scale})` is not supported: it needs at most \
-                 {DECIMAL128_MAX_PRECISION} digits and a scale from 0 to its precision"
+                 {DECIMAL256_MAX_PRECISION} digits and a scale from 0 to its precision"
             ))),
         }
     }
@@ -285,6 +288,7 @@ impl Decoding {
             | Self::Date
             | Self::Timestamp
             | Self::Timestamptz
+            | Self::Time
             | Self::Interval
             | Self::Numeric { .. } => {}
         }
@@ -293,6 +297,10 @@ impl Decoding {
     }
 
     /// Arrow type the column's values land in; the test suite pins every one.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "maps each supported SQL type to its Arrow representation"
+    )]
     fn arrow_type(&self) -> ArrowType {
         match self {
             Self::Bool => ArrowType::Boolean,
@@ -308,8 +316,13 @@ impl Decoding {
             Self::Timestamp => ArrowType::Timestamp(TimeUnit::Microsecond, None),
             Self::Timestamptz => ArrowType::Timestamp(TimeUnit::Microsecond, Some(UTC.into())),
             Self::Interval => ArrowType::Interval(IntervalUnit::MonthDayNano),
+            Self::Time => ArrowType::Time64(TimeUnit::Microsecond),
             &Self::Numeric { precision, scale } => {
-                ArrowType::Decimal128(precision, scale.cast_signed())
+                if precision <= DECIMAL128_MAX_PRECISION {
+                    ArrowType::Decimal128(precision, scale.cast_signed())
+                } else {
+                    ArrowType::Decimal256(precision, scale.cast_signed())
+                }
             }
             Self::Range(bounds) => ArrowType::Struct(PgRange::fields(bounds.arrow_type())),
         }
@@ -365,21 +378,42 @@ impl Decoding {
                 decode::<DateTime<Utc>>(&PgType::TIMESTAMPTZ, cell)?
                     .map(|timestamp| timestamp.timestamp_micros()),
             ),
+            Self::Time => {
+                let micros = decode::<i64>(&PgType::INT8, cell)?;
+                if micros.is_some_and(|time| !(0..86_400_000_000).contains(&time)) {
+                    return Err(TransferredError::in_source(format!(
+                        "time {micros:?} is outside one Arrow day"
+                    )));
+                }
+                cast::<Time64MicrosecondBuilder>(builder)?.append_option(micros);
+            }
             Self::Interval => cast::<IntervalMonthDayNanoBuilder>(builder)?.append_option(
                 decode(&PgType::INTERVAL, cell)?
                     .map(month_day_nano)
                     .transpose()?,
             ),
-            &Self::Numeric { scale, .. } => cast::<Decimal128Builder>(builder)?.append_option(
-                decode(&PgType::NUMERIC, cell)?
-                    .map(|decimal| decimal_units(decimal, scale))
-                    .transpose()?,
-            ),
+            &Self::Numeric { precision, scale } => {
+                let units = cell
+                    .map(|bytes| numeric::decode(bytes, precision, scale))
+                    .transpose()?;
+                if precision <= DECIMAL128_MAX_PRECISION {
+                    let narrow = units.map(narrow_decimal).transpose()?;
+                    cast::<Decimal128Builder>(builder)?.append_option(narrow);
+                } else {
+                    cast::<Decimal256Builder>(builder)?.append_option(units);
+                }
+            }
             Self::Range(bounds) => append_range(bounds, cast(builder)?, cell)?,
         }
 
         Ok(())
     }
+}
+
+fn narrow_decimal(mantissa: i256) -> Result<i128> {
+    mantissa
+        .to_i128()
+        .ok_or_else(|| TransferredError::in_source("numeric exceeds Decimal128"))
 }
 
 /// Appends a range: both bounds through the element's own decoding, then the three tag bits.
@@ -458,19 +492,6 @@ fn month_day_nano(interval: PgInterval) -> Result<IntervalMonthDayNano> {
     ))
 }
 
-/// Restates a decimal as an integer count of `10^-scale` units, as Arrow `Decimal128` stores it.
-fn decimal_units(mut decimal: Decimal, scale: u8) -> Result<i128> {
-    let places = u32::from(scale);
-    decimal.rescale(places);
-    if decimal.scale() != places {
-        return Err(TransferredError::in_source(format!(
-            "`numeric` value {decimal} does not fit scale {scale}"
-        )));
-    }
-
-    Ok(decimal.mantissa())
-}
-
 /// Decodes a cell from Postgres binary form; `None` is a NULL.
 fn decode<'buf, Postgres: FromSql<'buf>>(
     pg_type: &PgType,
@@ -494,6 +515,7 @@ fn cast<Builder: ArrayBuilder>(builder: &mut dyn ArrayBuilder) -> Result<&mut Bu
 #[cfg(test)]
 mod tests {
     use arrow::array::{AsArray as _, StructArray};
+    use arrow::datatypes::Decimal128Type;
     use arrow::util::display::{ArrayFormatter, FormatOptions};
     use arrow_schema::extension::ExtensionType as _;
 
@@ -594,9 +616,6 @@ mod tests {
     const NUMERIC_1000_500: i32 = 65_536_504;
     const NUMERIC_5_10: i32 = 327_694;
 
-    /// Largest mantissa `rust_decimal` can hold: 2^96 - 1, with no room to zero-pad.
-    const U96_MAX: Decimal = Decimal::from_parts(u32::MAX, u32::MAX, u32::MAX, false, 0);
-
     /// Arrow type a `numeric` column declared with `typmod` lands in.
     fn numeric_type(typmod: i32) -> Result<ArrowType> {
         Decoding::numeric(typmod, "amount").map(|decoding| decoding.arrow_type())
@@ -611,6 +630,18 @@ mod tests {
         assert_eq!(
             numeric_type(NUMERIC_38_9).unwrap(),
             ArrowType::Decimal128(38, 9)
+        );
+    }
+
+    #[test]
+    fn declared_numeric_uses_decimal256_above_38_digits() {
+        assert_eq!(
+            numeric_type(4_259_882).unwrap(),
+            ArrowType::Decimal256(65, 38)
+        );
+        assert_eq!(
+            numeric_type(4_980_740).unwrap(),
+            ArrowType::Decimal256(76, 0)
         );
     }
 
@@ -642,37 +673,35 @@ mod tests {
 
     #[test]
     fn decimal_units_scales_to_target() {
+        let decoding = Decoding::Numeric {
+            precision: 38,
+            scale: 9,
+        };
+        let mut builder = decoding.builder();
+        decoding
+            .append(
+                &mut *builder,
+                Some(&[0, 2, 0, 0, 0, 0, 0, 4, 0, 1, 19, 136]),
+            )
+            .unwrap();
+        let array = builder.finish();
         assert_eq!(
-            decimal_units(Decimal::new(15, 1), 9).unwrap(),
+            array.as_primitive::<Decimal128Type>().value(0),
             1_500_000_000
         );
-        assert_eq!(
-            decimal_units(Decimal::new(-25, 2), 9).unwrap(),
-            -250_000_000
-        );
-        assert_eq!(decimal_units(Decimal::new(15, 1), 4).unwrap(), 15_000);
-        assert_eq!(decimal_units(Decimal::ZERO, 4).unwrap(), 0);
     }
 
-    /// `rescale` is infallible and silently keeps the old scale when padding would overflow the
-    /// mantissa, so without the scale check we would emit this value 10^9 times too small.
     #[test]
-    fn decimal_units_rejects_value_too_wide_to_rescale() {
-        assert_eq!(U96_MAX.scale(), 0);
-        assert!(decimal_units(U96_MAX, 9).is_err());
-    }
-
-    /// Bare `numeric` carries the value's own scale, so the (38,9) default rounds. Lossy by design.
-    #[test]
-    fn decimal_units_rounds_excess_fraction_digits_half_away_from_zero() {
-        // 0.1234567885 sits exactly on the midpoint: half-to-even would keep ...788.
-        assert_eq!(
-            decimal_units(Decimal::new(1_234_567_885, 10), 9).unwrap(),
-            123_456_789
-        );
-        assert_eq!(
-            decimal_units(Decimal::new(-1_234_567_885, 10), 9).unwrap(),
-            -123_456_789
+    fn decimal_units_refuses_rounding() {
+        let decoding = Decoding::Numeric {
+            precision: 38,
+            scale: 9,
+        };
+        let mut builder = decoding.builder();
+        assert!(
+            decoding
+                .append(&mut *builder, Some(&[0, 1, 255, 253, 0, 0, 0, 10, 0, 100]))
+                .is_err()
         );
     }
 

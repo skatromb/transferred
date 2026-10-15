@@ -4,6 +4,7 @@
 mod connection;
 mod destination;
 pub mod geoarrow;
+mod numeric;
 mod pg_range;
 mod source;
 mod tls;

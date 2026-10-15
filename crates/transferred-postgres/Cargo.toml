@@ -18,6 +18,7 @@ transferred-core = { workspace = true }
 arrow = { workspace = true }
 arrow-schema = { workspace = true }
 async-trait = { workspace = true }
+async-stream = "0.3"
 tokio = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
@@ -29,7 +30,6 @@ bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 geoarrow-schema = "0.9"
 pg_interval = "0.6"
-rust_decimal = { version = "1", default-features = false, features = ["db-tokio-postgres"] }
 uuid = "1"
 
 [features]

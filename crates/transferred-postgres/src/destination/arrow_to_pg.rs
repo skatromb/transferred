@@ -6,11 +6,13 @@ use std::any::type_name;
 use std::result;
 
 use arrow::array::{
-    Array, BinaryArray, BooleanArray, Date32Array, Decimal128Array, FixedSizeBinaryArray,
-    Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, IntervalMonthDayNanoArray,
-    RecordBatch, StringArray, StructArray, TimestampMicrosecondArray,
+    Array, BinaryArray, BooleanArray, Date32Array, Decimal128Array, Decimal256Array,
+    DurationMicrosecondArray, FixedSizeBinaryArray, Float32Array, Float64Array, Int8Array,
+    Int16Array, Int32Array, Int64Array, IntervalMonthDayNanoArray, RecordBatch, StringArray,
+    StructArray, Time64MicrosecondArray, TimestampMicrosecondArray, UInt8Array, UInt16Array,
+    UInt32Array, UInt64Array,
 };
-use arrow::datatypes::{Date32Type, IntervalMonthDayNano};
+use arrow::datatypes::{Date32Type, IntervalMonthDayNano, i256};
 use arrow_schema::extension::{ExtensionType as _, Json, Uuid};
 use arrow_schema::{DataType as ArrowType, Field as ArrowField, IntervalUnit, SchemaRef, TimeUnit};
 use bytes::{BufMut as _, BytesMut};
@@ -20,11 +22,11 @@ use pg_interval::Interval as PgInterval;
 use postgres_protocol::IsNull as ProtocolIsNull;
 use postgres_protocol::escape::escape_identifier;
 use postgres_protocol::types::{RangeBound, empty_range_to_sql, range_to_sql};
-use rust_decimal::Decimal;
 use tokio_postgres::types::{IsNull, ToSql, Type as PgType};
 use transferred_core::{AnyError, Result, TransferredError};
 
 use crate::geoarrow::{self, GEOGRAPHY, GEOMETRY};
+use crate::numeric;
 use crate::pg_range::PgRange;
 use crate::{NANOS_PER_MICRO, NULL_FIELD, UUID_BYTES};
 
@@ -163,6 +165,8 @@ enum Encoding {
     Date,
     Timestamp,
     Timestamptz,
+    Time,
+    Duration,
     Interval,
     Numeric {
         precision: u8,
@@ -201,12 +205,20 @@ impl Encoding {
         clippy::wildcard_enum_match_arm,
         reason = "every Arrow type not listed is refused"
     )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "maps every supported physical Arrow type"
+    )]
     fn plain(data_type: &ArrowType) -> Result<Self> {
         Ok(match data_type {
             ArrowType::Boolean => Self::Bool,
-            ArrowType::Int16 => Self::Int2,
-            ArrowType::Int32 => Self::Int4,
-            ArrowType::Int64 => Self::Int8,
+            ArrowType::Int8 | ArrowType::UInt8 | ArrowType::Int16 => Self::Int2,
+            ArrowType::UInt16 | ArrowType::Int32 => Self::Int4,
+            ArrowType::UInt32 | ArrowType::Int64 => Self::Int8,
+            ArrowType::UInt64 => Self::Numeric {
+                precision: 20,
+                scale: 0,
+            },
             ArrowType::Float32 => Self::Float4,
             ArrowType::Float64 => Self::Float8,
             ArrowType::Utf8 => Self::Text,
@@ -216,7 +228,11 @@ impl Encoding {
             // Arrow timestamps are UTC instants whatever the zone name, so the zone needs no lookup.
             ArrowType::Timestamp(TimeUnit::Microsecond, Some(_)) => Self::Timestamptz,
             ArrowType::Interval(IntervalUnit::MonthDayNano) => Self::Interval,
-            &ArrowType::Decimal128(precision, scale) => Self::numeric(precision, scale)?,
+            ArrowType::Duration(TimeUnit::Microsecond) => Self::Duration,
+            ArrowType::Time64(TimeUnit::Microsecond) => Self::Time,
+            &ArrowType::Decimal128(precision, scale) | &ArrowType::Decimal256(precision, scale) => {
+                Self::numeric(precision, scale)?
+            }
             other => {
                 return Err(TransferredError::in_destination(format!(
                     "Arrow type `{other}` is not supported by the Postgres destination in 0.1"
@@ -238,6 +254,15 @@ impl Encoding {
 
     /// Decides for a decimal, refusing a negative scale.
     fn numeric(precision: u8, scale: i8) -> Result<Self> {
+        if precision == 0
+            || precision > 76
+            || scale.is_negative()
+            || scale.cast_unsigned() > precision
+        {
+            return Err(TransferredError::in_destination(
+                "decimal requires precision 1..76 and scale 0..precision",
+            ));
+        }
         Ok(Self::Numeric {
             precision,
             scale: u8::try_from(scale).map_err(|_err| {
@@ -249,6 +274,10 @@ impl Encoding {
     }
 
     /// Type half of the column's DDL, e.g. `numeric(38,9)`; the test suite pins every name.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "covers every encoding in one type-name match"
+    )]
     fn sql_type(&self) -> String {
         match self {
             Self::Numeric { precision, scale } => format!("numeric({precision},{scale})"),
@@ -266,6 +295,8 @@ impl Encoding {
             | Self::Date
             | Self::Timestamp
             | Self::Timestamptz
+            | Self::Time
+            | Self::Duration
             | Self::Interval
             | Self::Range { .. }) => other.pg_type().name().to_owned(),
         }
@@ -287,7 +318,8 @@ impl Encoding {
             Self::Date => PgType::DATE,
             Self::Timestamp => PgType::TIMESTAMP,
             Self::Timestamptz => PgType::TIMESTAMPTZ,
-            Self::Interval => PgType::INTERVAL,
+            Self::Interval | Self::Duration => PgType::INTERVAL,
+            Self::Time => PgType::TIME,
             Self::Numeric { .. } => PgType::NUMERIC,
             Self::Range { pg_type, .. } => pg_type.clone(),
         }
@@ -311,6 +343,8 @@ impl Encoding {
             | Self::Json
             | Self::Bytea
             | Self::Uuid
+            | Self::Time
+            | Self::Duration
             | Self::Interval
             | Self::Geo(_)
             | Self::Range { .. }) => {
@@ -334,15 +368,23 @@ impl Encoding {
             Self::Bool => cast::<BooleanArray>(array)?
                 .value(row_num)
                 .to_sql(&pg_type, buf),
-            Self::Int2 => cast::<Int16Array>(array)?
-                .value(row_num)
-                .to_sql(&pg_type, buf),
-            Self::Int4 => cast::<Int32Array>(array)?
-                .value(row_num)
-                .to_sql(&pg_type, buf),
-            Self::Int8 => cast::<Int64Array>(array)?
-                .value(row_num)
-                .to_sql(&pg_type, buf),
+            Self::Int2 => small_integer(array, row_num)?.to_sql(&pg_type, buf),
+            Self::Int4 => {
+                let integer = if array.data_type() == &ArrowType::UInt16 {
+                    i32::from(cast::<UInt16Array>(array)?.value(row_num))
+                } else {
+                    cast::<Int32Array>(array)?.value(row_num)
+                };
+                integer.to_sql(&pg_type, buf)
+            }
+            Self::Int8 => {
+                let integer = if array.data_type() == &ArrowType::UInt32 {
+                    i64::from(cast::<UInt32Array>(array)?.value(row_num))
+                } else {
+                    cast::<Int64Array>(array)?.value(row_num)
+                };
+                integer.to_sql(&pg_type, buf)
+            }
             Self::Float4 => cast::<Float32Array>(array)?
                 .value(row_num)
                 .to_sql(&pg_type, buf),
@@ -373,6 +415,22 @@ impl Encoding {
                 pg_timestamp(cast::<TimestampMicrosecondArray>(array)?.value(row_num))?
                     .to_sql(&pg_type, buf)
             }
+            Self::Time => {
+                let micros = cast::<Time64MicrosecondArray>(array)?.value(row_num);
+                if !(0..86_400_000_000).contains(&micros) {
+                    return Err(TransferredError::in_destination(format!(
+                        "time {micros} is outside one day"
+                    )));
+                }
+                buf.put_i64(micros);
+                Ok(IsNull::No)
+            }
+            Self::Duration => {
+                buf.put_i64(cast::<DurationMicrosecondArray>(array)?.value(row_num));
+                buf.put_i32(0);
+                buf.put_i32(0);
+                Ok(IsNull::No)
+            }
             // `PgInterval` has an inherent `to_sql` rendering text, which shadows the trait's.
             Self::Interval => ToSql::to_sql(
                 &pg_interval(cast::<IntervalMonthDayNanoArray>(array)?.value(row_num))?,
@@ -380,8 +438,8 @@ impl Encoding {
                 buf,
             ),
             Self::Numeric { scale, .. } => {
-                pg_numeric(cast::<Decimal128Array>(array)?.value(row_num), *scale)?
-                    .to_sql(&pg_type, buf)
+                numeric::encode(decimal_units(array, row_num)?, *scale, buf)?;
+                Ok(IsNull::No)
             }
             Self::Range { element, .. } => {
                 return write_range(element, cast::<StructArray>(array)?, row_num, buf);
@@ -460,10 +518,26 @@ fn geo_sql_type(wkb: &WkbType) -> String {
     )
 }
 
-/// Restates an Arrow count of `10^-scale` units as a decimal, as PG `numeric` carries it.
-fn pg_numeric(units: i128, scale: u8) -> Result<Decimal> {
-    Decimal::try_from_i128_with_scale(units, u32::from(scale))
-        .map_err(TransferredError::in_destination)
+fn small_integer(array: &dyn Array, row: usize) -> Result<i16> {
+    if array.data_type() == &ArrowType::Int8 {
+        Ok(i16::from(cast::<Int8Array>(array)?.value(row)))
+    } else if array.data_type() == &ArrowType::UInt8 {
+        Ok(i16::from(cast::<UInt8Array>(array)?.value(row)))
+    } else {
+        Ok(cast::<Int16Array>(array)?.value(row))
+    }
+}
+
+fn decimal_units(array: &dyn Array, row: usize) -> Result<i256> {
+    if array.data_type() == &ArrowType::UInt64 {
+        Ok(i256::from_i128(i128::from(
+            cast::<UInt64Array>(array)?.value(row),
+        )))
+    } else if matches!(array.data_type(), ArrowType::Decimal256(..)) {
+        Ok(cast::<Decimal256Array>(array)?.value(row))
+    } else {
+        Ok(i256::from_i128(cast::<Decimal128Array>(array)?.value(row)))
+    }
 }
 
 /// PG counts interval time in microseconds, so anything finer than a microsecond has nowhere to go.
@@ -669,7 +743,7 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_arrow_type() {
-        let schema = Schema::new(vec![ArrowField::new("u16", ArrowType::UInt16, true)]);
+        let schema = Schema::new(vec![ArrowField::new("f16", ArrowType::Float16, true)]);
         assert!(Encoder::new(schema.into()).is_err());
     }
 
@@ -723,19 +797,61 @@ mod tests {
     }
 
     #[test]
-    fn pg_numeric_restates_units_at_scale() {
-        assert_eq!(pg_numeric(1_500_000_000, 9).unwrap(), Decimal::new(15, 1));
-        assert_eq!(pg_numeric(-250_000_000, 9).unwrap(), Decimal::new(-25, 2));
-        assert_eq!(pg_numeric(0, 4).unwrap(), Decimal::ZERO);
+    fn writes_unsigned_maximum_as_exact_numeric() {
+        use arrow::array::UInt64Array;
+        let bytes = write_first(
+            ArrowField::new("n", ArrowType::UInt64, true),
+            Arc::new(UInt64Array::from(vec![u64::MAX])),
+        )
+        .unwrap();
+        assert_eq!(
+            bytes.as_ref(),
+            &[0, 5, 0, 4, 0, 0, 0, 0, 7, 52, 26, 88, 2, 225, 3, 187, 6, 79]
+        );
     }
 
-    /// Arrow holds 38 digits, `rust_decimal` 29, so the widest Arrow decimals have nowhere to land.
     #[test]
-    fn pg_numeric_rejects_units_past_the_rust_decimal_mantissa() {
-        assert!(pg_numeric(i128::MAX, 9).is_err());
+    fn writes_duration_without_calendar_days() {
+        let array = DurationMicrosecondArray::from(vec![-172_800_123_456]);
+        let bytes = write_first(
+            ArrowField::new("d", ArrowType::Duration(TimeUnit::Microsecond), true),
+            Arc::new(array),
+        )
+        .unwrap();
+        assert_eq!(
+            bytes.as_ref(),
+            &[255, 255, 255, 215, 196, 79, 93, 192, 0, 0, 0, 0, 0, 0, 0, 0]
+        );
     }
 
-    /// `rust_decimal` holds no negative scale, so the column is refused before any row is read.
+    #[test]
+    fn writes_time_as_microseconds_since_midnight() {
+        let array = Time64MicrosecondArray::from(vec![43_200_123_456]);
+        let bytes = write_first(
+            ArrowField::new("t", ArrowType::Time64(TimeUnit::Microsecond), true),
+            Arc::new(array),
+        )
+        .unwrap();
+        assert_eq!(bytes.as_ref(), &43_200_123_456_i64.to_be_bytes());
+    }
+
+    #[test]
+    fn accepts_full_decimal128_mantissa() {
+        let array = Decimal128Array::from(vec![
+            99_999_999_999_999_999_999_999_999_999_999_999_999_i128,
+        ])
+        .with_precision_and_scale(38, 0)
+        .unwrap();
+        assert!(
+            write_first(
+                ArrowField::new("n", ArrowType::Decimal128(38, 0), true),
+                Arc::new(array)
+            )
+            .is_ok()
+        );
+    }
+
+    /// Negative scale is refused before any row is read.
     #[test]
     fn rejects_a_decimal_with_negative_scale() {
         let schema = Schema::new(vec![ArrowField::new(

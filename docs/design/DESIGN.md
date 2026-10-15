@@ -243,7 +243,7 @@ Fast path for callers who already have Arrow: pass the DataFrame itself, which s
     - Postgres: staging table built from the source-derived schema, `COPY ... FROM STDIN`, then `BEGIN; DROP target; RENAME staging; COMMIT;` under transactional DDL. The swap runs through `Client::transaction()`, whose `Drop` rolls back — otherwise a failed statement strands the session in an aborted transaction and silently swallows staging cleanup. No client-side schema compare: source schema wins and the target is replaced outright, so there is nothing to compare against. Indexes, grants and ownership are not preserved.
       Transfers never leave the destination half-written. `mode="append"` and `mode="upsert"` are out of scope while the project is in initial development. `on_schema_change="replace"` to opt into destructive schema replacement is a deferred kwarg.
 - **Source filter surface.** `table=` and `query=` bound the extract. No partial filter DSL on top — keeps the API one knob wide.
-- **Errors.** Every failure surfaces as a `TransferredError` subclass, whichever connector raised it.
+- **Errors.** Every failure surfaces as a `TransferredError` subclass, whichever connector raised it. A database table with no rows emits one empty batch carrying its schema; a source with no batches still raises `EmptySourceError`.
 - **Credentials.** All GCP auth delegates to `google-cloud-auth`: Application Default Credentials, `GOOGLE_APPLICATION_CREDENTIALS` service-account JSON, gcloud user creds, workload identity. Postgres uses standard DSN-embedded creds or libpq env vars.
 - **Run report.** `RunReport` returned by `.run()` is the canonical post-run record. Logs are for trace; `RunReport` is for programs.
 - **Logging.** Rust uses `log`. `pyo3-log` forwards records into Python's `logging` so users get one config story (`logging.getLogger("transferred").setLevel(...)`).
@@ -274,7 +274,7 @@ Parquet interprets none of it — the schema goes straight to the writer, so eve
 
 **Lookup order for any source-native type:**
 
-1. Native Arrow type if one matches (`int4` → `Int32`, `numeric(p,s)` → `Decimal128(p,s)`, `interval` → `Interval(MonthDayNano)`, `timestamptz` → `Timestamp(Microsecond, "UTC")`, …).
+1. Native Arrow type if one matches (`int4` → `Int32`, `numeric(p,s)` → `Decimal128(p,s)` or `Decimal256(p,s)`, `interval` → `Interval(MonthDayNano)`, `timestamptz` → `Timestamp(Microsecond, "UTC")`, …).
 2. Canonical Arrow extension if one exists (`uuid` → `arrow.uuid`, `json`/`jsonb` → `arrow.json`).
 3. Community extension we trust (PostGIS `geometry`/`geography` → `geoarrow.wkb` with CRS metadata).
 4. Private `transferred.*` extension over the most structured storage type that loses nothing (Postgres ranges → `transferred.pg_range` over a `Struct{lower, upper, lower_inc, upper_inc, empty}`).
@@ -309,12 +309,13 @@ Never silently coerce to `TEXT` or `BYTES` without a summary entry — that is t
 | Source type (Postgres)           | Arrow representation                                                         | Notes                                                                                                                                    |
 | -------------------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `int2`/`int4`/`int8`             | `Int16`/`Int32`/`Int64`                                                      | Native.                                                                                                                                  |
-| `numeric(p,s)`                   | `Decimal128(p,s)`                                                            | Native. Bare `numeric` → `Decimal128(38, 9)` (BQ `NUMERIC`) + WARN                                                                       |
+| `numeric(p,s)`                   | `Decimal128(p,s)` through 38 digits, then `Decimal256(p,s)` through 76         | Requires `0 <= s <= p`. Bare `numeric` → `Decimal128(38, 9)` + WARN; values needing rounding or exceeding precision fail. |
 | `text`/`varchar`                 | `Utf8`                                                                       | Native.                                                                                                                                  |
 | `bytea`                          | `Binary`                                                                     | Native.                                                                                                                                  |
 | `bool`                           | `Boolean`                                                                    | Native.                                                                                                                                  |
 | `date`                           | `Date32`                                                                     | Native.                                                                                                                                  |
 | `timestamp`/`timestamptz`        | `Timestamp(Microsecond, tz)`                                                 | Native. `tz=None` for `timestamp`.                                                                                                       |
+| `time`                           | `Time64(Microsecond)`                                                        | Values outside `[00:00, 24:00)` fail. |
 | `interval`                       | `Interval(MonthDayNano)`                                                     | Native, exact match.                                                                                                                     |
 | `uuid`                           | `FixedSizeBinary(16)` + `arrow.uuid`                                         | Canonical extension.                                                                                                                     |
 | `json`/`jsonb`                   | `Utf8` + `arrow.json`                                                        | Canonical extension.                                                                                                                     |

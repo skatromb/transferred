@@ -148,7 +148,6 @@ async fn temporal() {
 #[tokio::test]
 async fn numeric() {
     // Arrow stores decimals as integer counts of 10^-scale units.
-    // Row 3 arrives at scale 10, so bare `n` is the one column the mapping rounds itself.
     let at_scale_9 = Decimal128Array::from(vec![
         Some(1_500_000_000),
         Some(-1_234_567_890_123_456_789_123_456_789),
