@@ -1,5 +1,5 @@
 # Supply-chain gate: RUSTSEC advisories, license allow-list, source allow-list.
-# Run via `make deny`. Docs: https://embarkstudios.github.io/cargo-deny/
+# Run via `make deny` and `make advisories`. Docs: https://embarkstudios.github.io/cargo-deny/
 
 [advisories]
 yanked = "deny"

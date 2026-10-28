@@ -16,7 +16,7 @@ check-integration:
 # Rust
 # ============================================================================
 
-# Full Rust gate: fmt, clippy, tests, supply chain audit.
+# Full Rust gate: fmt, clippy, tests, license and source audit.
 .PHONY: rust-check
 rust-check: fmt clippy cargo-test deny
 
@@ -43,10 +43,15 @@ cargo-test:
 deny-install:
 	@cargo install cargo-deny --locked
 
-# Audit advisories, licenses, bans and sources against `deny.toml`.
+# Audit licenses, bans and sources against `deny.toml`.
 .PHONY: deny
 deny: deny-install
-	@cargo deny --locked check
+	@cargo deny --locked check bans licenses sources
+
+# Audit RUSTSEC advisories. Runs daily in CI, off the PR gate: a new advisory is not the PR's fault.
+.PHONY: advisories
+advisories: deny-install
+	@cargo deny --locked check advisories
 
 
 
