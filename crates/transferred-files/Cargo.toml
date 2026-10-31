@@ -18,7 +18,7 @@ async-trait = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
-parquet = { version = "59", features = ["arrow", "async", "arrow_canonical_extension_types"] }
+parquet = { version = "60", features = ["arrow", "async", "arrow_canonical_extension_types"] }
 glob = "0.3"
 
 [dev-dependencies]
