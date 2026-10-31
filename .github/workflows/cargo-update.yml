@@ -1,0 +1,40 @@
+name: Cargo update
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+jobs:
+  cargo-update:
+    name: Cargo update
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - run: cargo update
+
+      - uses: peter-evans/create-pull-request@v8
+        id: pull-request
+        with:
+          branch: cargo-update
+          commit-message: cargo update
+          title: cargo update
+          body: Weekly `cargo update` of `Cargo.lock`.
+
+      - if: contains(fromJSON('["created", "updated"]'), steps.pull-request.outputs.pull-request-operation)
+        run: |
+          gh workflow run check.yml --ref cargo-update
+          gh pr merge --auto --squash "$PULL_REQUEST"
+        env:
+          PULL_REQUEST: ${{ steps.pull-request.outputs.pull-request-number }}
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
