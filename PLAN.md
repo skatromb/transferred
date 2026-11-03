@@ -31,7 +31,13 @@ Goal: atomic full load PG → BQ. Direct type mapping, no coercion engine.
     - Type names are ours: `TableFieldSchema::type` is a bare `String` in the generated client, so nothing checks the spelling before the server does.
     - What BQ accepts from an Arrow batch was measured, not assumed: `Decimal128` matches a `NUMERIC` column and `Decimal256` a `BIGNUMERIC`, each refusing the other; `TIMESTAMP` and `DATETIME` take microseconds only, naming the unit when they refuse; `Int16` and `Float32` widen on their own.
     - Precision/scale are separate `TableFieldSchema` fields, `ARRAY` is `mode=REPEATED`, `STRUCT` carries `fields` — the type name says nothing about any of them.
+    - PG `point` → `Struct{x, y}` of `Float64`. It arrives as `arrow.opaque` today, and has no CRS for `GEOGRAPHY`.
 - [~] BQ env-gated integration test — `make check-integration`, credentials via `make gcp-login`.
+
+## 0.3 — Column allowlist
+
+- `PostgresSource(columns=[...])`: only listed columns load, as `COPY table (cols) TO STDOUT`. A listed column missing upstream fails the run.
+- Replaces DESIGN's `skip_columns=`: a denylist lets a new upstream column (PII) through.
 
 ## Try hypothesis
 
@@ -78,35 +84,49 @@ match destination {
 ```
 
 - `Transfer` becomes `Transfer<D>`. The source stays `Box<dyn Source>`, having no report to type, so the parameter does not spread; `self: Box<Self>` drops back to `self`.
-- DESIGN's API surface and run-report contract follow, before 0.3 starts.
+- DESIGN's API surface and run-report contract follow, before 0.4 starts.
 
 ## Interlude — single-stream Source contract
 
-Collapse `Source::stream_partitions` → one `BatchStream`; `Destination::write_partitions` takes the same. Breaking on both traits, so it runs before 0.4 hands us more connectors.
+Collapse `Source::stream_partitions` → one `BatchStream`; `Destination::write_partitions` takes the same. Breaking on both traits, so it runs before 0.5 hands us more connectors.
 
 - Partition identity leaves the contract: no destination reads it, and part-file splitting is better done by size on the destination than by whatever shape the source had.
 - Parallelism stays, but stops leaking: a source merges its parallel readers into the one stream (`select_all`, or spawned tasks feeding a bounded mpsc); a destination that wants parallel writes fans the stream out to a pool of writers over a bounded channel. Work-stealing beats partition-pinned writers on skew.
 - Batches are pointer-sized to move (`RecordBatch` is `Arc`s over buffers) and coarse (~MBs), so the merge point runs at ~10³ msg/s against a channel ceiling in the millions — never the bottleneck.
 - DESIGN follows: `Source`/`Destination` signatures, and the memory model's "no internal mpsc channels" narrows to the serial path — reader merges and writer pools use bounded channels, capacity counted into the memory bound.
 
-## 0.3 — S3 + GCS
+## 0.4 — S3 + GCS
 
 - S3 destination (Parquet) via `object_store`.
 - GCS destination (Parquet) — nearly free once S3 works.
 
-## 0.4 — BigQuery source
+## 0.5 — BigQuery source
 
 Storage Read API, on `google-cloud-bigquery-read`.
 
 - Waits on that crate reaching crates.io: it sits at `0.0.0` in the repo, bootstrapped 19 August 2026, `ReadRows` server-side streaming on the 26th, regenerated on the 29th. Left on googleapis/google-cloud-rust#5745 are their librarian templates and a stream-resume design.
 - The source is `create_read_session` plus the streaming `ReadRows`, with the Arrow IPC bytes coming back through `ipc.rs` the way they went out.
 - Round-trip integration tests (PG ↔ BQ) land with the source, which is what reads a loaded table back.
+- Measure the Arrow each BQ type arrives as from `ReadRows` (`GEOGRAPHY`, `JSON`, `DATETIME`, `BIGNUMERIC`, `ARRAY`, `STRUCT`), as 0.2.0 measured writes.
 
-## 0.5 — Incremental Postgres -> BQ
+## 0.6 — Incremental Postgres -> BQ
 
 Model decided — see [INCREMENTAL.md](./docs/design/INCREMENTAL.md), D1–D10.
 
-## 0.6 — Arrow interchange contract
+- Source type changed between runs: widen the BQ column (`ALTER COLUMN SET DATA TYPE`) where BQ allows, else fall back to full refresh. Never cast into the old type.
+
+## 0.7 — Export into existing Postgres tables
+
+Goal: BQ → PG into tables whose schema someone else owns (migrations, Rails). Never create or alter them.
+
+- Existing target's schema wins: staging is `CREATE TABLE … (LIKE target INCLUDING ALL)`. An absent target is still created from the source.
+- Check before COPY: each source column exists in the target with a writable type. A target column the source lacks needs a default. Refuse otherwise, naming the column.
+- Encoder picked by (Arrow type, target column type): `Decimal256` → `numeric`, `List` → array, `Struct` → `json`/`jsonb`, `geoarrow.wkb` 4326 → `geography(_, 4326)`.
+- `mode="replace"` (default, atomic swap) and `mode="upsert"`: COPY into staging, then one `INSERT … SELECT … ON CONFLICT (pk) DO UPDATE` in one transaction. Key read from the target's primary key; none → refuse.
+- RDS IAM auth: caller puts the token in the DSN as password. Valid 15 min, checked at connect only.
+- `sslrootcert=` DSN parameter — pin a CA file instead of the platform store, for `verify-full` against RDS or Cloud SQL. Needs stripping the key before `tokio_postgres::Config` sees it.
+
+## 0.8 — Arrow interchange contract
 
 Goal: state what the Arrow types layer between a source and a destination _is_, so a connector author learns it from a document rather than from reading `pg_to_arrow.rs`.
 
@@ -131,7 +151,6 @@ Not before here: hiding a `pub` type is a breaking change, so this cannot be a p
 - Postgres source `query=` — an arbitrary SELECT in place of `table=`, compiled to the same COPY.
 - Cross-connector `batch_size` / byte-based memory budget (`set_max_row_group_bytes` + reader batch). Design against ≥2 connectors (PG in 0.1.0, BQ in 0.2.0); don't pin to one connector's shape.
 - Airflow / Dagster / whatever is popular operators
-- `sslrootcert=` DSN parameter — pin a CA file instead of the platform store, for `verify-full` against RDS or Cloud SQL. Needs stripping the key before `tokio_postgres::Config` sees it.
 - Retries for the transient errors
 - CLI
 - Multiple destinations `Transfer`s
