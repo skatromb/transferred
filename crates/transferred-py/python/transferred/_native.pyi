@@ -41,13 +41,13 @@ class IoError(TransferredError):
 class RunReport:
     """
     Post-run statistics returned by `Transfer.run()`.
-    
+
     Attributes:
         `rows`: Total rows written.
         `bytes_written`: Total bytes written to the destination.
         `written_objects`: Identifiers of what was written (paths, URIs, tables).
         `duration_seconds`: Wall-clock duration of the transfer, in seconds.
-    
+
     Example:
         ```py
         >>> report = Transfer(source=..., destination=...).run()
@@ -98,9 +98,9 @@ class SourceError(TransferredError):
 class TransferredError(Exception):
     """
     Base exception for all `transferred` failures.
-    
+
     Subclasses: `SourceError` (and `EmptySourceError`), `DestinationError`, `ArrowError`, `IoError`.
-    
+
     Example:
         ```py
         >>> from transferred import Transfer, TransferredError
@@ -122,19 +122,19 @@ class _FilesDestination(Destination):
     """
     Internal `PyO3` wrapper around `transferred_files::FilesDestination`.
     """
-    def __new__(cls, /, path: str |PathLike[str], format: Format, *, single_file: bool = False) -> _FilesDestination: ...
+    def __new__(cls, /, path: str | PathLike[str], format: Format, *, single_file: bool = False) -> _FilesDestination: ...
 
 class _FilesSource(Source):
     """
     Internal `PyO3` wrapper around `transferred_files::FilesSource`.
     """
-    def __new__(cls, /, path: Sequence[str |PathLike[str]] |str |PathLike[str], format: Format) -> _FilesSource: ...
+    def __new__(cls, /, path: Sequence[str | PathLike[str]] | str | PathLike[str], format: Format) -> _FilesSource: ...
 
 class _Parquet(Format):
     """
     Internal `PyO3` wrapper around `transferred_files::Parquet`.
     """
-    def __new__(cls, /, compression: str |None) -> _Parquet: ...
+    def __new__(cls, /, compression: str | None) -> _Parquet: ...
 
 class _PostgresDestination(Destination):
     """
