@@ -52,10 +52,15 @@ print(report)
 
 More in [examples/](https://github.com/skatromb/transferred/tree/main/examples).
 
-10M rows of 22 diverse columns including `jsonb` and PostGIS geometry — peaking at 414 MiB RAM, interpreter included.
+## Features
 
-Look at [docs/DLT_COMPARISON.md](https://github.com/skatromb/transferred/blob/main/docs/DLT_COMPARISON.md) for more performance insights.
-
+- Best practice by default
+- No need for sizing
+- Atomic writes
+- Map complex types to destination (json, geo supported)
+- Schema changes handled
+- No out-of-memory
+- Blazing fast (but not as DuckDB yet)
 
 ## Supported
 
@@ -68,12 +73,11 @@ Look at [docs/DLT_COMPARISON.md](https://github.com/skatromb/transferred/blob/ma
 
 BigQuery, S3/GCS and incremental loads land later. See [PLAN.md](https://github.com/skatromb/transferred/blob/main/PLAN.md).
 
-## Promises
+## Performance
 
-- Best practice by default, override if needed
-- No boring sizing/config
-- No Out-of-memory
-- Blazing fast
+10M rows of 22 diverse columns including `jsonb` and PostGIS geometry — peaking at 414 MiB RAM, interpreter included.
+
+Look at [docs/DLT_COMPARISON.md](https://github.com/skatromb/transferred/blob/main/docs/DLT_COMPARISON.md) for more performance insights.
 
 ## License
 
