@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -30,7 +31,9 @@ jobs:
           body: Weekly `cargo update` of `Cargo.lock`.
 
       - if: contains(fromJSON('["created", "updated"]'), steps.pull-request.outputs.pull-request-operation)
-        run: gh pr merge --auto --squash "$PULL_REQUEST"
+        run: |
+          gh workflow run check.yml --ref cargo-update
+          gh pr merge --auto --squash "$PULL_REQUEST"
         env:
           PULL_REQUEST: ${{ steps.pull-request.outputs.pull-request-number }}
           GH_REPO: ${{ github.repository }}
