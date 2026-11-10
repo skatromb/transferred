@@ -3,7 +3,7 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use arrow::ffi_stream::ArrowArrayStreamReader;
+use arrow::ffi_stream::RecordBatchStreamReader;
 use arrow::pyarrow::FromPyArrow as _;
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
@@ -30,7 +30,7 @@ impl PyArrowSource {
         Ok(PySource::init(
             Self,
             ArrowSource {
-                reader: ArrowArrayStreamReader::from_pyarrow_bound(reader)?,
+                reader: RecordBatchStreamReader::from_pyarrow_bound(reader)?,
             },
         ))
     }
@@ -38,7 +38,7 @@ impl PyArrowSource {
 
 /// Rust-side source over a pyarrow `RecordBatchReader` that gives us `Send`.
 pub(crate) struct ArrowSource {
-    reader: ArrowArrayStreamReader,
+    reader: RecordBatchStreamReader,
 }
 
 #[async_trait]
@@ -53,7 +53,7 @@ impl Source for ArrowSource {
 
 /// Adapts the reader to an async `Stream`.
 struct ArrowReaderStream {
-    reader: ArrowArrayStreamReader,
+    reader: RecordBatchStreamReader,
 }
 
 impl Stream for ArrowReaderStream {
