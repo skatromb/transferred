@@ -27,7 +27,7 @@ rustls = { version = "0.23", default-features = false, features = ["std", "tls12
 postgres-protocol = "0.6"
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
-geoarrow-schema = "0.9"
+geoarrow-schema = "0.10"
 pg_interval = "0.6"
 rust_decimal = { version = "1", default-features = false, features = ["db-tokio-postgres"] }
 uuid = "1"
