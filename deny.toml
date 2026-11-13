@@ -3,6 +3,7 @@
 
 [advisories]
 yanked = "deny"
+unmaintained = "workspace"
 
 [licenses]
 allow = [

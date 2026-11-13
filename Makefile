@@ -48,7 +48,7 @@ deny-install:
 deny: deny-install
 	@cargo deny --locked check bans licenses sources
 
-# Audit RUSTSEC advisories. Runs daily in CI, off the PR gate: a new advisory is not the PR's fault.
+# Audit RUSTSEC advisories. Runs weekly in CI, off the PR gate: a new advisory is not the PR's fault.
 .PHONY: advisories
 advisories: deny-install
 	@cargo deny --locked check advisories
