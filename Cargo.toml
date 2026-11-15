@@ -24,7 +24,6 @@ transferred-postgres = { path = "crates/transferred-postgres", version = "0.1.4"
 arrow = { version = "60", features = ["prettyprint"] }
 arrow-schema = { version = "60", features = ["canonical_extension_types"] }
 tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "io-util", "net", "time", "fs"] }
-tokio-stream = "0.1"
 futures = "0.3"
 async-trait = "0.1"
 log = "0.4"
@@ -42,7 +41,6 @@ multiple_crate_versions = "allow"
 
 # easy-peasy: No panics
 arithmetic_side_effects = "deny"
-cast_abs_to_unsigned = "deny"
 exit = "warn"
 expect_used = "deny"
 indexing_slicing = "deny"
@@ -51,7 +49,6 @@ panic = "deny"
 panic_in_result_fn = "deny"
 string_slice = "deny"
 todo = "deny"
-unchecked_time_subtraction = "deny"
 unimplemented = "deny"
 unreachable = "deny"
 unwrap_in_result = "warn"
@@ -174,7 +171,6 @@ unsafe_code = "deny"
 # easy-peasy: Hidden behaviour
 ambiguous_negative_literals = "warn"
 deref_into_dyn_supertrait = "warn"
-let_underscore_drop = "warn"
 meta_variable_misuse = "warn"
 non_ascii_idents = "warn"
 unstable_features = "warn"
@@ -203,3 +199,14 @@ unused_import_braces = "warn"
 unused_lifetimes = "warn"
 unused_macro_rules = "warn"
 unused_qualifications = "warn"
+
+[workspace.lints.rustdoc]
+# easy-peasy: Docs
+all = { level = "warn", priority = -1 }
+missing_crate_level_docs = "allow"
+
+[workspace.lints.cargo]
+# easy-peasy: Manifest
+pedantic = { level = "warn", priority = -1 }
+non_kebab_case_features = "warn"
+non_kebab_case_packages = "warn"

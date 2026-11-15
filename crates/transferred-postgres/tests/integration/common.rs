@@ -143,5 +143,5 @@ pub(crate) fn assert_copied(original: &RecordBatch, rows: u64, copy: &RecordBatc
 
 /// Text of the connector error underneath a `TransferredError`.
 pub(crate) fn detail(error: &TransferredError) -> String {
-    error.source().map(ToString::to_string).unwrap_or_default()
+    error.source().map_or_default(ToString::to_string)
 }

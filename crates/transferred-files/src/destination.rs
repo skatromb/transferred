@@ -162,10 +162,7 @@ async fn cleanup(tmp_dir: &Path) {
 
 /// Creates `{name}.tmp` near the `final_path`, for staging files.
 fn make_tmp(final_path: &Path) -> PathBuf {
-    let mut name = final_path
-        .file_name()
-        .map(OsStr::to_os_string)
-        .unwrap_or_default();
+    let mut name = final_path.file_name().map_or_default(OsStr::to_os_string);
     name.push(".tmp");
 
     final_path.with_file_name(name)

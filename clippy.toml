@@ -1,6 +1,9 @@
 # easy-peasy: Public API
 avoid-breaking-exported-api = false
 
+# easy-peasy: Minimal supported Rust version
+check-incompatible-msrv-in-tests = true
+
 # easy-peasy: Tests may panic and print
 allow-dbg-in-tests = true
 allow-expect-in-tests = true
@@ -18,16 +21,19 @@ disallowed-names = [
     "params", "parameters", "result", "results", "some", "spam", "temp", "tmp", "val", "vals",
     "value", "values", "var", "variable", "vars", "wrapper", "yes",
 ]
+enum-variant-name-threshold = 2
 min-ident-chars-threshold = 2
+pub-underscore-fields-behavior = "AllPubFields"
+struct-field-name-threshold = 2
 upper-case-acronyms-aggressive = true
 
 # easy-peasy: Complexity
 cognitive-complexity-threshold = 6
 excessive-nesting-threshold = 4
+lint-commented-code = true
 max-fn-params-bools = 0
 too-many-arguments-threshold = 4
 too-many-lines-threshold = 20
 type-complexity-threshold = 75
 
-# easy-peasy: yours
 max-struct-bools = 1
