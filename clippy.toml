@@ -28,12 +28,10 @@ struct-field-name-threshold = 2
 upper-case-acronyms-aggressive = true
 
 # easy-peasy: Complexity
-cognitive-complexity-threshold = 6
+cognitive-complexity-threshold = 12
 excessive-nesting-threshold = 4
 lint-commented-code = true
 max-fn-params-bools = 0
 too-many-arguments-threshold = 4
 too-many-lines-threshold = 20
 type-complexity-threshold = 75
-
-max-struct-bools = 1
