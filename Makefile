@@ -26,12 +26,13 @@ fmt:
 	@cargo fmt --all
 	@if [ -n "$$CI" ]; then git diff --exit-code -- '*.rs'; fi
 
-# Lint with clippy, deny warnings. Enables `integration` so gated test targets are linted too.
+# Lint with clippy and rustdoc, deny warnings. Enables `integration` so gated test targets are linted too.
 # Avoid `--all-features`: pyo3 `extension-module` breaks linkage outside maturin.
 .PHONY: clippy
 clippy:
 	@cargo clippy --workspace --tests \
 		--features transferred-postgres/integration -- -D warnings
+	@cargo doc --workspace --no-deps --config 'build.warnings="deny"'
 
 # Run Rust tests.
 .PHONY: cargo-test
