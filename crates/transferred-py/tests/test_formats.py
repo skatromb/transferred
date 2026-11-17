@@ -30,4 +30,4 @@ def test_format_is_immutable():
     with pytest.raises(
         AttributeError, match="'Parquet' object has no attribute 'compression'"
     ):
-        Parquet().compression = "snappy"  # ty: ignore[unresolved-attribute]
+        Parquet().compression = "snappy"  # ty: ignore[missing-attribute]
